@@ -6,7 +6,7 @@ Offchain **CL8Y snapshot voting** for Terra Classic CW20 holders and BNB Smart C
 
 Voting used to be tracked as issues **#509 / #510 / #511 / #588** on [cl8y-dex-terraclassic](https://gitlab.com/PlasticDigits/cl8y-dex-terraclassic). Those issues live here now. Mapping: [`docs/ISSUE_MIGRATION.md`](docs/ISSUE_MIGRATION.md).
 
-This checkout is a **bootstrap**: docs, agent playbooks, and GitLab project. Ledger, `operator-voting`, and the `/vote` dApp are not implemented yet.
+Packages: `ledger/` (data plane), `operator-voting/` (control plane), `frontend/` (`/vote`). Invariants: [`docs/LEDGER_INVARIANTS.md`](docs/LEDGER_INVARIANTS.md), [`docs/OPERATOR_VOTING.md`](docs/OPERATOR_VOTING.md), [`docs/FRONTEND.md`](docs/FRONTEND.md).
 
 ## Product (short)
 
@@ -35,6 +35,15 @@ This checkout is a **bootstrap**: docs, agent playbooks, and GitLab project. Led
 |-------|-------|----------|
 | Terra Classic CW20 | `terra16wtml2q66g82fdkx66tap0qjkahqwp4lwq3ngtygacg5q0kzycgqvhpax3` | 18 |
 | BSC BEP-20 | [`0x8F452a1fdd388A45e1080992eFF051b4dd9048d2`](https://bscscan.com/token/0x8F452a1fdd388A45e1080992eFF051b4dd9048d2) | 18 |
+
+## Local verify
+
+```bash
+cargo test --workspace --lib
+docker compose -f docker-compose.test.yml up -d
+LEDGER_TEST_DATABASE_URL=postgres://voting:voting@127.0.0.1:5433/voting cargo test --workspace --tests
+cd frontend && npm test && npm run test:e2e
+```
 
 ## Docs for agents
 

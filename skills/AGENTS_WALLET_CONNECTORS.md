@@ -12,6 +12,13 @@ For wallet connecting software, as there has been many problems with it, the ter
 
 **Do not** start from a greenfield wallet kit, a new WC pairing design, or a “simplified” connect modal. Copy the working stacks, then delete bridge/DEX features voting does not need (swaps, deposits, token lists).
 
+## In-tree ports
+
+- Terra: [`frontend/src/services/terraclassic/`](../frontend/src/services/terraclassic/) + [`frontend/src/utils/walletConnectPairing.ts`](../frontend/src/utils/walletConnectPairing.ts)
+- EVM: [`frontend/src/lib/wagmi.ts`](../frontend/src/lib/wagmi.ts) (BSC electorate; Anvil mock in DEV only)
+- Signing: [`frontend/src/services/terraSign.ts`](../frontend/src/services/terraSign.ts), [`frontend/src/services/evmSign.ts`](../frontend/src/services/evmSign.ts)
+- [`docs/FRONTEND.md`](../docs/FRONTEND.md)
+
 ## Terra Classic — copy from DEX
 
 Repo: [cl8y-dex-terraclassic](https://gitlab.com/PlasticDigits/cl8y-dex-terraclassic)  
