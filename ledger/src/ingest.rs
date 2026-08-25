@@ -1,0 +1,84 @@
+use sqlx::PgPool;
+
+use crate::bsc::BscClient;
+use crate::config::LedgerConfig;
+use crate::db::{self, Chain};
+use crate::error::LedgerResult;
+use crate::lcd::LcdClient;
+use crate::parser::{parse_bep20_transfer_log, parse_cw20_wasm_events};
+
+pub async fn ingest_terra_height(
+    pool: &PgPool,
+    lcd: &LcdClient,
+    cfg: &LedgerConfig,
+    height: i64,
+) -> LedgerResult<usize> {
+    let registered = db::registered_set(pool, Chain::Terra).await?;
+    let registered_refs: Vec<&str> = registered.iter().map(|s| s.as_str()).collect();
+    let txs = lcd.block_txs(height).await?;
+    let mut count = 0;
+    for tx in txs {
+        let events = tx.wasm_events();
+        let transfers = parse_cw20_wasm_events(&events, &cfg.cl8y_token_address, &registered_refs)?;
+        if transfers.is_empty() {
+            continue;
+        }
+        db::apply_cw20_transfers(pool, &transfers, height, &tx.tx_hash()).await?;
+        count += transfers.len();
+    }
+    db::set_state(pool, "last_indexed_height", &height.to_string()).await?;
+    Ok(count)
+}
+
+pub async fn ingest_bsc_range(
+    pool: &PgPool,
+    bsc: &BscClient,
+    cfg: &LedgerConfig,
+    from_block: i64,
+    to_block: i64,
+) -> LedgerResult<usize> {
+    if from_block > to_block {
+        return Ok(0);
+    }
+    let registered = db::registered_set(pool, Chain::Bsc).await?;
+    let registered_refs: Vec<&str> = registered.iter().map(|s| s.as_str()).collect();
+    let logs = bsc
+        .transfer_logs(&cfg.bsc_cl8y_token_address, from_block, to_block)
+        .await?;
+    let mut parsed = Vec::new();
+    for log in &logs {
+        if let Some(t) = parse_bep20_transfer_log(log, &cfg.bsc_cl8y_token_address, &registered_refs)?
+        {
+            parsed.push(t);
+        }
+    }
+    db::apply_bep20_transfers(pool, &parsed).await?;
+    db::set_state(pool, "last_indexed_bsc_block", &to_block.to_string()).await?;
+    Ok(parsed.len())
+}
+
+pub async fn maybe_rewind_terra(
+    pool: &PgPool,
+    lcd: &LcdClient,
+    last_height: i64,
+) -> LedgerResult<()> {
+    if last_height <= 0 {
+        return Ok(());
+    }
+    let stored = db::get_state(pool, "last_indexed_block_hash").await?;
+    let Some(stored) = stored else {
+        return Ok(());
+    };
+    match lcd.block_hash(last_height).await {
+        Ok(actual) if actual != stored => {
+            tracing::warn!(
+                last_height,
+                "terra reorg detected; unwinding transfers after fork"
+            );
+            db::rewind_terra(pool, last_height.saturating_sub(1)).await?;
+        }
+        Ok(_) => {}
+        Err(e) => tracing::warn!(error = %e, "could not verify terra block hash"),
+    }
+    Ok(())
+}

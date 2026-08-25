@@ -27,3 +27,5 @@ DEX tracking stub (closed): [#637](https://gitlab.com/PlasticDigits/cl8y-dex-ter
 `#1` (incl. BSC tables from `#4`) → `#2` (incl. EIP-191) → `#3` with `#5` + `#6` required. Do not ship Terra-only as done.
 
 Descriptions on `#1`–`#4` still mention DEX paths; those are design references. Implement in this repo.
+
+Implementation: `feat/voting-bundle` — [`docs/HANDOFF.md`](HANDOFF.md), [`LEDGER_INVARIANTS.md`](LEDGER_INVARIANTS.md), [`OPERATOR_VOTING.md`](OPERATOR_VOTING.md), [`FRONTEND.md`](FRONTEND.md).

@@ -79,4 +79,4 @@ IID mapping: [`docs/ISSUE_MIGRATION.md`](docs/ISSUE_MIGRATION.md).
 gitleaks detect --source . --config .gitleaks.toml --verbose
 ```
 
-CI currently runs Gitleaks only. Add package test jobs when code lands.
+CI runs Gitleaks plus `cargo test --workspace --lib` and frontend `npm test`. Postgres integration jobs need `LEDGER_TEST_DATABASE_URL` (see `docker-compose.test.yml`).

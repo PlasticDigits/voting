@@ -1,5 +1,6 @@
 stages:
   - lint
+  - test
 
 lint:gitleaks:
   stage: lint
@@ -8,6 +9,30 @@ lint:gitleaks:
     entrypoint: [""]
   script:
     - gitleaks detect --source . --config .gitleaks.toml --verbose --redact
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+test:rust:
+  stage: test
+  image: rust:1.85
+  script:
+    - cargo test --workspace --lib --bins
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+test:frontend:
+  stage: test
+  image: node:22
+  cache:
+    key: frontend-npm
+    paths:
+      - frontend/node_modules/
+  script:
+    - cd frontend
+    - npm ci
+    - npm test
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH

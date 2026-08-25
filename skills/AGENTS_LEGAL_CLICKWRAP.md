@@ -12,6 +12,12 @@ The voting dApp **must** be blocked behind [cl8y-ecosystem-legal](https://gitlab
 
 Use `@plasticdigits/cl8y-clickwrap` (`TermsGate` / `createClient`). **Do not** reimplement Terra ADR-036 or EVM verify for **terms**. Voting signatures are a separate payload on `operator-voting`.
 
+## In-tree wiring
+
+- [`frontend/src/utils/legalClickwrap.ts`](../frontend/src/utils/legalClickwrap.ts) — property `vote.cl8y.com`, redirect sanitize
+- [`frontend/src/components/legal/ConnectedTermsGate.tsx`](../frontend/src/components/legal/ConnectedTermsGate.tsx) — TerraClassic **or** EVM
+- [`docs/FRONTEND.md`](../docs/FRONTEND.md)
+
 ## Canonical references
 
 | Doc / code | Purpose |

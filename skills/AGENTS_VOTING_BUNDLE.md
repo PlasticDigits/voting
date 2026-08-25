@@ -30,10 +30,21 @@ dApp UI can stub the API with MSW in parallel, but production “done” require
 - Snapshot weight, not tip, after create
 - Flash-in before snapshot is counted by design (document; not a bug)
 
+## Implementation (landed in-tree)
+
+| Issue | Code |
+|-------|------|
+| #1 + #4 ledger | [`ledger/`](../ledger/) · [`docs/LEDGER_INVARIANTS.md`](../docs/LEDGER_INVARIANTS.md) (L1–L11) |
+| #2 + EIP-191 | [`operator-voting/`](../operator-voting/) · [`docs/OPERATOR_VOTING.md`](../docs/OPERATOR_VOTING.md) |
+| #3 + #5 + #6 | [`frontend/`](../frontend/) · [`docs/FRONTEND.md`](../docs/FRONTEND.md) |
+
 ## Files in this repo to read first
 
 - [`AGENTS.md`](../AGENTS.md)
 - [`docs/HANDOFF.md`](../docs/HANDOFF.md)
 - [`docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md)
+- [`docs/LEDGER_INVARIANTS.md`](../docs/LEDGER_INVARIANTS.md)
+- [`docs/OPERATOR_VOTING.md`](../docs/OPERATOR_VOTING.md)
+- [`docs/FRONTEND.md`](../docs/FRONTEND.md)
 - [`AGENTS_WALLET_CONNECTORS.md`](AGENTS_WALLET_CONNECTORS.md)
 - [`AGENTS_LEGAL_CLICKWRAP.md`](AGENTS_LEGAL_CLICKWRAP.md)

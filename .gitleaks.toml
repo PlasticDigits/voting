@@ -16,4 +16,5 @@ paths = [
   '''(?i)^AGENTS\.md$''',
   '''(?i)^docs/''',
   '''(?i)^skills/''',
+  '''(?i)^deploy/''',
 ]

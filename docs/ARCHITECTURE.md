@@ -1,18 +1,16 @@
-# Architecture (planned)
-
-Nothing in this diagram is implemented in-tree yet. It restates the migrated issue bundle for a **standalone** repo.
+# Architecture
 
 ```
   Terra LCD          BSC JSON-RPC
       │                   │
       ▼                   ▼
  ┌────────────────────────────────┐
- │  voting-ledger (indexer-like)  │  writer role
+ │  voting-ledger                 │  writer role
  │  register live balance         │
  │  CW20 wasm events (CL8Y only)  │
  │  BEP-20 Transfer logs (CL8Y)   │
  └────────────────┬───────────────┘
-                  │ views / functions
+                  │ SECURITY DEFINER
                   │ voting_cl8y_balance_at
                   │ voting_bsc_cl8y_balance_at
                   ▼
@@ -31,16 +29,17 @@ Nothing in this diagram is implemented in-tree yet. It restates the migrated iss
  └────────────────────────────────┘
 ```
 
-## Suggested layout (when code starts)
+## Layout
 
 ```
-ledger/              # Rust: ingest + Postgres migrations + balance views
+ledger/              # Rust: ingest + Postgres migrations + balance functions
 operator-voting/     # Rust Axum: signatures, proposals, votes
 frontend/            # Vite React: /vote
-docs/ skills/        # this bootstrap
+docs/ skills/        # invariants + agent playbooks
+deploy/              # grants.sql + Coolify env example
 ```
 
-Names can change; keep **three** deployables (ledger worker, API, dApp) and **two** DB roles.
+Three deployables (ledger worker, API, dApp) and **two** DB roles.
 
 ## Snapshot
 
