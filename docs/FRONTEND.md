@@ -1,6 +1,6 @@
 # Voting dApp
 
-Cross-links: [OPERATOR_VOTING.md](OPERATOR_VOTING.md) · skills [AGENTS_LEGAL_CLICKWRAP.md](../skills/AGENTS_LEGAL_CLICKWRAP.md) · [AGENTS_WALLET_CONNECTORS.md](../skills/AGENTS_WALLET_CONNECTORS.md) · issues [#3](https://gitlab.com/PlasticDigits/voting/-/issues/3) · [#5](https://gitlab.com/PlasticDigits/voting/-/issues/5) · [#6](https://gitlab.com/PlasticDigits/voting/-/issues/6)
+Cross-links: [OPERATOR_VOTING.md](OPERATOR_VOTING.md) · [OPS.md](OPS.md) · skills [AGENTS_LEGAL_CLICKWRAP.md](../skills/AGENTS_LEGAL_CLICKWRAP.md) · [AGENTS_WALLET_CONNECTORS.md](../skills/AGENTS_WALLET_CONNECTORS.md) · [AGENTS_OPS_STAGING.md](../skills/AGENTS_OPS_STAGING.md) · issues [#3](https://gitlab.com/PlasticDigits/voting/-/issues/3) · [#5](https://gitlab.com/PlasticDigits/voting/-/issues/5) · [#6](https://gitlab.com/PlasticDigits/voting/-/issues/6) · [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7)
 
 Package: `frontend/`. Routes: `/vote`, `/vote/new`, `/vote/:id`.
 
@@ -10,7 +10,7 @@ Package: `frontend/`. Routes: `/vote`, `/vote/new`, `/vote/:id`.
 
 Legal portal sign URLs are **terms only**, not voting auth.
 
-Ops (Legal repo, often a separate change): register property, add origin to `CORS_ORIGINS` and portal `VITE_REDIRECT_URI_ALLOWLIST`. Confirm hostname with ops before admin write.
+Ops (Legal repo, often a separate change): register property, add origin to `CORS_ORIGINS` and portal `VITE_REDIRECT_URI_ALLOWLIST`. Confirm hostname with ops before admin write. Full checklist: [OPS.md](OPS.md) §2 and [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7).
 
 ## Wallets (ported, not rewritten)
 

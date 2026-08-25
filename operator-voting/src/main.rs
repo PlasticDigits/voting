@@ -19,7 +19,10 @@ async fn main() -> Result<(), VotingError> {
 
     let cfg = VotingConfig::from_env()?;
     let pool = db::connect(&cfg.database_url).await?;
-    db::migrate(&pool).await?;
+    // Restricted prod role cannot apply ledger migrations (issue #7 / L10).
+    if cfg.apply_migrations {
+        db::migrate(&pool).await?;
+    }
 
     let cors = if cfg.cors_origins.is_empty() {
         CorsLayer::new()
@@ -51,8 +54,11 @@ async fn main() -> Result<(), VotingError> {
     let listener = TcpListener::bind(addr)
         .await
         .map_err(|e| VotingError::InvalidConfig(e.to_string()))?;
-    axum::serve(listener, app)
-        .await
-        .map_err(|e| VotingError::InvalidConfig(e.to_string()))?;
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await
+    .map_err(|e| VotingError::InvalidConfig(e.to_string()))?;
     Ok(())
 }

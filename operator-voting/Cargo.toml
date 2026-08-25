@@ -14,6 +14,7 @@ base64.workspace = true
 bech32.workspace = true
 chrono.workspace = true
 dotenvy.workspace = true
+governor.workspace = true
 hex.workspace = true
 k256.workspace = true
 num-bigint.workspace = true

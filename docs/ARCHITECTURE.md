@@ -36,10 +36,11 @@ ledger/              # Rust: ingest + Postgres migrations + balance functions
 operator-voting/     # Rust Axum: signatures, proposals, votes
 frontend/            # Vite React: /vote
 docs/ skills/        # invariants + agent playbooks
-deploy/              # grants.sql + Coolify env example
+deploy/              # grants.sql, Coolify env, Dockerfiles (issue #7)
+docs/OPS.md          # Coolify / Legal / live QA / rate limits
 ```
 
-Three deployables (ledger worker, API, dApp) and **two** DB roles.
+Three deployables (ledger worker, API, dApp) and **two** DB roles. Coolify images: [`../deploy/docker/`](../deploy/docker/). Public-expose checklist: [OPS.md](OPS.md) (issue [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7)).
 
 ## Snapshot
 

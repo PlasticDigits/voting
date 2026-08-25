@@ -1,6 +1,6 @@
 # Ledger invariants
 
-Cross-links: [ARCHITECTURE.md](ARCHITECTURE.md) · [OPERATOR_VOTING.md](OPERATOR_VOTING.md) · issues [#1](https://gitlab.com/PlasticDigits/voting/-/issues/1) · [#4](https://gitlab.com/PlasticDigits/voting/-/issues/4) · skill [AGENTS_VOTING_BUNDLE.md](../skills/AGENTS_VOTING_BUNDLE.md)
+Cross-links: [ARCHITECTURE.md](ARCHITECTURE.md) · [OPERATOR_VOTING.md](OPERATOR_VOTING.md) · [OPS.md](OPS.md) · issues [#1](https://gitlab.com/PlasticDigits/voting/-/issues/1) · [#4](https://gitlab.com/PlasticDigits/voting/-/issues/4) · [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7) · skills [AGENTS_VOTING_BUNDLE.md](../skills/AGENTS_VOTING_BUNDLE.md) · [AGENTS_OPS_STAGING.md](../skills/AGENTS_OPS_STAGING.md)
 
 This crate is `voting-ledger` (`ledger/`). It is **not** the DEX indexer. Do not implement these tables in `cl8y-dex-terraclassic`.
 
@@ -42,7 +42,7 @@ A large transfer into a registered wallet immediately before a proposal snapshot
 
 ## L10 — Least privilege
 
-Balance functions are `SECURITY DEFINER`. `operator_voting` gets `EXECUTE` on the functions plus `SELECT` on `voting_registrations` / `indexer_state` and R/W on schema `voting`. It must not `INSERT` ledger transfer/checkpoint tables. See [../deploy/grants.sql](../deploy/grants.sql).
+Balance functions are `SECURITY DEFINER`. `operator_voting` gets `EXECUTE` on the functions plus `SELECT` on `voting_registrations` / `indexer_state` and R/W on schema `voting`. It must not `INSERT` ledger transfer/checkpoint tables. See [../deploy/grants.sql](../deploy/grants.sql). Coolify: ledger writer applies migrations; `operator-voting` must not (`APPLY_MIGRATIONS=false` in prod). [OPS.md](OPS.md) O1–O2.
 
 ## L11 — Registration handoff
 

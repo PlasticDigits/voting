@@ -3,7 +3,7 @@
 **Last updated:** 2026-08-25  
 **Repo:** [PlasticDigits/voting](https://gitlab.com/PlasticDigits/voting)  
 **Local:** `~/repos/voting`  
-**Implementation branch:** `feat/voting-bundle` (git worktree)
+**Implementation branch:** `feat/voting-bundle` (merged). Ops follow-up: [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7) · [`OPS.md`](OPS.md).
 
 ## Current state
 
@@ -15,9 +15,9 @@ In-tree packages:
 | `operator-voting/` | ADR-36 + EIP-191 API |
 | `frontend/` | `/vote` dApp, Legal gate, DEX Terra + Bridge EVM wallets |
 
-GitLab issues **#1–#6** are implemented in this tree. Coolify/staging deploy, Legal admin property registration, and live Keplr/MetaMask QA are **ops follow-ups**.
+GitLab issues **#1–#6** are implemented in this tree. [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7) tracks remaining ops. In-tree for #7: POST IP/QPS limits, Coolify Dockerfiles, prod migration skip, Legal-hatch build guards. Still human/ops: Coolify project, Legal admin property/CORS/allowlist, live Keplr+MetaMask QA. Runbook: [`OPS.md`](OPS.md). Skill: [`../skills/AGENTS_OPS_STAGING.md`](../skills/AGENTS_OPS_STAGING.md).
 
-Issue mapping: [`ISSUE_MIGRATION.md`](ISSUE_MIGRATION.md). Invariants: [`LEDGER_INVARIANTS.md`](LEDGER_INVARIANTS.md), [`OPERATOR_VOTING.md`](OPERATOR_VOTING.md), [`FRONTEND.md`](FRONTEND.md).
+Issue mapping: [`ISSUE_MIGRATION.md`](ISSUE_MIGRATION.md). Invariants: [`LEDGER_INVARIANTS.md`](LEDGER_INVARIANTS.md), [`OPERATOR_VOTING.md`](OPERATOR_VOTING.md), [`FRONTEND.md`](FRONTEND.md), [`OPS.md`](OPS.md).
 
 ## Why a new repo
 

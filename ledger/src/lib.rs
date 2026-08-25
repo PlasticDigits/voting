@@ -11,6 +11,7 @@ pub mod ingest;
 pub mod lcd;
 pub mod parser;
 pub mod register;
+pub mod test_lock;
 
 pub use amount::{parse_raw_amount, Amount};
 pub use config::LedgerConfig;

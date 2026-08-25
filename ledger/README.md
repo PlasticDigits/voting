@@ -1,6 +1,6 @@
 # voting-ledger
 
-Dual-chain CL8Y registration ledger. Invariants: [`../docs/LEDGER_INVARIANTS.md`](../docs/LEDGER_INVARIANTS.md).
+Dual-chain CL8Y registration ledger. Invariants: [`../docs/LEDGER_INVARIANTS.md`](../docs/LEDGER_INVARIANTS.md). Coolify writer image: [`../deploy/docker/ledger.Dockerfile`](../deploy/docker/ledger.Dockerfile). Restricted-role grants after migrate: [`../deploy/grants.sql`](../deploy/grants.sql). Ops: [`../docs/OPS.md`](../docs/OPS.md).
 
 ```bash
 DATABASE_URL=postgres://… cargo run -p voting-ledger

@@ -18,6 +18,7 @@ For wallet connecting software, as there has been many problems with it, the ter
 - EVM: [`frontend/src/lib/wagmi.ts`](../frontend/src/lib/wagmi.ts) (BSC electorate; Anvil mock in DEV only)
 - Signing: [`frontend/src/services/terraSign.ts`](../frontend/src/services/terraSign.ts), [`frontend/src/services/evmSign.ts`](../frontend/src/services/evmSign.ts)
 - [`docs/FRONTEND.md`](../docs/FRONTEND.md)
+- Live staging QA (Keplr + MetaMask + WC mobile): [`docs/OPS.md`](../docs/OPS.md) §3 · [`AGENTS_OPS_STAGING.md`](AGENTS_OPS_STAGING.md) · issue [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7)
 
 ## Terra Classic — copy from DEX
 

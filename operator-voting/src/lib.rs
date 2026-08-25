@@ -10,6 +10,7 @@ pub mod db;
 pub mod error;
 pub mod html;
 pub mod payload;
+pub mod rate_limit;
 
 pub use config::VotingConfig;
 pub use error::VotingError;

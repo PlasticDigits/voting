@@ -1,6 +1,8 @@
--- Run as the ledger owner after both migration sets.
+-- Run as the ledger owner after voting-ledger has applied sqlx migrations.
 -- Production: create operator_voting with a secret password (not this file).
 -- This role must NOT write ledger ingest tables.
+-- Coolify order: ledger writer boot → this file → operator-voting (restricted URL).
+-- See docs/OPS.md (O1–O2) and docs/LEDGER_INVARIANTS.md (L10).
 
 DO $$
 BEGIN

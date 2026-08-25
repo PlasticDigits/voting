@@ -15,6 +15,9 @@ async fn restricted_role_cannot_write_ledger() {
         eprintln!("skip: set LEDGER_TEST_DATABASE_URL");
         return;
     };
+    let _lock = voting_ledger::test_lock::hold_integration_db(&url)
+        .await
+        .expect("advisory lock");
     let admin = PgPool::connect(&url).await.unwrap();
     voting_ledger::db::migrate(&admin).await.unwrap();
     operator_voting::db::migrate(&admin).await.unwrap();

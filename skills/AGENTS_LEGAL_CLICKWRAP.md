@@ -46,7 +46,7 @@ Use `@plasticdigits/cl8y-clickwrap` (`TermsGate` / `createClient`). **Do not** r
 2. Legal API `CORS_ORIGINS` includes `https://vote.cl8y.com` (and localhost only if needed).
 3. Rebuild Legal portal with `VITE_REDIRECT_URI_ALLOWLIST` including the voting origin.
 
-DEX documents this for `dex.cl8y.com` in `AGENTS_FRONTEND_CLICKWRAP.md`. Repeat that checklist for the voting hostname.
+DEX documents this for `dex.cl8y.com` in `AGENTS_FRONTEND_CLICKWRAP.md`. Repeat that checklist for the voting hostname. Staging/Coolify steps and #7 leftovers: [`docs/OPS.md`](../docs/OPS.md) §2 · [`AGENTS_OPS_STAGING.md`](AGENTS_OPS_STAGING.md).
 
 ## npm
 

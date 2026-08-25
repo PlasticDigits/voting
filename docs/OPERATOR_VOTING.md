@@ -1,6 +1,6 @@
 # operator-voting
 
-Cross-links: [LEDGER_INVARIANTS.md](LEDGER_INVARIANTS.md) · [FRONTEND.md](FRONTEND.md) · issues [#2](https://gitlab.com/PlasticDigits/voting/-/issues/2) · [#4](https://gitlab.com/PlasticDigits/voting/-/issues/4)
+Cross-links: [LEDGER_INVARIANTS.md](LEDGER_INVARIANTS.md) · [FRONTEND.md](FRONTEND.md) · [OPS.md](OPS.md) · issues [#2](https://gitlab.com/PlasticDigits/voting/-/issues/2) · [#4](https://gitlab.com/PlasticDigits/voting/-/issues/4) · [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7) · skill [AGENTS_OPS_STAGING.md](../skills/AGENTS_OPS_STAGING.md)
 
 Standalone Axum service. **Not** merged into the DEX indexer API. Uses a **restricted** `DATABASE_URL` in production.
 
@@ -53,6 +53,24 @@ Threshold: `MIN_PROPOSAL_CL8Y` (default 1000 human units) → `1000 * 10^18` raw
 ## HTML
 
 Proposal bodies are stored after [ammonia](https://docs.rs/ammonia) allowlist (`p`, headings, lists, `a[href]`, …). Scripts and event handlers are stripped. Body cap 64 KiB.
+
+## POST rate limits (O-RL)
+
+`governor` keyed by IP (equivalent to `tower-governor`). Required before public expose ([#7](https://gitlab.com/PlasticDigits/voting/-/issues/7)). Code: [`../operator-voting/src/rate_limit.rs`](../operator-voting/src/rate_limit.rs).
+
+| ID | Rule |
+|----|------|
+| **O-RL1** | Every POST shares one per-IP quota. |
+| **O-RL2** | GET `/health` and other reads are not QPS-limited. |
+| **O-RL3** | Body cap (`MAX_BODY_BYTES`) is independent. |
+| **O-RL4** | `X-Forwarded-For` / `X-Real-IP` trusted only when `RATE_LIMIT_TRUST_FORWARDED` is on (Coolify / prod default). |
+| **O-RL5** | Counters are in-process per replica. |
+
+`RUN_MODE=prod` refuses `RATE_LIMIT_POST_PER_MINUTE=0`. Defaults: 60 POST/min, burst 20.
+
+## Migrations
+
+sqlx migrations live in the ledger crate. `operator-voting` applies them only when `APPLY_MIGRATIONS` is true (dev default). Prod (`RUN_MODE=prod`) defaults to **false** so the restricted role never owns schema. See [OPS.md](OPS.md) O1–O2.
 
 ## Env
 

@@ -5,7 +5,6 @@ use http_body_util::BodyExt;
 use k256::ecdsa::signature::Signer;
 use k256::ecdsa::SigningKey;
 use operator_voting::api::{router, AppState};
-use operator_voting::blacklist::parse_blacklist;
 use operator_voting::config::{VotingConfig, APP_NAME};
 use operator_voting::crypto::{cosmos_address_from_pubkey, eip191_hash, verify_terra};
 use sha3::Digest;
@@ -22,8 +21,9 @@ fn test_db_url() -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
-async fn setup_pool() -> Option<PgPool> {
+async fn setup_pool() -> Option<(PgPool, voting_ledger::test_lock::IntegrationDbLock)> {
     let url = test_db_url()?;
+    let lock = voting_ledger::test_lock::hold_integration_db(&url).await.ok()?;
     let pool = PgPool::connect(&url).await.ok()?;
     voting_ledger::db::migrate(&pool).await.ok()?;
     db::migrate(&pool).await.ok()?;
@@ -33,20 +33,11 @@ async fn setup_pool() -> Option<PgPool> {
     .execute(&pool)
     .await
     .ok()?;
-    Some(pool)
+    Some((pool, lock))
 }
 
 fn cfg(pool_url: &str, blacklist: &str) -> VotingConfig {
-    VotingConfig {
-        database_url: pool_url.into(),
-        blacklist: parse_blacklist(blacklist).unwrap(),
-        min_proposal_raw: num_bigint::BigInt::from(1000u64) * num_bigint::BigInt::from(10u64).pow(18),
-        cors_origins: vec!["http://127.0.0.1:5173".into()],
-        api_bind: "127.0.0.1:0".into(),
-        terra_chain_id: "columbus-5".into(),
-        evm_chain_id: "56".into(),
-        run_mode: "dev".into(),
-    }
+    VotingConfig::for_tests(pool_url, blacklist)
 }
 
 fn terra_wallet() -> (String, String, SigningKey) {
@@ -109,7 +100,7 @@ async fn call(app: axum::Router, req: Request<Body>) -> (StatusCode, Value) {
 
 #[tokio::test]
 async fn terra_register_propose_vote_and_replay() {
-    let Some(pool) = setup_pool().await else {
+    let Some((pool, _lock)) = setup_pool().await else {
         eprintln!("skip: set LEDGER_TEST_DATABASE_URL");
         return;
     };
@@ -224,7 +215,7 @@ async fn terra_register_propose_vote_and_replay() {
 
 #[tokio::test]
 async fn blacklist_and_threshold_and_evm() {
-    let Some(pool) = setup_pool().await else {
+    let Some((pool, _lock)) = setup_pool().await else {
         eprintln!("skip: set LEDGER_TEST_DATABASE_URL");
         return;
     };
@@ -271,7 +262,7 @@ async fn blacklist_and_threshold_and_evm() {
 
 #[tokio::test]
 async fn xss_stripped_on_create() {
-    let Some(pool) = setup_pool().await else {
+    let Some((pool, _lock)) = setup_pool().await else {
         return;
     };
     let url = test_db_url().unwrap();

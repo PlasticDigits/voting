@@ -23,10 +23,11 @@ See [`.env.example`](./.env.example). Copy to `.env.local`.
 
 ## Coolify
 
-- Unset `VITE_PLAYWRIGHT_E2E` and `VITE_DEV_MNEMONIC` on production builds.
+- Unset `VITE_PLAYWRIGHT_E2E` and `VITE_DEV_MNEMONIC` on production builds (`vite.config.ts` and [`../deploy/docker/frontend.Dockerfile`](../deploy/docker/frontend.Dockerfile) fail the build otherwise).
 - Point `VITE_OPERATOR_VOTING_URL` at the public operator-voting origin.
 - Register Legal property `vote.cl8y.com` in [cl8y-ecosystem-legal](https://gitlab.com/PlasticDigits/cl8y-ecosystem-legal) (interactive admin token — never `ADMIN_TOKEN` in this app).
 - Add `https://vote.cl8y.com` to Legal `CORS_ORIGINS` and portal `VITE_REDIRECT_URI_ALLOWLIST`.
+- Full Coolify / Legal / live-QA checklist: [`../docs/OPS.md`](../docs/OPS.md) · [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7).
 
 ## CSP `connect-src`
 

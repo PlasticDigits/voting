@@ -32,20 +32,21 @@ fn test_db_url() -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
-async fn setup() -> Option<PgPool> {
+async fn setup() -> Option<(PgPool, voting_ledger::test_lock::IntegrationDbLock)> {
     let url = test_db_url()?;
+    let lock = voting_ledger::test_lock::hold_integration_db(&url).await.ok()?;
     let pool = PgPool::connect(&url).await.ok()?;
     db::migrate(&pool).await.ok()?;
     sqlx::query("TRUNCATE voting_registrations, cl8y_cw20_transfers, cl8y_balances, cl8y_bep20_transfers, cl8y_bsc_balances CASCADE")
         .execute(&pool)
         .await
         .ok()?;
-    Some(pool)
+    Some((pool, lock))
 }
 
 #[tokio::test]
 async fn register_transfer_balance_at_and_no_backfill() {
-    let Some(pool) = setup().await else {
+    let Some((pool, _lock)) = setup().await else {
         eprintln!("skip: set LEDGER_TEST_DATABASE_URL");
         return;
     };
@@ -112,7 +113,7 @@ async fn register_transfer_balance_at_and_no_backfill() {
 
 #[tokio::test]
 async fn bsc_register_and_isolation() {
-    let Some(pool) = setup().await else {
+    let Some((pool, _lock)) = setup().await else {
         eprintln!("skip: set LEDGER_TEST_DATABASE_URL");
         return;
     };

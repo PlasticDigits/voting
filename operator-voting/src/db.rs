@@ -7,6 +7,8 @@ use crate::error::{VotingError, VotingResult};
 
 pub async fn migrate(pool: &PgPool) -> VotingResult<()> {
     // One sqlx migrator owns the database (ledger crate). Avoid checksum clashes.
+    // Production: only the ledger writer runs this. operator-voting sets
+    // APPLY_MIGRATIONS=false (the default when RUN_MODE=prod). See docs/OPS.md.
     voting_ledger::db::migrate(pool).await.map_err(|e| VotingError::InvalidConfig(e.to_string()))
 }
 

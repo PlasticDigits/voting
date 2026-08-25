@@ -6,7 +6,7 @@ Offchain **CL8Y snapshot voting** for Terra Classic CW20 holders and BNB Smart C
 
 Voting used to be tracked as issues **#509 / #510 / #511 / #588** on [cl8y-dex-terraclassic](https://gitlab.com/PlasticDigits/cl8y-dex-terraclassic). Those issues live here now. Mapping: [`docs/ISSUE_MIGRATION.md`](docs/ISSUE_MIGRATION.md).
 
-Packages: `ledger/` (data plane), `operator-voting/` (control plane), `frontend/` (`/vote`). Invariants: [`docs/LEDGER_INVARIANTS.md`](docs/LEDGER_INVARIANTS.md), [`docs/OPERATOR_VOTING.md`](docs/OPERATOR_VOTING.md), [`docs/FRONTEND.md`](docs/FRONTEND.md).
+Packages: `ledger/` (data plane), `operator-voting/` (control plane), `frontend/` (`/vote`). Invariants: [`docs/LEDGER_INVARIANTS.md`](docs/LEDGER_INVARIANTS.md), [`docs/OPERATOR_VOTING.md`](docs/OPERATOR_VOTING.md), [`docs/FRONTEND.md`](docs/FRONTEND.md). Ops / Coolify / #7: [`docs/OPS.md`](docs/OPS.md).
 
 ## Product (short)
 
@@ -54,6 +54,8 @@ cd frontend && npm test && npm run test:e2e
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Planned packages |
 | [`docs/ISSUE_MIGRATION.md`](docs/ISSUE_MIGRATION.md) | Old DEX IID → this repo |
 | [`skills/AGENTS_VOTING_BUNDLE.md`](skills/AGENTS_VOTING_BUNDLE.md) | Issue order and invariants |
+| [`docs/OPS.md`](docs/OPS.md) | Coolify, Legal admin, live QA, POST limits (#7) |
+| [`skills/AGENTS_OPS_STAGING.md`](skills/AGENTS_OPS_STAGING.md) | 3rd-party playbook for #7 leftovers |
 
 ## Local git hooks
 

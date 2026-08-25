@@ -13,6 +13,7 @@ use crate::db;
 use crate::error::{VotingError, VotingResult};
 use crate::html::sanitize_proposal_html;
 use crate::payload::{body_hash, parse_and_validate};
+use crate::rate_limit::{enforce_post_rate_limit, RateLimitState};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -21,6 +22,7 @@ pub struct AppState {
 }
 
 pub fn router(state: AppState) -> Router {
+    let limits = RateLimitState::from_config(&state.cfg);
     Router::new()
         .route("/health", get(health))
         .route("/openapi.json", get(openapi))
@@ -32,6 +34,10 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/proposals/{id}/votes/{addr}", get(get_vote))
         .route("/v1/balances/{addr}", get(get_balance))
         .with_state(state)
+        .layer(axum::middleware::from_fn_with_state(
+            limits,
+            enforce_post_rate_limit,
+        ))
 }
 
 #[derive(Serialize)]

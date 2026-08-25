@@ -1,0 +1,16 @@
+.git
+.githooks
+target
+**/target
+frontend/node_modules
+frontend/dist
+frontend/test-results
+frontend/playwright-report
+**/.env
+**/.env.local
+**/*.md
+!docs/**
+docs/HANDOFF.md
+agent-transcripts
+*.swp
+.cursor
