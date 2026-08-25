@@ -1,22 +1,29 @@
 # Issue migration
 
-Source project: [PlasticDigits/cl8y-dex-terraclassic](https://gitlab.com/PlasticDigits/cl8y-dex-terraclassic) (id `80162261`)  
-Destination: [PlasticDigits/voting](https://gitlab.com/PlasticDigits/voting)
+Source: [PlasticDigits/cl8y-dex-terraclassic](https://gitlab.com/PlasticDigits/cl8y-dex-terraclassic) (id `80162261`)  
+Destination: [PlasticDigits/voting](https://gitlab.com/PlasticDigits/voting) (id `85726758`)  
+Moved: 2026-08-25 via GitLab issue move (comments preserved; old DEX IIDs are **closed** and redirect).
 
-GitLab **move** keeps comments and redirects the old URLs.
+DEX tracking stub (closed): [#637](https://gitlab.com/PlasticDigits/cl8y-dex-terraclassic/-/issues/637)
 
-| DEX IID | Title (short) | Voting IID | Notes |
-|---------|---------------|------------|-------|
-| [#509](https://gitlab.com/PlasticDigits/cl8y-dex-terraclassic/-/issues/509) | Indexer registration + CL8Y CW20 ledger | _pending push_ | Data plane; also BSC after #588 |
-| [#510](https://gitlab.com/PlasticDigits/cl8y-dex-terraclassic/-/issues/510) | `operator-voting` package | _pending push_ | Control plane; ADR-36 + EIP-191 |
-| [#511](https://gitlab.com/PlasticDigits/cl8y-dex-terraclassic/-/issues/511) | Frontend `/vote` UX | _pending push_ | Legal gate + dual wallets required |
-| [#588](https://gitlab.com/PlasticDigits/cl8y-dex-terraclassic/-/issues/588) | BSC BEP-20 + EVM voting | _pending push_ | Core electorate, not phase-2 |
+## Mapping
 
-New issues created in this repo after the move (not on DEX):
+| DEX IID (closed) | Voting IID (open) | Title (short) |
+|------------------|-------------------|---------------|
+| [#509](https://gitlab.com/PlasticDigits/cl8y-dex-terraclassic/-/issues/509) | [#1](https://gitlab.com/PlasticDigits/voting/-/issues/1) | Indexer registration + CL8Y CW20 ledger |
+| [#510](https://gitlab.com/PlasticDigits/cl8y-dex-terraclassic/-/issues/510) | [#2](https://gitlab.com/PlasticDigits/voting/-/issues/2) | `operator-voting` package |
+| [#511](https://gitlab.com/PlasticDigits/cl8y-dex-terraclassic/-/issues/511) | [#3](https://gitlab.com/PlasticDigits/voting/-/issues/3) | Frontend `/vote` UX |
+| [#588](https://gitlab.com/PlasticDigits/cl8y-dex-terraclassic/-/issues/588) | [#4](https://gitlab.com/PlasticDigits/voting/-/issues/4) | BSC BEP-20 + EVM voting (core) |
+
+## New issues (voting only)
 
 | Voting IID | Title |
 |------------|-------|
-| _pending_ | Legal clickwrap gate via cl8y-ecosystem-legal |
-| _pending_ | Reuse DEX Terra Classic + Bridge EVM wallet connectors |
+| [#5](https://gitlab.com/PlasticDigits/voting/-/issues/5) | Gate dApp behind cl8y-ecosystem-legal clickwrap (Terra + EVM) |
+| [#6](https://gitlab.com/PlasticDigits/voting/-/issues/6) | Reuse DEX Terra Classic and Bridge EVM wallet connectors |
 
-This table is filled in after `glab` move completes. See the bootstrap commit that updates this file.
+## Suggested order
+
+`#1` (incl. BSC tables from `#4`) → `#2` (incl. EIP-191) → `#3` with `#5` + `#6` required. Do not ship Terra-only as done.
+
+Descriptions on `#1`–`#4` still mention DEX paths; those are design references. Implement in this repo.
