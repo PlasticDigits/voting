@@ -1,0 +1,56 @@
+# --- Environment & secrets ---
+.env
+.env.*
+!.env.example
+!**/.env.example
+*.pem
+*.key
+secrets/
+credentials.json
+
+# --- Rust ---
+**/target/
+**/*.rs.bk
+.sqlx/
+
+# --- Node / frontend ---
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+*.tsbuildinfo
+.npm
+.eslintcache
+
+# Playwright / Vitest
+playwright-report/
+test-results/
+playwright/.cache/
+coverage/
+*.lcov
+
+# --- IDE & editors ---
+.idea/
+*.iml
+.vscode/*
+!.vscode/extensions.json
+*.swp
+*.swo
+*~
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+
+# --- Logs & temp ---
+*.log
+logs/
+tmp/
+temp/
+*.tmp
+*.bak
+*.orig
+
+# --- Local data ---
+pgdata/
+.worktrees/

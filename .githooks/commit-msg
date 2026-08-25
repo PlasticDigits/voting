@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+# shellcheck source=.githooks/lib/validate-commit-message.sh
+source "${REPO_ROOT}/.githooks/lib/validate-commit-message.sh"
+
+validate_commit_message "$1"

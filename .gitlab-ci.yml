@@ -1,0 +1,13 @@
+stages:
+  - lint
+
+lint:gitleaks:
+  stage: lint
+  image:
+    name: ghcr.io/gitleaks/gitleaks:v8.21.2
+    entrypoint: [""]
+  script:
+    - gitleaks detect --source . --config .gitleaks.toml --verbose --redact
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH

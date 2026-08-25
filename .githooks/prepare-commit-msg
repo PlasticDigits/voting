@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Strip agent-injected Co-authored-by trailers and email lines from the body
+# before commit-msg validation.
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+# shellcheck source=.githooks/lib/validate-commit-message.sh
+source "${REPO_ROOT}/.githooks/lib/validate-commit-message.sh"
+
+strip_commit_message_file "$1"

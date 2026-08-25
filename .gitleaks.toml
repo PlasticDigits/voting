@@ -1,0 +1,19 @@
+# Gitleaks config for PlasticDigits/voting
+# https://github.com/gitleaks/gitleaks
+
+title = "voting"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Examples, docs, and documented public contract addresses"
+
+paths = [
+  '''(?i)\.env\.example$''',
+  '''(?i)^\.gitlab-ci\.yml$''',
+  '''(?i)^README\.md$''',
+  '''(?i)^AGENTS\.md$''',
+  '''(?i)^docs/''',
+  '''(?i)^skills/''',
+]
