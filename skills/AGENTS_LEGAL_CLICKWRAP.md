@@ -35,9 +35,9 @@ Use `@plasticdigits/cl8y-clickwrap` (`TermsGate` / `createClient`). **Do not** r
 3. **Two networks.** Connected Terra wallet → `network="TerraClassic"` (`TERRA_CLASSIC`). Connected EVM wallet → `network="EVM"`. Never check the wrong network for the connected account.
 4. **Fail closed** after connect if status is unknown/error. Disconnected browse is OK.
 5. **Redirect safety.** Sanitize `redirect_uri`; allowlist the voting origin. Portal allowlist remains authoritative.
-6. **CSP.** Production `connect-src` includes Legal API + terms origin. No blanket `https:`.
+6. **CSP.** Production `connect-src` includes Legal API + terms origin + operator-voting. No blanket `https:`. Coolify image stamps [`../deploy/docker/frontend.security-headers.conf`](../deploy/docker/frontend.security-headers.conf) (Legal C6 / O3). Do not add `connect-src https:` in Coolify nginx extras.
 7. **Secrets.** No Legal `ADMIN_TOKEN` in this frontend.
-8. **E2E hatch.** `VITE_PLAYWRIGHT_E2E=true` may skip the gate in Playwright `webServer` only. Production / Coolify unset.
+8. **E2E hatch.** `VITE_PLAYWRIGHT_E2E=true` may skip the gate in Playwright `webServer` only. Production / Coolify unset — [`../frontend/src/utils/prodEnvGuards.ts`](../frontend/src/utils/prodEnvGuards.ts) and the frontend Dockerfile fail the build if it is set.
 9. **Copy.** Legal is terms evidence, not a substitute for “votes are offchain / advisory” disclosure.
 
 ## Ops (Legal repo — often a separate change)

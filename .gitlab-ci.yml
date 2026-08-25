@@ -22,6 +22,30 @@ test:rust:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
 
+test:rust-integration:
+  stage: test
+  image: rust:1.85
+  services:
+    - name: postgres:16-alpine
+      alias: postgres
+  variables:
+    POSTGRES_USER: voting
+    POSTGRES_PASSWORD: voting
+    POSTGRES_DB: voting
+    LEDGER_TEST_DATABASE_URL: postgres://voting:voting@postgres:5432/voting
+  before_script:
+    - apt-get update && apt-get install -y --no-install-recommends pkg-config libssl-dev postgresql-client
+    - |
+      for i in $(seq 1 30); do
+        pg_isready -h postgres -U voting -d voting && break
+        sleep 2
+      done
+  script:
+    - cargo test --workspace --tests -- --test-threads=1
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
 test:frontend:
   stage: test
   image: node:22

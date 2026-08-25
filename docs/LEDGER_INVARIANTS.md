@@ -42,7 +42,7 @@ A large transfer into a registered wallet immediately before a proposal snapshot
 
 ## L10 — Least privilege
 
-Balance functions are `SECURITY DEFINER`. `operator_voting` gets `EXECUTE` on the functions plus `SELECT` on `voting_registrations` / `indexer_state` and R/W on schema `voting`. It must not `INSERT` ledger transfer/checkpoint tables. See [../deploy/grants.sql](../deploy/grants.sql). Coolify: ledger writer applies migrations; `operator-voting` must not (`APPLY_MIGRATIONS=false` in prod). [OPS.md](OPS.md) O1–O2.
+Balance functions are `SECURITY DEFINER` in schema **`public`**. Always call / `GRANT EXECUTE` `public.voting_cl8y_balance_at` and `public.voting_bsc_cl8y_balance_at`. The writer role is often named `voting` and control-plane tables live in schema `voting`, so Postgres `search_path` `"$user", public` would otherwise create or grant a **shadow copy** in schema `voting`. `operator_voting` gets `EXECUTE` on the public functions plus `SELECT` on `voting_registrations` / `indexer_state` and R/W on **tables** in schema `voting` (`USAGE` only — no `CREATE`). It must not `INSERT` ledger transfer/checkpoint tables. See [../deploy/grants.sql](../deploy/grants.sql) (CONNECT follows `current_database()`). Coolify: ledger writer applies migrations; `operator-voting` must not (`APPLY_MIGRATIONS=false`; prod refuses true). Privilege tests apply that file with `psql -d`. [OPS.md](OPS.md) O1–O2.
 
 ## L11 — Registration handoff
 

@@ -23,7 +23,8 @@ See [`.env.example`](./.env.example). Copy to `.env.local`.
 
 ## Coolify
 
-- Unset `VITE_PLAYWRIGHT_E2E` and `VITE_DEV_MNEMONIC` on production builds (`vite.config.ts` and [`../deploy/docker/frontend.Dockerfile`](../deploy/docker/frontend.Dockerfile) fail the build otherwise).
+- Unset `VITE_PLAYWRIGHT_E2E`, `VITE_DEV_MNEMONIC`, and any `VITE_*` BSC RPC on production builds (`prodEnvGuards` + [`../deploy/docker/frontend.Dockerfile`](../deploy/docker/frontend.Dockerfile) fail the build otherwise).
+- Production nginx CSP is stamped from [`../deploy/docker/frontend.security-headers.conf`](../deploy/docker/frontend.security-headers.conf) (Legal + operator-voting origins; no blanket `https:`).
 - Point `VITE_OPERATOR_VOTING_URL` at the public operator-voting origin.
 - Register Legal property `vote.cl8y.com` in [cl8y-ecosystem-legal](https://gitlab.com/PlasticDigits/cl8y-ecosystem-legal) (interactive admin token — never `ADMIN_TOKEN` in this app).
 - Add `https://vote.cl8y.com` to Legal `CORS_ORIGINS` and portal `VITE_REDIRECT_URI_ALLOWLIST`.
@@ -31,7 +32,7 @@ See [`.env.example`](./.env.example). Copy to `.env.local`.
 
 ## CSP `connect-src`
 
-Production `connect-src` must list explicit origins — **no blanket `https:`**:
+The Coolify image stamps [`../deploy/docker/frontend.security-headers.conf`](../deploy/docker/frontend.security-headers.conf) (Legal C6 / O3). Production `connect-src` must list explicit origins — **no blanket `https:`**:
 
 - Legal API (`https://api.terms.cl8y.com` or your `VITE_LEGAL_API_BASE_URL`)
 - Legal portal (`https://terms.cl8y.com` or your `VITE_LEGAL_TERMS_BASE_URL`)
@@ -46,7 +47,7 @@ Connected wallets must accept CL8Y Legal before propose / vote CTAs. Browse whil
 ## Signing
 
 - Client signs a canonical JSON payload (`app: "cl8y-voting"`, purpose-separated).
-- `body_hash` is SHA-256 hex of the HTML the client submits after a local script/`on*` strip. **operator-voting sanitizes with ammonia and compares the signed hash to the sanitized body.** TipTap should not emit scripts; if hashes diverge, the server is source of truth.
+- `body_hash` is SHA-256 hex of the HTML the client **submits** (after a local script/`on*` strip). operator-voting hashes that submitted body, then stores ammonia-sanitized HTML. Ammonia is not part of the signed hash — keep the client strip close to the allowlist so TipTap markup stays stable.
 - Terra: `window.keplr.signArbitrary` (clear error if missing). Simulated wallet uses cosmes `MnemonicWallet.signArbitrary` (ADR-36).
 - EVM: wagmi / viem `personal_sign`. Simulated EVM uses the wagmi mock connector.
 

@@ -1,4 +1,5 @@
-//! Restricted role can read balance functions and cannot write ledger tables.
+//! Apply `deploy/grants.sql` (O1 / L10) and assert the restricted role
+//! can read balance functions + write `voting.*` but cannot write ledger ingest.
 
 use sqlx::PgPool;
 
@@ -9,8 +10,40 @@ fn test_db_url() -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
+const GRANTS_SQL: &str = include_str!("../../deploy/grants.sql");
+
+#[test]
+fn grants_sql_is_least_privilege() {
+    assert!(
+        GRANTS_SQL.contains("REVOKE INSERT, UPDATE, DELETE, TRUNCATE"),
+        "Coolify grants must revoke ledger writes"
+    );
+    for table in [
+        "voting_registrations",
+        "cl8y_balances",
+        "cl8y_bsc_balances",
+        "cl8y_cw20_transfers",
+        "cl8y_bep20_transfers",
+        "indexer_state",
+    ] {
+        assert!(GRANTS_SQL.contains(table), "grants.sql must mention {table}");
+    }
+    assert!(
+        !GRANTS_SQL.contains("GRANT ALL ON SCHEMA voting"),
+        "CREATE on schema voting is not least privilege (USAGE only)"
+    );
+    assert!(
+        GRANTS_SQL.contains("current_database()"),
+        "CONNECT grant must follow the database the file is applied to"
+    );
+    assert!(
+        GRANTS_SQL.contains("public.voting_cl8y_balance_at"),
+        "EXECUTE must target public.* (role voting + schema voting shadows search_path)"
+    );
+}
+
 #[tokio::test]
-async fn restricted_role_cannot_write_ledger() {
+async fn restricted_role_from_grants_sql_cannot_write_ledger() {
     let Some(url) = test_db_url() else {
         eprintln!("skip: set LEDGER_TEST_DATABASE_URL");
         return;
@@ -20,69 +53,95 @@ async fn restricted_role_cannot_write_ledger() {
         .expect("advisory lock");
     let admin = PgPool::connect(&url).await.unwrap();
     voting_ledger::db::migrate(&admin).await.unwrap();
-    operator_voting::db::migrate(&admin).await.unwrap();
 
-    sqlx::query(
-        r#"
-        DO $$
-        BEGIN
-          IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'operator_voting_test') THEN
-            CREATE ROLE operator_voting_test LOGIN PASSWORD 'operator_voting_test';
-          END IF;
-        END
-        $$;
-        "#,
-    )
-    .execute(&admin)
-    .await
-    .unwrap();
+    // Coolify applies this file with psql (DO blocks + multiple GRANTs).
+    // sqlx pool execute / raw_sql is not that path and can stop after the first statement.
+    apply_grants_sql(&url);
 
-    sqlx::query("GRANT USAGE ON SCHEMA public TO operator_voting_test")
-        .execute(&admin)
+    let restricted_url = rewrite_user(&url, "operator_voting", "change-me-in-prod");
+    let restricted = PgPool::connect(&restricted_url)
         .await
-        .unwrap();
-    sqlx::query("GRANT USAGE ON SCHEMA voting TO operator_voting_test")
-        .execute(&admin)
-        .await
-        .unwrap();
-    sqlx::query("GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO operator_voting_test")
-        .execute(&admin)
-        .await
-        .unwrap();
-    sqlx::query("GRANT ALL ON ALL TABLES IN SCHEMA voting TO operator_voting_test")
-        .execute(&admin)
-        .await
-        .unwrap();
-    sqlx::query("REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON voting_registrations, cl8y_balances, cl8y_bsc_balances FROM operator_voting_test")
-        .execute(&admin)
-        .await
-        .unwrap();
+        .expect("operator_voting login from deploy/grants.sql");
 
-    let restricted_url = rewrite_user(&url, "operator_voting_test", "operator_voting_test");
-    let restricted = match PgPool::connect(&restricted_url).await {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!("skip privilege login: {e}");
-            return;
-        }
-    };
-
-    let read = sqlx::query_scalar::<_, String>("SELECT voting_cl8y_balance_at('terra1missing', 1)::text")
+    let read = sqlx::query_scalar::<_, String>("SELECT public.voting_cl8y_balance_at('terra1missing', 1)::text")
         .fetch_one(&restricted)
         .await;
-    assert!(read.is_ok(), "{read:?}");
+    assert!(read.is_ok(), "restricted role must EXECUTE balance functions: {read:?}");
 
-    let write = sqlx::query(
+    let write_bal = sqlx::query(
         "INSERT INTO cl8y_balances (wallet_address, height, balance) VALUES ('x', 1, 1)",
     )
     .execute(&restricted)
     .await;
-    assert!(write.is_err(), "restricted role must not write ledger tables");
+    assert!(write_bal.is_err(), "restricted role must not write cl8y_balances");
+
+    let write_xfer = sqlx::query(
+        "INSERT INTO cl8y_cw20_transfers (height, tx_hash, from_address, to_address, amount, action) VALUES (1, 'h', 'a', 'b', 1, 'transfer')",
+    )
+    .execute(&restricted)
+    .await;
+    assert!(write_xfer.is_err(), "restricted role must not write cl8y_cw20_transfers");
+
+    let write_state = sqlx::query(
+        "UPDATE indexer_state SET value = '9' WHERE key = 'last_indexed_height'",
+    )
+    .execute(&restricted)
+    .await;
+    assert!(write_state.is_err(), "restricted role must not write indexer_state");
+
+    let write_reg = sqlx::query(
+        "INSERT INTO voting_registrations (chain, wallet_address, registered_at_height, initial_balance) VALUES ('terra', 'terra1x', 1, 1)",
+    )
+    .execute(&restricted)
+    .await;
+    assert!(write_reg.is_err(), "restricted role must not insert voting_registrations");
+
+    let sig_ok = sqlx::query(
+        r#"
+        INSERT INTO voting.signatures (id, chain, wallet_address, signature, payload_hash, purpose)
+        VALUES (gen_random_uuid(), 'terra', 'terra1test', 'sig', 'hash', 'register')
+        "#,
+    )
+    .execute(&restricted)
+    .await;
+    assert!(sig_ok.is_ok(), "restricted role must write voting.signatures: {sig_ok:?}");
+
+    let create = sqlx::query("CREATE TABLE voting.should_not_exist (id int)")
+        .execute(&restricted)
+        .await;
+    assert!(create.is_err(), "restricted role must not CREATE in schema voting");
+}
+
+fn apply_grants_sql(url: &str) {
+    let output = std::process::Command::new("psql")
+        .args(["-v", "ON_ERROR_STOP=1", "--no-psqlrc", "-X", "-d", url])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .and_then(|mut child| {
+            use std::io::Write;
+            child
+                .stdin
+                .as_mut()
+                .expect("psql stdin")
+                .write_all(GRANTS_SQL.as_bytes())?;
+            child.wait_with_output()
+        })
+        .expect("psql must be on PATH to apply deploy/grants.sql (postgresql-client)");
+    assert!(
+        output.status.success(),
+        "psql deploy/grants.sql failed:\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 fn rewrite_user(url: &str, user: &str, pass: &str) -> String {
-    // postgresql://user:pass@host/db → swap user/pass
-    if let Some(rest) = url.strip_prefix("postgres://").or_else(|| url.strip_prefix("postgresql://")) {
+    if let Some(rest) = url
+        .strip_prefix("postgres://")
+        .or_else(|| url.strip_prefix("postgresql://"))
+    {
         if let Some(at) = rest.find('@') {
             let after_at = &rest[at..];
             return format!("postgresql://{user}:{pass}{after_at}");

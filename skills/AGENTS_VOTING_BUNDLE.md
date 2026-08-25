@@ -37,7 +37,7 @@ dApp UI can stub the API with MSW in parallel, but production “done” require
 | #1 + #4 ledger | [`ledger/`](../ledger/) · [`docs/LEDGER_INVARIANTS.md`](../docs/LEDGER_INVARIANTS.md) (L1–L11) |
 | #2 + EIP-191 | [`operator-voting/`](../operator-voting/) · [`docs/OPERATOR_VOTING.md`](../docs/OPERATOR_VOTING.md) |
 | #3 + #5 + #6 | [`frontend/`](../frontend/) · [`docs/FRONTEND.md`](../docs/FRONTEND.md) |
-| #7 ops | [`docs/OPS.md`](../docs/OPS.md) · [`deploy/docker/`](../deploy/docker/) · [`operator-voting/src/rate_limit.rs`](../operator-voting/src/rate_limit.rs) |
+| #7 ops | [`docs/OPS.md`](../docs/OPS.md) · [`deploy/docker/`](../deploy/docker/) · [`deploy/grants.sql`](../deploy/grants.sql) · [`operator-voting/src/rate_limit.rs`](../operator-voting/src/rate_limit.rs) · [`frontend/src/utils/prodEnvGuards.ts`](../frontend/src/utils/prodEnvGuards.ts) · [`AGENTS_OPS_STAGING.md`](AGENTS_OPS_STAGING.md) |
 
 ## Files in this repo to read first
 

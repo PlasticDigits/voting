@@ -5,8 +5,9 @@
 #     -t voting-frontend .
 #
 # Invariants: never pass VITE_PLAYWRIGHT_E2E, VITE_DEV_MNEMONIC, or any
-# VITE_* BSC JSON-RPC URL. vite.config.ts also fails the production build
-# if the Legal hatch is enabled. See docs/OPS.md and docs/FRONTEND.md.
+# VITE_* BSC JSON-RPC URL. vite.config.ts (prodEnvGuards) also fails the
+# production build if those are set. Runtime stamps CSP origins from
+# frontend.security-headers.conf (Legal C6). See docs/OPS.md and docs/FRONTEND.md.
 
 FROM node:22-bookworm-slim AS builder
 
@@ -53,8 +54,28 @@ RUN test -n "$VITE_OPERATOR_VOTING_URL" \
 
 FROM nginx:1.27-alpine AS runtime
 
+ARG VITE_OPERATOR_VOTING_URL
+ARG VITE_LEGAL_API_BASE_URL=https://api.terms.cl8y.com
+ARG VITE_LEGAL_TERMS_BASE_URL=https://terms.cl8y.com
+
 COPY deploy/docker/frontend.nginx.conf /etc/nginx/conf.d/default.conf
+COPY deploy/docker/frontend.security-headers.conf /etc/nginx/snippets/voting-security-headers.conf
 COPY --from=builder /app/dist /usr/share/nginx/html
+
+# Legal C6 / O3: stamp explicit connect-src origins. No blanket https:.
+RUN set -eu; \
+    op=$(printf '%s' "$VITE_OPERATOR_VOTING_URL" | sed -E 's|^(https://[^/]+).*|\1|'); \
+    api=$(printf '%s' "$VITE_LEGAL_API_BASE_URL" | sed -E 's|/*$||'); \
+    terms=$(printf '%s' "$VITE_LEGAL_TERMS_BASE_URL" | sed -E 's|/*$||'); \
+    test -n "$op"; \
+    test -n "$api"; \
+    test -n "$terms"; \
+    sed -i \
+      -e "s|__OPERATOR_ORIGIN__|$op|g" \
+      -e "s|__LEGAL_API_ORIGIN__|$api|g" \
+      -e "s|__LEGAL_TERMS_ORIGIN__|$terms|g" \
+      /etc/nginx/snippets/voting-security-headers.conf \
+    && nginx -t
 
 EXPOSE 80
 

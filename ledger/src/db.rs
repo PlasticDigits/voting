@@ -114,8 +114,8 @@ pub async fn registered_set(pool: &PgPool, chain: Chain) -> LedgerResult<Vec<Str
 pub async fn balance_at(pool: &PgPool, chain: Chain, wallet: &str, height: i64) -> LedgerResult<BigInt> {
     let wallet = normalize_wallet(chain, wallet)?;
     let fn_name = match chain {
-        Chain::Terra => "voting_cl8y_balance_at",
-        Chain::Bsc => "voting_bsc_cl8y_balance_at",
+        Chain::Terra => "public.voting_cl8y_balance_at",
+        Chain::Bsc => "public.voting_bsc_cl8y_balance_at",
     };
     let sql = format!("SELECT {fn_name}($1, $2)::text");
     let raw: String = sqlx::query_scalar(&sql)
@@ -244,8 +244,8 @@ async fn tip_balance_in_tx(
     wallet: &str,
 ) -> LedgerResult<BigInt> {
     let fn_name = match chain {
-        Chain::Terra => "voting_cl8y_balance_at",
-        Chain::Bsc => "voting_bsc_cl8y_balance_at",
+        Chain::Terra => "public.voting_cl8y_balance_at",
+        Chain::Bsc => "public.voting_bsc_cl8y_balance_at",
     };
     // i64::MAX as "tip" — function returns latest checkpoint or initial.
     let sql = format!("SELECT {fn_name}($1, $2)::text");

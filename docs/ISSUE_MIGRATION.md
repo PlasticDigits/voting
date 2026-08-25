@@ -29,4 +29,4 @@ DEX tracking stub (closed): [#637](https://gitlab.com/PlasticDigits/cl8y-dex-ter
 
 Descriptions on `#1`–`#4` still mention DEX paths; those are design references. Implement in this repo.
 
-Implementation: `feat/voting-bundle` — [`docs/HANDOFF.md`](HANDOFF.md), [`LEDGER_INVARIANTS.md`](LEDGER_INVARIANTS.md), [`OPERATOR_VOTING.md`](OPERATOR_VOTING.md), [`FRONTEND.md`](FRONTEND.md). Ops leftovers: [`OPS.md`](OPS.md) · skill [`../skills/AGENTS_OPS_STAGING.md`](../skills/AGENTS_OPS_STAGING.md).
+Implementation: `feat/voting-bundle` — [`HANDOFF.md`](HANDOFF.md), [`LEDGER_INVARIANTS.md`](LEDGER_INVARIANTS.md), [`OPERATOR_VOTING.md`](OPERATOR_VOTING.md), [`FRONTEND.md`](FRONTEND.md). Ops leftovers: [`OPS.md`](OPS.md) · skill [`../skills/AGENTS_OPS_STAGING.md`](../skills/AGENTS_OPS_STAGING.md). In-tree #7 extras (grants fidelity, prod migrate refuse, CSP, O3/O4 guards, CI integration) stay on `main`; Coolify / Legal admin / live wallets still block close.

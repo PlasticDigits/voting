@@ -145,14 +145,30 @@ mod tests {
         resp.status()
     }
 
+    async fn post_response(app: Router, ip: &str) -> axum::http::Response<Body> {
+        app.oneshot(
+            Request::post("/v1/register")
+                .header("x-forwarded-for", ip)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap()
+    }
+
     #[tokio::test]
     async fn posts_over_burst_return_429() {
         let state = RateLimitState::new(2, 2, true);
         let router = app(state);
         assert_eq!(post_from(router.clone(), "203.0.113.9").await, StatusCode::OK);
         assert_eq!(post_from(router.clone(), "203.0.113.9").await, StatusCode::OK);
-        let limited = post_from(router.clone(), "203.0.113.9").await;
-        assert_eq!(limited, StatusCode::TOO_MANY_REQUESTS);
+        let limited = post_response(router.clone(), "203.0.113.9").await;
+        assert_eq!(limited.status(), StatusCode::TOO_MANY_REQUESTS);
+        let retry = limited
+            .headers()
+            .get(axum::http::header::RETRY_AFTER)
+            .and_then(|v| v.to_str().ok());
+        assert!(retry.is_some(), "O-RL: 429 must include Retry-After");
         // Different client is a different bucket (O-RL1 keyed by IP).
         assert_eq!(post_from(router.clone(), "198.51.100.7").await, StatusCode::OK);
         // GET stays open (O-RL2).

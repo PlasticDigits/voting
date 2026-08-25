@@ -2,8 +2,8 @@
 #   docker build -f deploy/docker/operator-voting.Dockerfile -t operator-voting .
 #
 # DATABASE_URL must be postgres://operator_voting:... (deploy/grants.sql).
-# Do not point this image at the ledger writer. APPLY_MIGRATIONS stays unset
-# in prod (defaults false). See docs/OPS.md and docs/OPERATOR_VOTING.md.
+# Do not point this image at the ledger writer. APPLY_MIGRATIONS is pinned
+# false; RUN_MODE=prod also refuses true. See docs/OPS.md and docs/OPERATOR_VOTING.md.
 
 FROM rust:1.85-bookworm AS builder
 
@@ -32,6 +32,7 @@ WORKDIR /app
 
 ENV API_BIND=0.0.0.0:3002 \
     RUN_MODE=prod \
+    APPLY_MIGRATIONS=false \
     RUST_LOG=info
 
 EXPOSE 3002

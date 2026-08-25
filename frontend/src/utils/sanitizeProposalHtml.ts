@@ -1,10 +1,9 @@
 /**
  * Client-side strip aligned with operator-voting's ammonia allowlist.
  *
- * The API hashes the *sanitized* HTML and compares it to the signed `body_hash`.
- * TipTap should not emit scripts; this strip is a belt-and-suspenders so the
- * client signs the same class of HTML the server will hash. Ammonia may still
- * normalize attributes (e.g. `rel` on links). Prefer simple TipTap markup.
+ * The client hashes the HTML it submits. The API hashes that submitted body
+ * (not the ammonia output) and stores ammonia-sanitized HTML. This strip is
+ * belt-and-suspenders so TipTap does not emit scripts. Prefer simple markup.
  */
 const ALLOWED = new Set([
   'P',

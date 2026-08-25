@@ -9,8 +9,8 @@ In-tree ledger / `operator-voting` / `/vote` landed in !1. This document is the 
 | ID | Rule |
 |----|------|
 | **O1** | Three Coolify services: `voting-ledger`, `operator-voting`, dApp. Ledger writer migrates; `operator-voting` uses the restricted role from [`../deploy/grants.sql`](../deploy/grants.sql) (L10). |
-| **O2** | `APPLY_MIGRATIONS` is **false** for `operator-voting` in prod (`RUN_MODE=prod` default). Never give that process `INSERT` on ledger ingest tables. |
-| **O3** | Production / Coolify frontend builds **unset** `VITE_PLAYWRIGHT_E2E` and `VITE_DEV_MNEMONIC`. `vite.config.ts` and [`../deploy/docker/frontend.Dockerfile`](../deploy/docker/frontend.Dockerfile) fail the image if the hatch is on. |
+| **O2** | `APPLY_MIGRATIONS` is **false** for `operator-voting` in prod. The image pins it; `RUN_MODE=prod` **refuses to start** if it is true. Never give that process `INSERT` on ledger ingest tables. Apply [`../deploy/grants.sql`](../deploy/grants.sql) as the DB owner — privilege tests run that file, not a lookalike. |
+| **O3** | Production / Coolify frontend builds **unset** `VITE_PLAYWRIGHT_E2E` and `VITE_DEV_MNEMONIC`. `vite.config.ts` (`prodEnvGuards`) and [`../deploy/docker/frontend.Dockerfile`](../deploy/docker/frontend.Dockerfile) fail the image if the hatch is on. The image stamps an explicit CSP (`connect-src`, no blanket `https:`) from [`../deploy/docker/frontend.security-headers.conf`](../deploy/docker/frontend.security-headers.conf). |
 | **O4** | No `VITE_*` BSC JSON-RPC URL. Indexer / ledger owns `eth_call` / `eth_getLogs`. |
 | **O5** | Connected `/vote` UI stays behind [cl8y-ecosystem-legal](https://gitlab.com/PlasticDigits/cl8y-ecosystem-legal). Property is dedicated (`vote.cl8y.com` proposed — confirm before admin write). |
 | **O6** | `operator-voting` POST endpoints are IP/QPS limited (**O-RL1–O-RL5** in [OPERATOR_VOTING.md](OPERATOR_VOTING.md)) before public expose. Body cap (64 KiB) is not a substitute. |
@@ -32,9 +32,9 @@ Boot order:
 
 1. Create the `voting` database.
 2. Start `voting-ledger` (`RUN_MODE=prod`, writer `DATABASE_URL`, `TERRA_LCD_URL`, `BSC_RPC_URLS`). It applies sqlx migrations.
-3. As the DB owner, apply [`../deploy/grants.sql`](../deploy/grants.sql) and set a real `operator_voting` password (not the file default).
-4. Start `operator-voting` with the restricted URL. Confirm `APPLY_MIGRATIONS` is unset/false. Set `CORS_ORIGINS=https://vote.cl8y.com` (or the staging origin). Set `RATE_LIMIT_TRUST_FORWARDED=true` (Coolify proxy).
-5. Build the dApp with `VITE_OPERATOR_VOTING_URL=https://…` only. Do not pass `VITE_PLAYWRIGHT_E2E`.
+3. As the DB owner, apply [`../deploy/grants.sql`](../deploy/grants.sql) with `psql -v ON_ERROR_STOP=1 -d "$WRITER_URL"`. Set a real `operator_voting` password (not the file default). Privilege tests apply that same file via `psql -d`. `GRANT EXECUTE` must stay on `public.voting_*_balance_at` (L10 search_path).
+4. Start `operator-voting` with the restricted URL. Confirm `APPLY_MIGRATIONS` is unset/false (image default; prod config refuses true). Set `CORS_ORIGINS=https://vote.cl8y.com` (or the staging origin). Set `RATE_LIMIT_TRUST_FORWARDED=true` (Coolify proxy).
+5. Build the dApp with `VITE_OPERATOR_VOTING_URL=https://…` only. Do not pass `VITE_PLAYWRIGHT_E2E`, `VITE_DEV_MNEMONIC`, or any `VITE_*` BSC RPC. The image writes Legal + API origins into nginx CSP.
 
 `GET /health` on ledger and API must be 200 before opening DNS.
 
@@ -72,7 +72,7 @@ Wrong-chain MetaMask (not 56) and missing `signArbitrary` must show the existing
 | `RATE_LIMIT_POST_BURST` | `20` | Burst tokens |
 | `RATE_LIMIT_TRUST_FORWARDED` | `true` when `RUN_MODE=prod` | Trust Coolify `X-Forwarded-For` |
 
-`RUN_MODE=prod` refuses to start if the quota is `0`. GET `/health` is unlimited. Quota is **per replica** (O-RL5).
+`RUN_MODE=prod` refuses to start if the quota is `0` **or** `APPLY_MIGRATIONS` is true. GET `/health` is unlimited. Quota is **per replica** (O-RL5). A 429 includes `Retry-After`.
 
 ## 5. LocalTerra / LCD equality (optional)
 

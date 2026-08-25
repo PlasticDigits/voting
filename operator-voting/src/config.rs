@@ -60,7 +60,12 @@ impl VotingConfig {
             Ok(v) => parse_bool(&v),
             Err(_) => run_mode == "prod",
         };
-        validate_prod_guards(&run_mode, &cors_origins, rate_limit_post_per_minute)?;
+        validate_prod_guards(
+            &run_mode,
+            &cors_origins,
+            rate_limit_post_per_minute,
+            apply_migrations,
+        )?;
         Ok(Self {
             database_url,
             blacklist,
@@ -107,11 +112,12 @@ pub fn parse_bool(raw: &str) -> bool {
     matches!(raw.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on")
 }
 
-/// Prod must set CORS and a non-zero POST quota before public expose (#7).
+/// Prod must set CORS, a non-zero POST quota, and must not own schema (#7 / O2 / O6).
 pub fn validate_prod_guards(
     run_mode: &str,
     cors_origins: &[String],
     rate_limit_post_per_minute: u32,
+    apply_migrations: bool,
 ) -> VotingResult<()> {
     if run_mode != "prod" {
         return Ok(());
@@ -122,6 +128,11 @@ pub fn validate_prod_guards(
     if rate_limit_post_per_minute == 0 {
         return Err(VotingError::InvalidConfig(
             "prod requires RATE_LIMIT_POST_PER_MINUTE > 0".into(),
+        ));
+    }
+    if apply_migrations {
+        return Err(VotingError::InvalidConfig(
+            "prod must leave APPLY_MIGRATIONS unset/false (ledger writer owns schema)".into(),
         ));
     }
     Ok(())
@@ -142,10 +153,11 @@ mod tests {
 
     #[test]
     fn prod_requires_cors_and_post_quota() {
-        assert!(validate_prod_guards("dev", &[], 0).is_ok());
-        assert!(validate_prod_guards("prod", &[], 60).is_err());
-        assert!(validate_prod_guards("prod", &["https://vote.cl8y.com".into()], 0).is_err());
-        assert!(validate_prod_guards("prod", &["https://vote.cl8y.com".into()], 60).is_ok());
+        assert!(validate_prod_guards("dev", &[], 0, true).is_ok());
+        assert!(validate_prod_guards("prod", &[], 60, false).is_err());
+        assert!(validate_prod_guards("prod", &["https://vote.cl8y.com".into()], 0, false).is_err());
+        assert!(validate_prod_guards("prod", &["https://vote.cl8y.com".into()], 60, true).is_err());
+        assert!(validate_prod_guards("prod", &["https://vote.cl8y.com".into()], 60, false).is_ok());
     }
 
     #[test]

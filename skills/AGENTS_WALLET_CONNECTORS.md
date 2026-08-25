@@ -58,7 +58,7 @@ Voting on EVM is **BSC (`eip155:56`)** for CL8Y BEP-20. Bridge also speaks opBNB
 
 Use **EIP-191 `personal_sign`** for register / propose / vote. Injected/WC provider is for connect + sign only.
 
-**No `VITE_*` BSC JSON-RPC URLs** for balance reads (same hygiene as DEX #571 V571-5). Ledger service owns `eth_call` / `eth_getLogs`.
+**No `VITE_*` BSC JSON-RPC URLs** for balance reads (same hygiene as DEX #571 V571-5). Ledger service owns `eth_call` / `eth_getLogs`. Production builds refuse those envs ([`../frontend/src/utils/prodEnvGuards.ts`](../frontend/src/utils/prodEnvGuards.ts) / O4). Live staging QA: [`docs/OPS.md`](../docs/OPS.md) §3 · [`AGENTS_OPS_STAGING.md`](AGENTS_OPS_STAGING.md).
 
 ## Legal portal is not a wallet
 

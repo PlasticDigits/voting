@@ -48,8 +48,8 @@ pub async fn ledger_registration(
 pub async fn balance_at(pool: &PgPool, chain: &str, wallet: &str, height: i64) -> VotingResult<BigInt> {
     let wallet = normalize_address(wallet);
     let sql = match chain {
-        "terra" => "SELECT voting_cl8y_balance_at($1, $2)::text",
-        "bsc" => "SELECT voting_bsc_cl8y_balance_at($1, $2)::text",
+        "terra" => "SELECT public.voting_cl8y_balance_at($1, $2)::text",
+        "bsc" => "SELECT public.voting_bsc_cl8y_balance_at($1, $2)::text",
         _ => return Err(VotingError::BadRequest("unknown chain".into())),
     };
     let raw: String = sqlx::query_scalar(sql)
@@ -183,8 +183,8 @@ async fn freeze_snapshot(
         INSERT INTO voting.proposal_snapshots (proposal_id, chain, wallet_address, weight)
         SELECT $1, chain, wallet_address,
                CASE chain
-                 WHEN 'terra' THEN voting_cl8y_balance_at(wallet_address, $2)
-                 WHEN 'bsc' THEN voting_bsc_cl8y_balance_at(wallet_address, $3)
+                 WHEN 'terra' THEN public.voting_cl8y_balance_at(wallet_address, $2)
+                 WHEN 'bsc' THEN public.voting_bsc_cl8y_balance_at(wallet_address, $3)
                END
         FROM voting_registrations
         WHERE status = 'active'

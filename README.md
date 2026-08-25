@@ -45,6 +45,8 @@ LEDGER_TEST_DATABASE_URL=postgres://voting:voting@127.0.0.1:5433/voting cargo te
 cd frontend && npm test && npm run test:e2e
 ```
 
+CI also runs `test:rust-integration` against Postgres 16 (applies [`deploy/grants.sql`](deploy/grants.sql)).
+
 ## Docs for agents
 
 | Doc | When to read |

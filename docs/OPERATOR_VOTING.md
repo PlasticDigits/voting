@@ -66,11 +66,11 @@ Proposal bodies are stored after [ammonia](https://docs.rs/ammonia) allowlist (`
 | **O-RL4** | `X-Forwarded-For` / `X-Real-IP` trusted only when `RATE_LIMIT_TRUST_FORWARDED` is on (Coolify / prod default). |
 | **O-RL5** | Counters are in-process per replica. |
 
-`RUN_MODE=prod` refuses `RATE_LIMIT_POST_PER_MINUTE=0`. Defaults: 60 POST/min, burst 20.
+`RUN_MODE=prod` refuses `RATE_LIMIT_POST_PER_MINUTE=0`. Defaults: 60 POST/min, burst 20. A 429 response includes `Retry-After`.
 
 ## Migrations
 
-sqlx migrations live in the ledger crate. `operator-voting` applies them only when `APPLY_MIGRATIONS` is true (dev default). Prod (`RUN_MODE=prod`) defaults to **false** so the restricted role never owns schema. See [OPS.md](OPS.md) O1–O2.
+sqlx migrations live in the ledger crate. `operator-voting` applies them only when `APPLY_MIGRATIONS` is true (dev default). Prod (`RUN_MODE=prod`) defaults to **false**, the Coolify image pins `APPLY_MIGRATIONS=false`, and config **refuses to start** if prod tries to migrate — the restricted role never owns schema. Coolify applies [`../deploy/grants.sql`](../deploy/grants.sql) after the ledger writer migrates (`USAGE` on `voting`, not `CREATE`). See [OPS.md](OPS.md) O1–O2.
 
 ## Env
 

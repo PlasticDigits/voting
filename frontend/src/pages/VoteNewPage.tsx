@@ -81,7 +81,7 @@ export default function VoteNewPage() {
         <h1>New proposal</h1>
         <p className="lede">
           Server is the source of truth for the {MIN_PROPOSAL_CL8Y} CL8Y gate. You sign a hash of the HTML you submit;
-          operator-voting sanitizes then compares.
+          operator-voting checks that hash, then stores ammonia-sanitized HTML.
         </p>
         {balance != null && (
           <p data-testid="propose-balance">
