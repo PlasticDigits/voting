@@ -9,6 +9,7 @@ import { sanitizeProposalHtml, sha256Hex } from '@/utils/sanitizeProposalHtml'
 import { canPropose } from '@/utils/votingPayload'
 import { MIN_PROPOSAL_CL8Y, MIN_PROPOSAL_RAW } from '@/utils/constants'
 import { formatCl8y } from '@/utils/format'
+import { ROUTES } from '@/routes'
 
 export default function VoteNewPage() {
   const { address, chain } = useConnectedIdentity()
@@ -58,7 +59,7 @@ export default function VoteNewPage() {
         body_hash,
       })
       const created = await createProposal({ ...signed, title, body_html })
-      navigate(`/vote/${created.id}`)
+      navigate(ROUTES.proposal(created.id))
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Propose failed')
     } finally {
@@ -70,7 +71,7 @@ export default function VoteNewPage() {
     return (
       <div className="panel">
         <p>Connect a wallet to create a proposal.</p>
-        <Link to="/vote">Back to proposals</Link>
+        <Link to={ROUTES.list}>Back to proposals</Link>
       </div>
     )
   }

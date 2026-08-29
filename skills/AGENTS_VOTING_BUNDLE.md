@@ -36,8 +36,11 @@ dApp UI can stub the API with MSW in parallel, but production “done” require
 |-------|------|
 | #1 + #4 ledger | [`ledger/`](../ledger/) · [`docs/LEDGER_INVARIANTS.md`](../docs/LEDGER_INVARIANTS.md) (L1–L11) |
 | #2 + EIP-191 | [`operator-voting/`](../operator-voting/) · [`docs/OPERATOR_VOTING.md`](../docs/OPERATOR_VOTING.md) |
-| #3 + #5 + #6 | [`frontend/`](../frontend/) · [`docs/FRONTEND.md`](../docs/FRONTEND.md) |
+| #3 + #5 + #6 + #8 | [`frontend/`](../frontend/) · [`docs/FRONTEND.md`](../docs/FRONTEND.md) · [`deploy/docker/frontend.nginx.conf`](../deploy/docker/frontend.nginx.conf) |
 | #7 ops | [`docs/OPS.md`](../docs/OPS.md) · [`deploy/docker/`](../deploy/docker/) · [`deploy/grants.sql`](../deploy/grants.sql) · [`operator-voting/src/rate_limit.rs`](../operator-voting/src/rate_limit.rs) · [`frontend/src/utils/prodEnvGuards.ts`](../frontend/src/utils/prodEnvGuards.ts) · [`AGENTS_OPS_STAGING.md`](AGENTS_OPS_STAGING.md) |
+| #8 Legal `/vote` 404 | [`frontend/src/routes.ts`](../frontend/src/routes.ts) · [`deploy/docker/frontend.nginx.conf`](../deploy/docker/frontend.nginx.conf) · [`docs/FRONTEND.md`](../docs/FRONTEND.md) · O8 in [`docs/OPS.md`](../docs/OPS.md) · [`AGENTS_LEGAL_CLICKWRAP.md`](AGENTS_LEGAL_CLICKWRAP.md) |
+| #8 Legal `/vote` 404 | [`frontend/src/routes.ts`](../frontend/src/routes.ts) · [`deploy/docker/frontend.nginx.conf`](../deploy/docker/frontend.nginx.conf) · [`docs/FRONTEND.md`](../docs/FRONTEND.md) · [`AGENTS_LEGAL_CLICKWRAP.md`](AGENTS_LEGAL_CLICKWRAP.md) |
+| #8 Legal `/vote` 404 | [`frontend/src/routes.ts`](../frontend/src/routes.ts) · [`deploy/docker/frontend.nginx.conf`](../deploy/docker/frontend.nginx.conf) · [`docs/FRONTEND.md`](../docs/FRONTEND.md) · [`AGENTS_LEGAL_CLICKWRAP.md`](AGENTS_LEGAL_CLICKWRAP.md) |
 
 ## Files in this repo to read first
 

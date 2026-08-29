@@ -1,6 +1,6 @@
 # Ops runbook (issue #7)
 
-Cross-links: [HANDOFF.md](HANDOFF.md) · [ARCHITECTURE.md](ARCHITECTURE.md) · [OPERATOR_VOTING.md](OPERATOR_VOTING.md) · [FRONTEND.md](FRONTEND.md) · [LEDGER_INVARIANTS.md](LEDGER_INVARIANTS.md) · skill [AGENTS_OPS_STAGING.md](../skills/AGENTS_OPS_STAGING.md) · Legal [AGENTS_LEGAL_CLICKWRAP.md](../skills/AGENTS_LEGAL_CLICKWRAP.md) · wallets [AGENTS_WALLET_CONNECTORS.md](../skills/AGENTS_WALLET_CONNECTORS.md) · GitLab [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7)
+Cross-links: [HANDOFF.md](HANDOFF.md) · [ARCHITECTURE.md](ARCHITECTURE.md) · [OPERATOR_VOTING.md](OPERATOR_VOTING.md) · [FRONTEND.md](FRONTEND.md) · [LEDGER_INVARIANTS.md](LEDGER_INVARIANTS.md) · skill [AGENTS_OPS_STAGING.md](../skills/AGENTS_OPS_STAGING.md) · Legal [AGENTS_LEGAL_CLICKWRAP.md](../skills/AGENTS_LEGAL_CLICKWRAP.md) · wallets [AGENTS_WALLET_CONNECTORS.md](../skills/AGENTS_WALLET_CONNECTORS.md) · GitLab [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7) · [#8](https://gitlab.com/PlasticDigits/voting/-/issues/8)
 
 In-tree ledger / `operator-voting` / `/vote` landed in !1. This document is the remaining **ops + public-expose** checklist. Do not mark production voting done until every required item below is true on staging.
 
@@ -15,6 +15,7 @@ In-tree ledger / `operator-voting` / `/vote` landed in !1. This document is the 
 | **O5** | Connected `/vote` UI stays behind [cl8y-ecosystem-legal](https://gitlab.com/PlasticDigits/cl8y-ecosystem-legal). Property is dedicated (`vote.cl8y.com` proposed — confirm before admin write). |
 | **O6** | `operator-voting` POST endpoints are IP/QPS limited (**O-RL1–O-RL5** in [OPERATOR_VOTING.md](OPERATOR_VOTING.md)) before public expose. Body cap (64 KiB) is not a substitute. |
 | **O7** | Identity v1 = one address, one voter. Live QA must exercise **Keplr Terra** and **MetaMask BSC 56** separately. |
+| **O8** | SPA documents: `GET /`, `/vote`, `/new`, `/vote/new`, `/vote/:id`, `/:id` return **200** `text/html`. Missing `/assets/*` stay **404**. Coolify must use [`../deploy/docker/frontend.nginx.conf`](../deploy/docker/frontend.nginx.conf) (`try_files $uri /index.html`) or an equivalent edge snippet. HEALTHCHECK probes `/vote` and `/new`, not only `/`. Do not close [#8](https://gitlab.com/PlasticDigits/voting/-/issues/8) while live `/vote` 404s. |
 
 ## 1. Coolify / staging
 
@@ -34,7 +35,15 @@ Boot order:
 2. Start `voting-ledger` (`RUN_MODE=prod`, writer `DATABASE_URL`, `TERRA_LCD_URL`, `BSC_RPC_URLS`). It applies sqlx migrations.
 3. As the DB owner, apply [`../deploy/grants.sql`](../deploy/grants.sql) with `psql -v ON_ERROR_STOP=1 -d "$WRITER_URL"`. Set a real `operator_voting` password (not the file default). Privilege tests apply that same file via `psql -d`. `GRANT EXECUTE` must stay on `public.voting_*_balance_at` (L10 search_path).
 4. Start `operator-voting` with the restricted URL. Confirm `APPLY_MIGRATIONS` is unset/false (image default; prod config refuses true). Set `CORS_ORIGINS=https://vote.cl8y.com` (or the staging origin). Set `RATE_LIMIT_TRUST_FORWARDED=true` (Coolify proxy).
-5. Build the dApp with `VITE_OPERATOR_VOTING_URL=https://…` only. Do not pass `VITE_PLAYWRIGHT_E2E`, `VITE_DEV_MNEMONIC`, or any `VITE_*` BSC RPC. The image writes Legal + API origins into nginx CSP.
+5. Build the dApp with `VITE_OPERATOR_VOTING_URL=https://…` only. Do not pass `VITE_PLAYWRIGHT_E2E`, `VITE_DEV_MNEMONIC`, or any `VITE_*` BSC RPC. The image writes Legal + API origins into nginx CSP. Confirm the service uses [`../deploy/docker/frontend.Dockerfile`](../deploy/docker/frontend.Dockerfile) (nginx 1.27 + `frontend.nginx.conf`). If Coolify’s default static nginx is in front instead, paste the same `try_files $uri /index.html` (and keep `/assets/` as `=404`). Prove:
+
+   ```bash
+   curl -sI https://vote.cl8y.com/vote
+   curl -sI https://vote.cl8y.com/new
+   curl -sI https://vote.cl8y.com/assets/missing.js
+   ```
+
+   `/` and `/vote` and `/new` must be 200 HTML. `/assets/missing.js` must be 404. Live `nginx/1.31.x` without this fallback was the [#8](https://gitlab.com/PlasticDigits/voting/-/issues/8) Legal-return 404.
 
 `GET /health` on ledger and API must be 200 before opening DNS.
 
@@ -94,3 +103,4 @@ These cannot be completed from a repo-only agent:
 - Coolify project create / DNS / TLS / secret install
 - Legal admin property + CORS + portal allowlist write
 - Keplr / MetaMask / mobile WC on a real staging origin
+- Switching the live `vote.cl8y.com` edge to `frontend.nginx.conf` (or equivalent `try_files`) so `/vote` is 200 — in-tree O8 is not a DNS change

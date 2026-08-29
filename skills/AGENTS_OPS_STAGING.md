@@ -2,13 +2,14 @@
 name: voting-ops-staging
 description: >-
   Coolify/staging deploy, Legal property/CORS/allowlist, live Keplr+MetaMask QA,
-  operator-voting POST rate limits, and optional LocalTerra LCD equality.
-  Use when verifying or implementing GitLab voting issue #7 or public expose.
+  operator-voting POST rate limits, SPA document fallback for /vote (issue #8),
+  and optional LocalTerra LCD equality.
+  Use when verifying or implementing GitLab voting issues #7 or #8 or public expose.
 ---
 
 # Ops / staging (voting issue #7)
 
-Read [`docs/OPS.md`](../docs/OPS.md) first. In-tree #1–#6 are not enough for production.
+Read [`docs/OPS.md`](../docs/OPS.md) first. In-tree #1–#6 are not enough for production. [#8](https://gitlab.com/PlasticDigits/voting/-/issues/8) is a production-blocking Legal-return 404 when the edge does not SPA-fallback `/vote`.
 
 This skill is for **3rd-party agents** continuing Coolify, Legal admin, or live wallet QA. Do not invent a fourth deploy path.
 
@@ -24,7 +25,9 @@ This skill is for **3rd-party agents** continuing Coolify, Legal admin, or live 
 | Ledger writer owns migrations | Image pins `APPLY_MIGRATIONS=false`; prod config refuses true |
 | Legal hatch + O4 BSC RPC blocked on prod build | [`frontend/src/utils/prodEnvGuards.ts`](../frontend/src/utils/prodEnvGuards.ts) + frontend Dockerfile |
 | Production CSP (`connect-src`, no blanket `https:`) | [`deploy/docker/frontend.security-headers.conf`](../deploy/docker/frontend.security-headers.conf) |
-| Runbook + invariants O1–O7 | [`docs/OPS.md`](../docs/OPS.md) |
+| SPA `try_files` + HEALTHCHECK `/vote` (O8 / #8) | [`deploy/docker/frontend.nginx.conf`](../deploy/docker/frontend.nginx.conf) · [`deploy/docker/frontend.healthcheck.sh`](../deploy/docker/frontend.healthcheck.sh) · CI `test:frontend-spa-fallback` |
+| Flattened dApp routes + `/vote*` aliases | [`frontend/src/routes.ts`](../frontend/src/routes.ts) · [`docs/FRONTEND.md`](../docs/FRONTEND.md) |
+| Runbook + invariants O1–O8 | [`docs/OPS.md`](../docs/OPS.md) |
 
 ## Do
 
@@ -33,6 +36,7 @@ This skill is for **3rd-party agents** continuing Coolify, Legal admin, or live 
 2b. When applying grants, `GRANT EXECUTE` must name `public.voting_*_balance_at`. The writer role is often `voting` and schema `voting` exists, so unqualified names follow `"$user", public` and miss the SECURITY DEFINER originals (L10).
 3. Live-QA Keplr Terra **and** MetaMask BSC 56 after Legal accept. Wallet skill: [`AGENTS_WALLET_CONNECTORS.md`](AGENTS_WALLET_CONNECTORS.md).
 4. Keep POST rate limits on before public DNS.
+5. Prove SPA fallback (O8 / #8): Coolify dApp service uses `frontend.Dockerfile` / `frontend.nginx.conf`, or stamp `try_files $uri /index.html` on the live nginx. `curl -sI https://vote.cl8y.com/vote` and `/new` must be 200 HTML before Legal Accept QA.
 
 ## Do not
 
@@ -44,6 +48,8 @@ This skill is for **3rd-party agents** continuing Coolify, Legal admin, or live 
 - Treat Playwright Legal-hatch E2E as live wallet QA.
 - Silently merge `terra1…` and `0x…`.
 - Close #7 until Coolify, Legal admin, and both live wallets actually pass on staging.
+- Close #8 while `curl -sI https://vote.cl8y.com/vote` is 404. Flattening `/` is not a substitute for edge `try_files` on `/new` and `/vote/:id`.
+- Use `error_page 404 = /index.html` to hide missing SPA fallback (caches 404).
 
 ## Verification (in-tree)
 
@@ -51,6 +57,9 @@ This skill is for **3rd-party agents** continuing Coolify, Legal admin, or live 
 cargo test --workspace --lib
 LEDGER_TEST_DATABASE_URL=postgres://voting:voting@127.0.0.1:5433/voting cargo test --workspace --tests
 cd frontend && npm test
+sh deploy/docker/test-frontend-spa-fallback.sh
 ```
+
+SPA fallback (O8): `GET /vote` and `GET /new` must be 200 HTML; `GET /assets/missing.js` must be 404. Live check: `curl -sI https://vote.cl8y.com/vote`.
 
 Rate-limit unit tests live in `operator-voting/src/rate_limit.rs` (no Postgres). CI also runs the Postgres integration job (`test:rust-integration` in [`.gitlab-ci.yml`](../.gitlab-ci.yml)).
