@@ -6,7 +6,7 @@ Offchain **CL8Y snapshot voting** for Terra Classic CW20 holders and BNB Smart C
 
 Voting used to be tracked as issues **#509 / #510 / #511 / #588** on [cl8y-dex-terraclassic](https://gitlab.com/PlasticDigits/cl8y-dex-terraclassic). Those issues live here now. Mapping: [`docs/ISSUE_MIGRATION.md`](docs/ISSUE_MIGRATION.md).
 
-Packages: `ledger/` (data plane), `operator-voting/` (control plane), `frontend/` (`/vote`). Invariants: [`docs/LEDGER_INVARIANTS.md`](docs/LEDGER_INVARIANTS.md), [`docs/OPERATOR_VOTING.md`](docs/OPERATOR_VOTING.md), [`docs/FRONTEND.md`](docs/FRONTEND.md). Ops / Coolify / #7: [`docs/OPS.md`](docs/OPS.md).
+Packages: `ledger/` (data plane), `operator-voting/` (control plane), `frontend/` (`/`, `/new`, `/:id`; `/vote*` aliases). Invariants: [`docs/LEDGER_INVARIANTS.md`](docs/LEDGER_INVARIANTS.md), [`docs/OPERATOR_VOTING.md`](docs/OPERATOR_VOTING.md), [`docs/FRONTEND.md`](docs/FRONTEND.md). Ops / Coolify / #7: [`docs/OPS.md`](docs/OPS.md). Legal `/vote` 404 / #8: [`docs/FRONTEND.md`](docs/FRONTEND.md) · [`docs/OPS.md`](docs/OPS.md) O8.
 
 ## Product (short)
 
@@ -43,6 +43,7 @@ cargo test --workspace --lib
 docker compose -f docker-compose.test.yml up -d
 LEDGER_TEST_DATABASE_URL=postgres://voting:voting@127.0.0.1:5433/voting cargo test --workspace --tests
 cd frontend && npm test && npm run test:e2e
+sh deploy/docker/test-frontend-spa-fallback.sh
 ```
 
 CI also runs `test:rust-integration` against Postgres 16 (applies [`deploy/grants.sql`](deploy/grants.sql)).

@@ -4,6 +4,7 @@ import { useConnectedIdentity } from '@/hooks/useConnectedIdentity'
 import { castVote, getProposal, type ProposalDetail } from '@/services/operatorVoting'
 import { signVotingRequest } from '@/services/votingSign'
 import type { VoteChoice } from '@/utils/votingPayload'
+import { ROUTES } from '@/routes'
 
 export default function VoteDetailPage() {
   const { id = '' } = useParams()
@@ -55,7 +56,7 @@ export default function VoteDetailPage() {
   return (
     <div className="page-stack">
       <section className="panel">
-        <Link to="/vote">← All proposals</Link>
+        <Link to={ROUTES.list}>← All proposals</Link>
         {proposal && (
           <>
             <h1>{proposal.title}</h1>

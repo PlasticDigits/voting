@@ -60,3 +60,12 @@ test:frontend:
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+test:frontend-spa-fallback:
+  stage: test
+  image: nginx:1.27-alpine
+  script:
+    - sh deploy/docker/test-frontend-spa-fallback.sh
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH

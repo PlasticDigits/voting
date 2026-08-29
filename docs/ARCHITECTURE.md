@@ -34,13 +34,13 @@
 ```
 ledger/              # Rust: ingest + Postgres migrations + balance functions
 operator-voting/     # Rust Axum: signatures, proposals, votes
-frontend/            # Vite React: /vote
+frontend/            # Vite React: /, /new, /:id (+ /vote* aliases, #8)
 docs/ skills/        # invariants + agent playbooks
 deploy/              # grants.sql, Coolify env, Dockerfiles (issue #7)
 docs/OPS.md          # Coolify / Legal / live QA / rate limits
 ```
 
-Three deployables (ledger worker, API, dApp) and **two** DB roles. Coolify images: [`../deploy/docker/`](../deploy/docker/). Public-expose checklist: [OPS.md](OPS.md) (issue [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7)).
+Three deployables (ledger worker, API, dApp) and **two** DB roles. Coolify images: [`../deploy/docker/`](../deploy/docker/). Public-expose checklist: [OPS.md](OPS.md) (issue [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7)). SPA documents for Legal return: [FRONTEND.md](FRONTEND.md) (issue [#8](https://gitlab.com/PlasticDigits/voting/-/issues/8), invariant O8).
 
 ## Snapshot
 
