@@ -130,7 +130,7 @@ export async function waitForLedgerRegistration(
   const deadline = now() + timeoutMs
   while (now() < deadline) {
     const last = await lookup(address)
-    if (chainRegistration(last, chain)) return last
+    if (last && chainRegistration(last, chain)) return last
     await pause(intervalMs)
   }
   throw new Error('Registration snapshot is still pending. Wait for the ledger, then retry.')
