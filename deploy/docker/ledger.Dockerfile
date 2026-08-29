@@ -4,7 +4,7 @@
 # Coolify: apply sqlx migrations on first boot, then run deploy/grants.sql
 # as the DB owner. See docs/OPS.md.
 
-FROM rust:1.85-bookworm AS builder
+FROM rust:1.88-bookworm AS builder
 
 WORKDIR /build
 RUN apt-get update \

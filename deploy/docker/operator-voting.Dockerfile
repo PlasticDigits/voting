@@ -5,7 +5,7 @@
 # Do not point this image at the ledger writer. APPLY_MIGRATIONS is pinned
 # false; RUN_MODE=prod also refuses true. See docs/OPS.md and docs/OPERATOR_VOTING.md.
 
-FROM rust:1.85-bookworm AS builder
+FROM rust:1.88-bookworm AS builder
 
 WORKDIR /build
 RUN apt-get update \

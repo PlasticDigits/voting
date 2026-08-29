@@ -15,7 +15,7 @@ lint:gitleaks:
 
 test:rust:
   stage: test
-  image: rust:1.85
+  image: rust:1.88
   script:
     - cargo test --workspace --lib --bins
   rules:
@@ -24,7 +24,7 @@ test:rust:
 
 test:rust-integration:
   stage: test
-  image: rust:1.85
+  image: rust:1.88
   services:
     - name: postgres:16-alpine
       alias: postgres
