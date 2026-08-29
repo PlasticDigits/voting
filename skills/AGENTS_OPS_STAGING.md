@@ -20,6 +20,7 @@ This skill is for **3rd-party agents** continuing Coolify, Legal admin, or live 
 | Three Dockerfiles | [`deploy/docker/`](../deploy/docker/) |
 | Restricted DB grants | [`deploy/grants.sql`](../deploy/grants.sql) (`USAGE` on `voting`; CONNECT uses `current_database()`). Apply with `psql -v ON_ERROR_STOP=1`. Privilege tests apply **this file**. |
 | Coolify env sketch | [`deploy/coolify.env.example`](../deploy/coolify.env.example) |
+| Coolify static SPA nginx | [`deploy/coolify-frontend.nginx.conf`](../deploy/coolify-frontend.nginx.conf) — paste over Coolify’s `try_files … =404` if the dApp is not the Dockerfile image |
 | POST IP/QPS (`governor`, O-RL1–O-RL5) | [`operator-voting/src/rate_limit.rs`](../operator-voting/src/rate_limit.rs) — 429 includes `Retry-After` |
 | Prod refuses zero POST quota **and** `APPLY_MIGRATIONS=true` | [`operator-voting/src/config.rs`](../operator-voting/src/config.rs) |
 | Ledger writer owns migrations | Image pins `APPLY_MIGRATIONS=false`; prod config refuses true |
@@ -32,7 +33,7 @@ This skill is for **3rd-party agents** continuing Coolify, Legal admin, or live 
 
 ## Do
 
-1. Deploy **three** Coolify services. Ledger writer migrates; API uses `operator_voting`.
+1. Deploy **three** Coolify services. Ledger writer migrates; API uses `operator_voting`. Frontend: Dockerfile (SPA `try_files` already in-image) or static + [`deploy/coolify-frontend.nginx.conf`](../deploy/coolify-frontend.nginx.conf). Coolify’s default `=404` breaks Legal/WC redirects.
 2. Confirm hostname, then register Legal property in [cl8y-ecosystem-legal](https://gitlab.com/PlasticDigits/cl8y-ecosystem-legal) with an interactive admin token. Skill: [`AGENTS_LEGAL_CLICKWRAP.md`](AGENTS_LEGAL_CLICKWRAP.md).
 2b. When applying grants, `GRANT EXECUTE` must name `public.voting_*_balance_at`. The writer role is often `voting` and schema `voting` exists, so unqualified names follow `"$user", public` and miss the SECURITY DEFINER originals (L10).
 3. Live-QA Keplr Terra **and** MetaMask BSC 56 after Legal accept. Wallet skill: [`AGENTS_WALLET_CONNECTORS.md`](AGENTS_WALLET_CONNECTORS.md).

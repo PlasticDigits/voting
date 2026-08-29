@@ -26,7 +26,7 @@ See [`.env.example`](./.env.example). Copy to `.env.local`.
 - Unset `VITE_PLAYWRIGHT_E2E`, `VITE_DEV_MNEMONIC`, and any `VITE_*` BSC RPC on production builds (`prodEnvGuards` + [`../deploy/docker/frontend.Dockerfile`](../deploy/docker/frontend.Dockerfile) fail the build otherwise).
 - Production nginx CSP is stamped from [`../deploy/docker/frontend.security-headers.conf`](../deploy/docker/frontend.security-headers.conf) (Legal + operator-voting origins; no blanket `https:`).
 - Point `VITE_OPERATOR_VOTING_URL` at the public operator-voting origin.
-- The image must use [`../deploy/docker/frontend.nginx.conf`](../deploy/docker/frontend.nginx.conf) so `GET /vote` and `GET /new` are 200 HTML (Legal return, [#8](https://gitlab.com/PlasticDigits/voting/-/issues/8)). If Coolify serves static files with a default nginx, stamp the same `try_files $uri /index.html`. Missing `/assets/*` must stay 404.
+- The image must use [`../deploy/docker/frontend.nginx.conf`](../deploy/docker/frontend.nginx.conf) so `GET /vote` and `GET /new` are 200 HTML (Legal return, [#8](https://gitlab.com/PlasticDigits/voting/-/issues/8)). If Coolify serves static files with a default nginx, paste [`../deploy/coolify-frontend.nginx.conf`](../deploy/coolify-frontend.nginx.conf) (`try_files $uri /index.html`). Missing `/assets/*` must stay 404.
 - Register Legal property `vote.cl8y.com` in [cl8y-ecosystem-legal](https://gitlab.com/PlasticDigits/cl8y-ecosystem-legal) (interactive admin token — never `ADMIN_TOKEN` in this app).
 - Add `https://vote.cl8y.com` to Legal `CORS_ORIGINS` and portal `VITE_REDIRECT_URI_ALLOWLIST`.
 - Full Coolify / Legal / live-QA checklist: [`../docs/OPS.md`](../docs/OPS.md) · [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7).
