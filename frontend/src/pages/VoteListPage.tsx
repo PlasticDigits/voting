@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useConnectedIdentity } from '@/hooks/useConnectedIdentity'
 import { useVotingSnapshot } from '@/hooks/useVotingSnapshot'
+import { ROUTES } from '@/routes'
 import { listProposals, type ProposalListItem } from '@/services/operatorVoting'
 import { signVotingRequest } from '@/services/votingSign'
 import { formatCl8y } from '@/utils/format'
@@ -80,7 +81,7 @@ export default function VoteListPage() {
                   Register on {label}
                 </button>
               )}
-              <Link className="btn-primary" to="/vote/new" data-testid="propose-cta">
+              <Link className="btn-primary" to={ROUTES.newProposal} data-testid="propose-cta">
                 New proposal
               </Link>
             </div>
@@ -107,7 +108,7 @@ export default function VoteListPage() {
           <ul className="proposal-list" data-testid="proposal-list">
             {proposals.map((p) => (
               <li key={p.id}>
-                <Link to={`/vote/${p.id}`}>
+                <Link to={ROUTES.proposal(p.id)}>
                   <strong>{p.title}</strong>
                   <span>
                     {p.chain} · {p.status}

@@ -3,7 +3,7 @@
 **Last updated:** 2026-08-29  
 **Repo:** [PlasticDigits/voting](https://gitlab.com/PlasticDigits/voting)  
 **Local:** `~/repos/voting`  
-**Implementation branch:** `feat/voting-bundle` (merged). Ops follow-up: [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7) · [`OPS.md`](OPS.md).
+**Implementation branch:** `feat/voting-bundle` (merged). Ops follow-up: [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7) · [`OPS.md`](OPS.md). Legal `/vote` 404: [#8](https://gitlab.com/PlasticDigits/voting/-/issues/8) · [`FRONTEND.md`](FRONTEND.md).
 
 ## Current state
 
@@ -13,11 +13,11 @@ In-tree packages:
 |---------|------|
 | `ledger/` | Terra CW20 + BSC BEP-20 registration ledger |
 | `operator-voting/` | ADR-36 + EIP-191 API |
-| `frontend/` | `/vote` dApp, Legal gate, DEX Terra + Bridge EVM wallets |
+| `frontend/` | dApp (`/`, `/new`, `/:id`; `/vote*` aliases), Legal gate, DEX Terra + Bridge EVM wallets |
 
-GitLab issues **#1–#6** are implemented in this tree. [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7) tracks remaining ops. [#9](https://gitlab.com/PlasticDigits/voting/-/issues/9) (registered holders shown as 0) is in-tree: default GET `/v1/balances` clamps to `registered_at_height` (OV-B1), pending register UX, BSC analogue. Still human/ops to **close** #9: live LCD equality on `vote.cl8y.com` (OPS.md §5) and BSC O7. In-tree for #7: POST IP/QPS limits, Coolify Dockerfiles, prod refuses migrate + zero quota, `deploy/grants.sql` (USAGE, `current_database()`), Legal-hatch/O4 build guards, nginx CSP. Still human/ops: Coolify project, Legal admin property/CORS/allowlist, live Keplr+MetaMask QA. Runbook: [`OPS.md`](OPS.md). Skill: [`../skills/AGENTS_OPS_STAGING.md`](../skills/AGENTS_OPS_STAGING.md).
+GitLab issues **#1–#6** are implemented in this tree. [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7) tracks remaining ops. [#8](https://gitlab.com/PlasticDigits/voting/-/issues/8) is the Legal-return / deep-link 404 (`GET /vote` must be 200 HTML). [#9](https://gitlab.com/PlasticDigits/voting/-/issues/9) (registered holders shown as 0) is in-tree: default GET `/v1/balances` clamps to `registered_at_height` (OV-B1), pending register UX, BSC analogue. Still human/ops to **close** #8/#9: live Legal Accept, edge `try_files`, LCD equality on `vote.cl8y.com` (OPS.md §5) and BSC O7. In-tree for #7: POST IP/QPS limits, Coolify Dockerfiles, prod refuses migrate + zero quota, `deploy/grants.sql` (USAGE, `current_database()`), Legal-hatch/O4 build guards, nginx CSP. In-tree for #8: flattened routes + `/vote*` aliases, nginx `try_files`, HEALTHCHECK on `/vote`, CI `test:frontend-spa-fallback`. Still human/ops: Coolify project, **switch live edge to `frontend.nginx.conf`**, Legal admin property/CORS/allowlist, live Keplr+MetaMask QA. Runbook: [`OPS.md`](OPS.md) (O8). Skills: [`../skills/AGENTS_OPS_STAGING.md`](../skills/AGENTS_OPS_STAGING.md) · [`../skills/AGENTS_LEGAL_CLICKWRAP.md`](../skills/AGENTS_LEGAL_CLICKWRAP.md).
 
-Issue mapping: [`ISSUE_MIGRATION.md`](ISSUE_MIGRATION.md). Invariants: [`LEDGER_INVARIANTS.md`](LEDGER_INVARIANTS.md), [`OPERATOR_VOTING.md`](OPERATOR_VOTING.md), [`FRONTEND.md`](FRONTEND.md), [`OPS.md`](OPS.md). #7 in-tree extras: prod refuses `APPLY_MIGRATIONS=true`, privilege tests apply [`../deploy/grants.sql`](../deploy/grants.sql), frontend CSP snippet, `prodEnvGuards` (O3/O4), CI `test:rust-integration`. #9 in-tree: [`../operator-voting/src/balance_query.rs`](../operator-voting/src/balance_query.rs), pending poll in the dApp, ledger `/health.caught_up`.
+Issue mapping: [`ISSUE_MIGRATION.md`](ISSUE_MIGRATION.md). Invariants: [`LEDGER_INVARIANTS.md`](LEDGER_INVARIANTS.md), [`OPERATOR_VOTING.md`](OPERATOR_VOTING.md), [`FRONTEND.md`](FRONTEND.md), [`OPS.md`](OPS.md). #7 in-tree extras: prod refuses `APPLY_MIGRATIONS=true`, privilege tests apply [`../deploy/grants.sql`](../deploy/grants.sql), frontend CSP snippet, `prodEnvGuards` (O3/O4), CI `test:rust-integration`. #8 in-tree extras: [`../frontend/src/routes.ts`](../frontend/src/routes.ts), [`../deploy/docker/frontend.nginx.conf`](../deploy/docker/frontend.nginx.conf), CI `test:frontend-spa-fallback`. #9 in-tree: [`../operator-voting/src/balance_query.rs`](../operator-voting/src/balance_query.rs), pending poll in the dApp, ledger `/health.caught_up`.
 
 ## Why a new repo
 
@@ -31,8 +31,8 @@ Voting is a separate product surface (dual-chain electorate, its own Postgres ro
 2. **`operator-voting` (control plane)** — #2 + EIP-191 from #4  
    Restricted DB role. ADR-36 **and** EIP-191. Proposals, votes, `VOTING_BLACKLIST_ADDRESSES`, snapshot freeze `{ terra_height, bsc_block }`. ≥1000 CL8Y to propose (per registering address’s chain).
 
-3. **Voting dApp** — #3 with #5 + #6  
-   `/vote` register / WYSIWYG propose / vote. **Blocked behind CL8Y Legal.** Terra connect from DEX; EVM connect from Bridge.
+3. **Voting dApp** — #3 with #5 + #6 + #8  
+   `/` register / WYSIWYG propose / vote (`/vote*` aliases). **Blocked behind CL8Y Legal.** Terra connect from DEX; EVM connect from Bridge. SPA documents must be 200 HTML on hard navigation (Legal return).
 
 Do not mark production voting “done” while BSC holders cannot register and vote on staging with real wallets.
 
@@ -83,6 +83,9 @@ LEDGER_TEST_DATABASE_URL=postgres://voting:voting@127.0.0.1:5433/voting cargo te
 
 # Playwright (Legal hatch on webServer only)
 cd frontend && npm run test:e2e
+
+# nginx SPA fallback (issue #8 / O8)
+sh deploy/docker/test-frontend-spa-fallback.sh
 ```
 
-Still manual / staging: Keplr Terra register/vote **and** MetaMask BSC register/vote, each after Legal accept.
+Still manual / staging: Keplr Terra register/vote **and** MetaMask BSC register/vote, each after Legal accept. Close #8 only after live `curl -sI https://vote.cl8y.com/vote` is 200.

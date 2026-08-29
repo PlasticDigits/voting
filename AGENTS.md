@@ -10,9 +10,9 @@ Standalone offchain CL8Y snapshot voting:
 
 - Terra Classic CW20 ledger + BSC BEP-20 ledger (registered wallets only)
 - `operator-voting` API (signatures, proposals, votes, blacklist)
-- Voting dApp (`/vote`) gated by CL8Y Legal
+- Voting dApp (`/`, `/new`, `/:id`; `/vote*` aliases) gated by CL8Y Legal
 
-**Suggested implementation order:** ledger (#1, from DEX #509) → `operator-voting` (#2, from DEX #510) → dApp (#3, from DEX #511) with BSC treated as **core** (#4, from DEX #588), not a later extra. Legal gate and wallet reuse are required for the dApp, not optional polish. Post-merge Coolify / Legal admin / live QA / POST limits: [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7) · [`docs/OPS.md`](docs/OPS.md) · [`skills/AGENTS_OPS_STAGING.md`](skills/AGENTS_OPS_STAGING.md). Registered holders shown as 0: [#9](https://gitlab.com/PlasticDigits/voting/-/issues/9) · OV-B1 in [`docs/OPERATOR_VOTING.md`](docs/OPERATOR_VOTING.md).
+**Suggested implementation order:** ledger (#1, from DEX #509) → `operator-voting` (#2, from DEX #510) → dApp (#3, from DEX #511) with BSC treated as **core** (#4, from DEX #588), not a later extra. Legal gate and wallet reuse are required for the dApp, not optional polish. Post-merge Coolify / Legal admin / live QA / POST limits: [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7) · [`docs/OPS.md`](docs/OPS.md) · [`skills/AGENTS_OPS_STAGING.md`](skills/AGENTS_OPS_STAGING.md). Legal return / `/vote` 404: [#8](https://gitlab.com/PlasticDigits/voting/-/issues/8) · [`docs/FRONTEND.md`](docs/FRONTEND.md) · [`skills/AGENTS_LEGAL_CLICKWRAP.md`](skills/AGENTS_LEGAL_CLICKWRAP.md). Registered holders shown as 0: [#9](https://gitlab.com/PlasticDigits/voting/-/issues/9) · OV-B1 in [`docs/OPERATOR_VOTING.md`](docs/OPERATOR_VOTING.md).
 
 ## Hard rules
 

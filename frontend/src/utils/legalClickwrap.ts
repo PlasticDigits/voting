@@ -87,7 +87,10 @@ function localOriginAllowed(uri: string): boolean {
 
 /**
  * Fail-fast sanitize of `window.location.href` before portal redirect.
- * Portal allowlist remains the source of truth.
+ * Path-preserving: return the current URL (list `/`, `/new`, `/:id`, or
+ * `/vote*` aliases) so Accept lands on the same page. Origin allowlist only
+ * (`https://vote.cl8y.com`); extra path/query/fragment is OK. Portal allowlist
+ * remains the source of truth. Do not mint a redirect_uri from Host headers.
  */
 export function resolveLegalRedirectUri(href?: string): string | null {
   const candidate = href ?? (typeof window !== 'undefined' ? window.location.href : '')

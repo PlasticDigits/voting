@@ -60,7 +60,9 @@ ARG VITE_LEGAL_TERMS_BASE_URL=https://terms.cl8y.com
 
 COPY deploy/docker/frontend.nginx.conf /etc/nginx/conf.d/default.conf
 COPY deploy/docker/frontend.security-headers.conf /etc/nginx/snippets/voting-security-headers.conf
+COPY deploy/docker/frontend.healthcheck.sh /usr/local/bin/voting-frontend-healthcheck.sh
 COPY --from=builder /app/dist /usr/share/nginx/html
+RUN chmod +x /usr/local/bin/voting-frontend-healthcheck.sh
 
 # Legal C6 / O3: stamp explicit connect-src origins. No blanket https:.
 RUN set -eu; \
@@ -79,5 +81,7 @@ RUN set -eu; \
 
 EXPOSE 80
 
+# O8: /vote and /new must be 200 HTML, not 404. A HEALTHCHECK that only
+# probes GET / misses the Legal-return / Coolify SPA-fallback failure.
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD wget -qO- http://127.0.0.1/ >/dev/null || exit 1
+  CMD /usr/local/bin/voting-frontend-healthcheck.sh
