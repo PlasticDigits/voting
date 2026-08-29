@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { EditorContent, useEditor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import { useConnectedIdentity } from '@/hooks/useConnectedIdentity'
-import { createProposal, getBalance } from '@/services/operatorVoting'
+import { useVotingSnapshot } from '@/hooks/useVotingSnapshot'
+import { createProposal } from '@/services/operatorVoting'
 import { signVotingRequest } from '@/services/votingSign'
 import { sanitizeProposalHtml, sha256Hex } from '@/utils/sanitizeProposalHtml'
 import { canPropose } from '@/utils/votingPayload'
@@ -11,10 +12,10 @@ import { MIN_PROPOSAL_CL8Y, MIN_PROPOSAL_RAW } from '@/utils/constants'
 import { formatCl8y } from '@/utils/format'
 
 export default function VoteNewPage() {
-  const { address, chain } = useConnectedIdentity()
+  const { address, chain, label } = useConnectedIdentity()
+  const snapshot = useVotingSnapshot(address, chain)
   const navigate = useNavigate()
   const [title, setTitle] = useState('')
-  const [balance, setBalance] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const editor = useEditor({
@@ -22,25 +23,8 @@ export default function VoteNewPage() {
     content: '<p></p>',
   })
 
-  useEffect(() => {
-    if (!address || !chain) {
-      setBalance(null)
-      return
-    }
-    let cancelled = false
-    void getBalance(address, chain)
-      .then((bal) => {
-        if (!cancelled) setBalance(bal.balance)
-      })
-      .catch(() => {
-        if (!cancelled) setBalance(null)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [address, chain])
-
-  const gated = balance == null || !canPropose(balance, MIN_PROPOSAL_RAW)
+  const registered = snapshot.status === 'registered'
+  const gated = !registered || snapshot.balance == null || !canPropose(snapshot.balance, MIN_PROPOSAL_RAW)
 
   async function handleSubmit() {
     if (!address || !chain || !editor) return
@@ -75,17 +59,31 @@ export default function VoteNewPage() {
     )
   }
 
+  const banner = error || snapshot.error
+
   return (
     <div className="page-stack">
       <section className="panel">
         <h1>New proposal</h1>
         <p className="lede">
           Server is the source of truth for the {MIN_PROPOSAL_CL8Y} CL8Y gate. You sign a hash of the HTML you submit;
-          operator-voting checks that hash, then stores ammonia-sanitized HTML.
+          operator-voting checks that hash, then stores ammonia-sanitized HTML. {label} and the other chain are never
+          summed.
         </p>
-        {balance != null && (
+        {registered && snapshot.balance != null && (
           <p data-testid="propose-balance">
-            Balance {formatCl8y(balance)} CL8Y {gated ? `(need ${MIN_PROPOSAL_CL8Y})` : ''}
+            Balance {formatCl8y(snapshot.balance)} CL8Y {gated ? `(need ${MIN_PROPOSAL_CL8Y})` : ''}
+          </p>
+        )}
+        {snapshot.status === 'unregistered' && (
+          <p className="lede" data-testid="propose-register-hint">
+            Register to snapshot this address’s CL8Y before proposing. The list page does not show a live chain
+            balance.
+          </p>
+        )}
+        {snapshot.status === 'pending' && (
+          <p className="lede" data-testid="propose-pending">
+            Registration snapshot pending. Propose stays disabled until the ledger row exists.
           </p>
         )}
         <label className="field">
@@ -103,9 +101,9 @@ export default function VoteNewPage() {
             <EditorContent editor={editor} />
           </div>
         </div>
-        {error && (
+        {banner && (
           <div className="alert-error" role="alert">
-            {error}
+            {banner}
           </div>
         )}
         <button

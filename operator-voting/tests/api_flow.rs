@@ -33,7 +33,34 @@ async fn setup_pool() -> Option<(PgPool, voting_ledger::test_lock::IntegrationDb
     .execute(&pool)
     .await
     .ok()?;
+    sqlx::query(
+        "UPDATE indexer_state SET value = '0' WHERE key IN ('last_indexed_height', 'last_indexed_bsc_block')",
+    )
+    .execute(&pool)
+    .await
+    .ok()?;
     Some((pool, lock))
+}
+
+fn cl8y_raw(human: u64) -> String {
+    (num_bigint::BigInt::from(human) * num_bigint::BigInt::from(10u64).pow(18)).to_string()
+}
+
+async fn set_tip(pool: &PgPool, terra: i64, bsc: i64) {
+    sqlx::query(
+        "INSERT INTO indexer_state (key, value) VALUES ('last_indexed_height', $1) ON CONFLICT (key) DO UPDATE SET value = $1",
+    )
+    .bind(terra.to_string())
+    .execute(pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO indexer_state (key, value) VALUES ('last_indexed_bsc_block', $1) ON CONFLICT (key) DO UPDATE SET value = $1",
+    )
+    .bind(bsc.to_string())
+    .execute(pool)
+    .await
+    .unwrap();
 }
 
 fn cfg(pool_url: &str, blacklist: &str) -> VotingConfig {
@@ -314,4 +341,262 @@ async fn xss_stripped_on_create() {
     let html = detail["body_html"].as_str().unwrap();
     assert!(!html.contains("script"));
     assert!(html.contains("ok"));
+}
+
+fn app(pool: PgPool, url: &str) -> axum::Router {
+    router(AppState {
+        pool,
+        cfg: cfg(url, ""),
+    })
+}
+
+async fn insert_reg(pool: &PgPool, chain: &str, wallet: &str, height: i64, human: u64) {
+    sqlx::query(
+        r#"
+        INSERT INTO voting_registrations (chain, wallet_address, registered_at_height, initial_balance)
+        VALUES ($1, $2, $3, $4::numeric)
+        "#,
+    )
+    .bind(chain)
+    .bind(wallet)
+    .bind(height)
+    .bind(cl8y_raw(human))
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn unregistered_balance_is_flagged_not_a_live_zero() {
+    let Some((pool, _lock)) = setup_pool().await else {
+        eprintln!("skip: set LEDGER_TEST_DATABASE_URL");
+        return;
+    };
+    let url = test_db_url().unwrap();
+    let (addr, _, _) = terra_wallet();
+    let app = app(pool, &url);
+
+    let (status, body) = call(
+        app.clone(),
+        Request::get(format!("/v1/balances/{addr}")).body(Body::empty()).unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["registered"], false);
+    assert_eq!(body["pending"], false);
+    assert_eq!(body["balance"], "0");
+    assert!(body["initial_balance"].is_null());
+
+    let (status, _) = call(
+        app,
+        Request::get(format!("/v1/registration/{addr}")).body(Body::empty()).unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn pending_intent_is_visible_before_ledger_row() {
+    let Some((pool, _lock)) = setup_pool().await else {
+        eprintln!("skip: set LEDGER_TEST_DATABASE_URL");
+        return;
+    };
+    let url = test_db_url().unwrap();
+    let (addr, pubkey, sk) = terra_wallet();
+    let app = app(pool, &url);
+    let p = payload("terra", "columbus-5", "register", &addr);
+    let raw = serde_json::to_string(&p).unwrap();
+    let (status, registered) = call(
+        app.clone(),
+        Request::post("/v1/register")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "chain": "terra",
+                    "address": addr,
+                    "payload": raw,
+                    "signature": sign_terra(&sk, &raw),
+                    "pubkey": pubkey,
+                })
+                .to_string(),
+            ))
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{registered}");
+    assert_eq!(registered["pending"], true);
+
+    let (status, lookup) = call(
+        app.clone(),
+        Request::get(format!("/v1/registration/{addr}")).body(Body::empty()).unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{lookup}");
+    assert_eq!(lookup["pending"]["terra"], true);
+    assert!(lookup["terra"].is_null());
+
+    let (status, bal) = call(
+        app,
+        Request::get(format!("/v1/balances/{addr}")).body(Body::empty()).unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{bal}");
+    assert_eq!(bal["registered"], false);
+    assert_eq!(bal["pending"], true);
+    assert_eq!(bal["balance"], "0");
+}
+
+#[tokio::test]
+async fn default_balance_clamps_when_tip_lags_register() {
+    let Some((pool, _lock)) = setup_pool().await else {
+        eprintln!("skip: set LEDGER_TEST_DATABASE_URL");
+        return;
+    };
+    let url = test_db_url().unwrap();
+    let (addr, _, _) = terra_wallet();
+    insert_reg(&pool, "terra", &addr, 100, 3540).await;
+
+    let app = app(pool.clone(), &url);
+
+    set_tip(&pool, 0, 0).await;
+    let (status, body) = call(
+        app.clone(),
+        Request::get(format!("/v1/balances/{addr}")).body(Body::empty()).unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["registered"], true);
+    assert_eq!(body["balance"], cl8y_raw(3540));
+    assert_eq!(body["as_of_height"], 100);
+    assert_eq!(body["initial_balance"], cl8y_raw(3540));
+
+    set_tip(&pool, 50, 0).await;
+    let (status, body) = call(
+        app.clone(),
+        Request::get(format!("/v1/balances/{addr}")).body(Body::empty()).unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["balance"], cl8y_raw(3540));
+    assert_eq!(body["as_of_height"], 100);
+
+    let (status, historical) = call(
+        app.clone(),
+        Request::get(format!("/v1/balances/{addr}?height=50")).body(Body::empty()).unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{historical}");
+    assert_eq!(historical["balance"], "0");
+    assert_eq!(historical["as_of_height"], 50);
+
+    set_tip(&pool, 120, 0).await;
+    let (status, caught_up) = call(
+        app.clone(),
+        Request::get(format!("/v1/balances/{addr}")).body(Body::empty()).unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{caught_up}");
+    assert_eq!(caught_up["balance"], cl8y_raw(3540));
+    assert_eq!(caught_up["as_of_height"], 120);
+
+    sqlx::query(
+        "INSERT INTO cl8y_balances (wallet_address, height, balance) VALUES ($1, 110, $2::numeric)",
+    )
+    .bind(&addr)
+    .bind(cl8y_raw(3000))
+    .execute(&pool)
+    .await
+    .unwrap();
+    let (status, after_xfer) = call(
+        app.clone(),
+        Request::get(format!("/v1/balances/{addr}")).body(Body::empty()).unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{after_xfer}");
+    assert_eq!(after_xfer["balance"], cl8y_raw(3000));
+
+    let (status, reject) = call(
+        app,
+        Request::get(format!("/v1/balances/{addr}?chain=bsc")).body(Body::empty()).unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{reject}");
+}
+
+#[tokio::test]
+async fn bsc_default_balance_clamps_when_tip_lags_register() {
+    let Some((pool, _lock)) = setup_pool().await else {
+        eprintln!("skip: set LEDGER_TEST_DATABASE_URL");
+        return;
+    };
+    let url = test_db_url().unwrap();
+    let (evm, _) = evm_wallet();
+    insert_reg(&pool, "bsc", &evm, 80, 2000).await;
+    set_tip(&pool, 0, 40).await;
+
+    let app = app(pool, &url);
+    let (status, body) = call(
+        app.clone(),
+        Request::get(format!("/v1/balances/{evm}")).body(Body::empty()).unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["chain"], "bsc");
+    assert_eq!(body["registered"], true);
+    assert_eq!(body["balance"], cl8y_raw(2000));
+    assert_eq!(body["as_of_height"], 80);
+
+    let (status, historical) = call(
+        app.clone(),
+        Request::get(format!("/v1/balances/{evm}?height=40")).body(Body::empty()).unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{historical}");
+    assert_eq!(historical["balance"], "0");
+
+    let (status, reject) = call(
+        app,
+        Request::get(format!("/v1/balances/{evm}?chain=terra")).body(Body::empty()).unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{reject}");
+}
+
+#[tokio::test]
+async fn propose_succeeds_when_tip_lags_register() {
+    let Some((pool, _lock)) = setup_pool().await else {
+        eprintln!("skip: set LEDGER_TEST_DATABASE_URL");
+        return;
+    };
+    let url = test_db_url().unwrap();
+    let (addr, pubkey, sk) = terra_wallet();
+    insert_reg(&pool, "terra", &addr, 100, 1500).await;
+    set_tip(&pool, 50, 0).await;
+
+    let app = app(pool, &url);
+    let mut p = payload("terra", "columbus-5", "propose", &addr);
+    p.title = Some("Lag".into());
+    p.body_hash = Some(operator_voting::payload::body_hash("<p>lag</p>"));
+    let raw = serde_json::to_string(&p).unwrap();
+    let (status, created) = call(
+        app,
+        Request::post("/v1/proposals")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "chain": "terra",
+                    "address": addr,
+                    "payload": raw,
+                    "signature": sign_terra(&sk, &raw),
+                    "pubkey": pubkey,
+                    "title": "Lag",
+                    "body_html": "<p>lag</p>",
+                })
+                .to_string(),
+            ))
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{created}");
+    assert_eq!(created["terra_height"], 100);
 }

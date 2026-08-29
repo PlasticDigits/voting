@@ -106,6 +106,22 @@ pub async fn insert_signature(
     Ok(id)
 }
 
+pub async fn pending_intent(pool: &PgPool, chain: &str, wallet: &str) -> VotingResult<bool> {
+    let wallet = normalize_address(wallet);
+    let found: Option<bool> = sqlx::query_scalar(
+        r#"
+        SELECT TRUE
+        FROM voting.registration_intents
+        WHERE chain = $1 AND wallet_address = $2 AND processed_at IS NULL
+        "#,
+    )
+    .bind(chain)
+    .bind(&wallet)
+    .fetch_optional(pool)
+    .await?;
+    Ok(found.is_some())
+}
+
 pub async fn insert_registration_intent(
     pool: &PgPool,
     chain: &str,

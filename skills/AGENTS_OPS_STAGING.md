@@ -2,15 +2,16 @@
 name: voting-ops-staging
 description: >-
   Coolify/staging deploy, Legal property/CORS/allowlist, live Keplr+MetaMask QA,
-  operator-voting POST rate limits, and optional LocalTerra LCD equality.
-  Use when verifying or implementing GitLab voting issue #7 or public expose.
+  operator-voting POST rate limits, optional LocalTerra LCD equality, and
+  registered-holder balance reads (issue #9 OV-B1).
+  Use when verifying or implementing GitLab voting issue #7 or #9 or public expose.
 ---
 
 # Ops / staging (voting issue #7)
 
 Read [`docs/OPS.md`](../docs/OPS.md) first. In-tree #1–#6 are not enough for production.
 
-This skill is for **3rd-party agents** continuing Coolify, Legal admin, or live wallet QA. Do not invent a fourth deploy path.
+This skill is for **3rd-party agents** continuing Coolify, Legal admin, or live wallet QA. Do not invent a fourth deploy path. If a registered holder shows **0 CL8Y** after Register, read [OPERATOR_VOTING.md](../docs/OPERATOR_VOTING.md) OV-B1 and issue [#9](https://gitlab.com/PlasticDigits/voting/-/issues/9) before touching LCD in the browser.
 
 ## What is already in-tree
 
@@ -25,6 +26,7 @@ This skill is for **3rd-party agents** continuing Coolify, Legal admin, or live 
 | Legal hatch + O4 BSC RPC blocked on prod build | [`frontend/src/utils/prodEnvGuards.ts`](../frontend/src/utils/prodEnvGuards.ts) + frontend Dockerfile |
 | Production CSP (`connect-src`, no blanket `https:`) | [`deploy/docker/frontend.security-headers.conf`](../deploy/docker/frontend.security-headers.conf) |
 | Runbook + invariants O1–O7 | [`docs/OPS.md`](../docs/OPS.md) |
+| Default GET balance clamp (OV-B1, #9) | [`operator-voting/src/balance_query.rs`](../operator-voting/src/balance_query.rs) · ledger `/health.caught_up` |
 
 ## Do
 
@@ -44,6 +46,8 @@ This skill is for **3rd-party agents** continuing Coolify, Legal admin, or live 
 - Treat Playwright Legal-hatch E2E as live wallet QA.
 - Silently merge `terra1…` and `0x…`.
 - Close #7 until Coolify, Legal admin, and both live wallets actually pass on staging.
+- Close #9 until a registered Terra (and BSC) holder with ≥1000 pinned CL8Y sees a non-zero `GET /v1/balances` that matches LCD/`balanceOf` and the UI badge. “Registered” plus balance `"0"` is not done.
+- Query CW20 `Balance` or `eth_call` from the voting frontend (`VITE_*` LCD/RPC).
 
 ## Verification (in-tree)
 

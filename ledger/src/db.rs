@@ -101,6 +101,20 @@ pub async fn get_registration(
     }))
 }
 
+pub async fn max_registered_height(pool: &PgPool, chain: Chain) -> LedgerResult<i64> {
+    let v: Option<i64> = sqlx::query_scalar(
+        r#"
+        SELECT MAX(registered_at_height)
+        FROM voting_registrations
+        WHERE chain = $1 AND status = 'active'
+        "#,
+    )
+    .bind(chain.as_str())
+    .fetch_one(pool)
+    .await?;
+    Ok(v.unwrap_or(0))
+}
+
 pub async fn registered_set(pool: &PgPool, chain: Chain) -> LedgerResult<Vec<String>> {
     let rows = sqlx::query_as::<_, (String,)>(
         "SELECT wallet_address FROM voting_registrations WHERE chain = $1 AND status = 'active'",

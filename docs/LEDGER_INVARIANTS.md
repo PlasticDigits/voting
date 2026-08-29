@@ -1,6 +1,6 @@
 # Ledger invariants
 
-Cross-links: [ARCHITECTURE.md](ARCHITECTURE.md) · [OPERATOR_VOTING.md](OPERATOR_VOTING.md) · [OPS.md](OPS.md) · issues [#1](https://gitlab.com/PlasticDigits/voting/-/issues/1) · [#4](https://gitlab.com/PlasticDigits/voting/-/issues/4) · [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7) · skills [AGENTS_VOTING_BUNDLE.md](../skills/AGENTS_VOTING_BUNDLE.md) · [AGENTS_OPS_STAGING.md](../skills/AGENTS_OPS_STAGING.md)
+Cross-links: [ARCHITECTURE.md](ARCHITECTURE.md) · [OPERATOR_VOTING.md](OPERATOR_VOTING.md) · [OPS.md](OPS.md) · issues [#1](https://gitlab.com/PlasticDigits/voting/-/issues/1) · [#4](https://gitlab.com/PlasticDigits/voting/-/issues/4) · [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7) · [#9](https://gitlab.com/PlasticDigits/voting/-/issues/9) · skills [AGENTS_VOTING_BUNDLE.md](../skills/AGENTS_VOTING_BUNDLE.md) · [AGENTS_OPS_STAGING.md](../skills/AGENTS_OPS_STAGING.md)
 
 This crate is `voting-ledger` (`ledger/`). It is **not** the DEX indexer. Do not implement these tables in `cl8y-dex-terraclassic`.
 
@@ -28,6 +28,8 @@ Amounts are unsigned integer strings / `NUMERIC(78,0)`. No floats.
 
 A transfer at height/block `H` is included in `voting_cl8y_balance_at(wallet, H)` / `voting_bsc_cl8y_balance_at(wallet, H)`. Query at `H < registered_at_height` returns 0.
 
+The SQL function is unchanged. **Default** GET `/v1/balances` (no `height` query) in `operator-voting` evaluates at `max(indexer tip, registered_at_height)` so a just-registered wallet is not read as 0 while `last_indexed_*` is still `0` or behind the live snapshot ([#9](https://gitlab.com/PlasticDigits/voting/-/issues/9), **OV-B1** in [OPERATOR_VOTING.md](OPERATOR_VOTING.md)). Explicit `?height=` below register still returns 0.
+
 ## L7 — Reorg unwind
 
 Terra: compare stored `last_indexed_block_hash` to the LCD hash; on mismatch delete transfers/checkpoints `height > fork-1` and reset the cursor. BSC: operator rewind via `rewind_bsc` (delete `bsc_block > N`). Do not share tables with DEX Venus.
@@ -46,7 +48,7 @@ Balance functions are `SECURITY DEFINER` in schema **`public`**. Always call / `
 
 ## L11 — Registration handoff
 
-`operator-voting` inserts `voting.registration_intents`. The ledger poller queries live balances and writes `voting_registrations` (idempotent: no double initial credit).
+`operator-voting` inserts `voting.registration_intents`. The ledger poller queries live balances and writes `voting_registrations` (idempotent: no double initial credit). LCD/`balanceOf` failure retries; it does **not** write `initial_balance = 0` as a fake success. A pending intent is not a registration: GET `/v1/registration/:addr` returns `pending` until the ledger row exists ([#9](https://gitlab.com/PlasticDigits/voting/-/issues/9)).
 
 ## Env
 

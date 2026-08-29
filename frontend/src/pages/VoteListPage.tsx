@@ -1,17 +1,17 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useConnectedIdentity } from '@/hooks/useConnectedIdentity'
-import { getBalance, getRegistration, listProposals, registerWallet, type ProposalListItem } from '@/services/operatorVoting'
+import { useVotingSnapshot } from '@/hooks/useVotingSnapshot'
+import { listProposals, type ProposalListItem } from '@/services/operatorVoting'
 import { signVotingRequest } from '@/services/votingSign'
 import { formatCl8y } from '@/utils/format'
 
 export default function VoteListPage() {
   const { address, chain, label } = useConnectedIdentity()
+  const snapshot = useVotingSnapshot(address, chain)
   const [proposals, setProposals] = useState<ProposalListItem[]>([])
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-  const [registered, setRegistered] = useState<boolean | null>(null)
-  const [balance, setBalance] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -27,44 +27,21 @@ export default function VoteListPage() {
     }
   }, [])
 
-  useEffect(() => {
-    if (!address || !chain) {
-      setRegistered(null)
-      setBalance(null)
-      return
-    }
-    let cancelled = false
-    void Promise.all([getRegistration(address), getBalance(address, chain)])
-      .then(([reg, bal]) => {
-        if (cancelled) return
-        setRegistered(Boolean(reg && (reg[chain] || Object.keys(reg).length > 0)))
-        setBalance(bal.balance)
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setRegistered(false)
-          setBalance(null)
-        }
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [address, chain])
-
   async function handleRegister() {
     if (!address || !chain) return
     setBusy(true)
     setError(null)
     try {
       const signed = await signVotingRequest({ chain, address, purpose: 'register' })
-      await registerWallet(signed)
-      setRegistered(true)
+      await snapshot.completeRegister(signed)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Registration failed')
     } finally {
       setBusy(false)
     }
   }
+
+  const banner = error || snapshot.error
 
   return (
     <div className="page-stack">
@@ -76,36 +53,50 @@ export default function VoteListPage() {
           wallets are never merged. Never enter a seed phrase in this app.
         </p>
         {address && chain ? (
-          <div className="cta-row">
-            <p data-testid="connected-chain">
-              Connected on <strong>{label}</strong>
-              {balance != null ? ` · ${formatCl8y(balance)} CL8Y` : ''}
-            </p>
-            {registered ? (
-              <span className="pill" data-testid="registration-status">
-                Registered
-              </span>
-            ) : (
-              <button
-                type="button"
-                className="btn-primary"
-                data-testid="register-cta"
-                disabled={busy}
-                onClick={() => void handleRegister()}
-              >
-                {busy ? 'Signing…' : `Register on ${label}`}
-              </button>
+          <>
+            <div className="cta-row">
+              <p data-testid="connected-chain">
+                Connected on <strong>{label}</strong>
+                {snapshot.status === 'registered' && snapshot.balance != null
+                  ? ` · ${formatCl8y(snapshot.balance)} CL8Y`
+                  : ''}
+              </p>
+              {snapshot.status === 'registered' ? (
+                <span className="pill" data-testid="registration-status">
+                  Registered
+                </span>
+              ) : snapshot.status === 'pending' || busy ? (
+                <span className="pill" data-testid="registration-pending">
+                  Registering…
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  className="btn-primary"
+                  data-testid="register-cta"
+                  disabled={busy}
+                  onClick={() => void handleRegister()}
+                >
+                  Register on {label}
+                </button>
+              )}
+              <Link className="btn-primary" to="/vote/new" data-testid="propose-cta">
+                New proposal
+              </Link>
+            </div>
+            {snapshot.status === 'unregistered' && (
+              <p className="lede" data-testid="register-hint">
+                Register to snapshot this address’s CL8Y. The ledger is 0 until that live snapshot exists — this is
+                not a wallet balance read.
+              </p>
             )}
-            <Link className="btn-primary" to="/vote/new" data-testid="propose-cta">
-              New proposal
-            </Link>
-          </div>
+          </>
         ) : (
           <p className="lede">Connect a Terra Classic or BSC wallet to register and vote.</p>
         )}
-        {error && (
+        {banner && (
           <div className="alert-error" role="alert">
-            {error}
+            {banner}
           </div>
         )}
       </section>
