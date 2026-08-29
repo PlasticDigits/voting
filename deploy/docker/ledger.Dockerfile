@@ -29,9 +29,11 @@ COPY --from=builder /build/target/release/voting-ledger /usr/local/bin/voting-le
 USER ledger
 WORKDIR /app
 
-ENV API_BIND=0.0.0.0:3001 \
-    RUN_MODE=prod \
-    RUST_LOG=info
+# One ENV per line. Coolify's build-secret injector treats a continued
+# line starting with RUN_MODE as a Dockerfile RUN instruction.
+ENV API_BIND=0.0.0.0:3001
+ENV RUN_MODE=prod
+ENV RUST_LOG=info
 
 EXPOSE 3001
 

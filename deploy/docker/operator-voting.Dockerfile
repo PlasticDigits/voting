@@ -30,10 +30,12 @@ COPY --from=builder /build/target/release/operator-voting /usr/local/bin/operato
 USER voting
 WORKDIR /app
 
-ENV API_BIND=0.0.0.0:3002 \
-    RUN_MODE=prod \
-    APPLY_MIGRATIONS=false \
-    RUST_LOG=info
+# One ENV per line. Coolify's build-secret injector treats a continued
+# line starting with RUN_MODE as a Dockerfile RUN instruction.
+ENV API_BIND=0.0.0.0:3002
+ENV RUN_MODE=prod
+ENV APPLY_MIGRATIONS=false
+ENV RUST_LOG=info
 
 EXPOSE 3002
 
