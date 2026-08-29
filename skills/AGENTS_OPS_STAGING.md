@@ -3,15 +3,15 @@ name: voting-ops-staging
 description: >-
   Coolify/staging deploy, Legal property/CORS/allowlist, live Keplr+MetaMask QA,
   operator-voting POST rate limits, SPA document fallback for /vote (issue #8),
-  and optional LocalTerra LCD equality.
-  Use when verifying or implementing GitLab voting issues #7 or #8 or public expose.
+  registered-holder balance reads (issue #9 OV-B1), and optional LocalTerra LCD equality.
+  Use when verifying or implementing GitLab voting issues #7, #8, or #9 or public expose.
 ---
 
 # Ops / staging (voting issue #7)
 
 Read [`docs/OPS.md`](../docs/OPS.md) first. In-tree #1–#6 are not enough for production. [#8](https://gitlab.com/PlasticDigits/voting/-/issues/8) is a production-blocking Legal-return 404 when the edge does not SPA-fallback `/vote`.
 
-This skill is for **3rd-party agents** continuing Coolify, Legal admin, or live wallet QA. Do not invent a fourth deploy path.
+This skill is for **3rd-party agents** continuing Coolify, Legal admin, or live wallet QA. Do not invent a fourth deploy path. If a registered holder shows **0 CL8Y** after Register, read [OPERATOR_VOTING.md](../docs/OPERATOR_VOTING.md) OV-B1 and issue [#9](https://gitlab.com/PlasticDigits/voting/-/issues/9) before touching LCD in the browser.
 
 ## What is already in-tree
 
@@ -28,6 +28,7 @@ This skill is for **3rd-party agents** continuing Coolify, Legal admin, or live 
 | SPA `try_files` + HEALTHCHECK `/vote` (O8 / #8) | [`deploy/docker/frontend.nginx.conf`](../deploy/docker/frontend.nginx.conf) · [`deploy/docker/frontend.healthcheck.sh`](../deploy/docker/frontend.healthcheck.sh) · CI `test:frontend-spa-fallback` |
 | Flattened dApp routes + `/vote*` aliases | [`frontend/src/routes.ts`](../frontend/src/routes.ts) · [`docs/FRONTEND.md`](../docs/FRONTEND.md) |
 | Runbook + invariants O1–O8 | [`docs/OPS.md`](../docs/OPS.md) |
+| Default GET balance clamp (OV-B1, #9) | [`operator-voting/src/balance_query.rs`](../operator-voting/src/balance_query.rs) · ledger `/health.caught_up` |
 
 ## Do
 
@@ -50,6 +51,8 @@ This skill is for **3rd-party agents** continuing Coolify, Legal admin, or live 
 - Close #7 until Coolify, Legal admin, and both live wallets actually pass on staging.
 - Close #8 while `curl -sI https://vote.cl8y.com/vote` is 404. Flattening `/` is not a substitute for edge `try_files` on `/new` and `/vote/:id`.
 - Use `error_page 404 = /index.html` to hide missing SPA fallback (caches 404).
+- Close #9 until a registered Terra (and BSC) holder with ≥1000 pinned CL8Y sees a non-zero `GET /v1/balances` that matches LCD/`balanceOf` and the UI badge. “Registered” plus balance `"0"` is not done.
+- Query CW20 `Balance` or `eth_call` from the voting frontend (`VITE_*` LCD/RPC).
 
 ## Verification (in-tree)
 

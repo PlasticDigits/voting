@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
+use crate::balance_query::{freeze_heights, resolve_balance_height, resolve_chain};
 use crate::blacklist::normalize_address;
 use crate::config::{VotingConfig, MAX_BODY_BYTES};
 use crate::crypto::{verify_eip191, verify_terra};
@@ -159,12 +160,15 @@ async fn registration(
 ) -> VotingResult<Json<serde_json::Value>> {
     let terra = db::ledger_registration(&state.pool, "terra", &addr).await?;
     let bsc = db::ledger_registration(&state.pool, "bsc", &addr).await?;
-    if terra.is_none() && bsc.is_none() {
+    let pending_terra = db::pending_intent(&state.pool, "terra", &addr).await?;
+    let pending_bsc = db::pending_intent(&state.pool, "bsc", &addr).await?;
+    if terra.is_none() && bsc.is_none() && !pending_terra && !pending_bsc {
         return Err(VotingError::NotFound("not registered".into()));
     }
     Ok(Json(serde_json::json!({
         "terra": terra,
         "bsc": bsc,
+        "pending": { "terra": pending_terra, "bsc": pending_bsc },
     })))
 }
 
@@ -221,8 +225,13 @@ async fn create_proposal(
         .await?
         .ok_or_else(|| VotingError::Forbidden("register before proposing".into()))?;
     let (terra_h, bsc_b) = db::tip_heights(&state.pool).await?;
-    let tip = if payload.chain == "terra" { terra_h } else { bsc_b };
-    let height = if tip > 0 { tip } else { reg.registered_at_height };
+    let (terra_freeze, bsc_freeze) =
+        freeze_heights(&payload.chain, terra_h, bsc_b, reg.registered_at_height);
+    let height = if payload.chain == "terra" {
+        terra_freeze
+    } else {
+        bsc_freeze
+    };
     let bal = db::balance_at(&state.pool, &payload.chain, &req.signed.address, height).await?;
     if bal < state.cfg.min_proposal_raw {
         return Err(VotingError::Forbidden(
@@ -248,16 +257,16 @@ async fn create_proposal(
         &req.title,
         &sanitized,
         &sanitized,
-        terra_h.max(reg.registered_at_height),
-        bsc_b,
+        terra_freeze,
+        bsc_freeze,
     )
     .await?;
     Ok((
         StatusCode::CREATED,
         Json(serde_json::json!({
             "id": id,
-            "terra_height": terra_h.max(reg.registered_at_height),
-            "bsc_block": bsc_b,
+            "terra_height": terra_freeze,
+            "bsc_block": bsc_freeze,
         })),
     ))
 }
@@ -355,7 +364,7 @@ async fn get_vote(
     Path((id, addr)): Path<(Uuid, String)>,
     Query(q): Query<ChainQuery>,
 ) -> VotingResult<Json<serde_json::Value>> {
-    let chain = q.chain.unwrap_or_else(|| infer_chain(&addr));
+    let chain = resolve_chain(&addr, q.chain.as_deref())?.to_string();
     match db::get_vote(&state.pool, id, &chain, &addr).await? {
         Some((choice, weight)) => Ok(Json(serde_json::json!({ "choice": choice, "weight": weight }))),
         None => Err(VotingError::NotFound("vote".into())),
@@ -373,22 +382,29 @@ async fn get_balance(
     Path(addr): Path<String>,
     Query(q): Query<ChainQuery>,
 ) -> VotingResult<Json<serde_json::Value>> {
-    let chain = q.chain.unwrap_or_else(|| infer_chain(&addr));
+    let chain = resolve_chain(&addr, q.chain.as_deref())?;
+    let reg = db::ledger_registration(&state.pool, chain, &addr).await?;
+    let pending = if reg.is_some() {
+        false
+    } else {
+        db::pending_intent(&state.pool, chain, &addr).await?
+    };
     let (terra_h, bsc_b) = db::tip_heights(&state.pool).await?;
-    let height = q.height.unwrap_or(if chain == "terra" { terra_h } else { bsc_b });
-    let amount = db::balance_at(&state.pool, &chain, &addr, height).await?;
+    let tip = if chain == "terra" { terra_h } else { bsc_b };
+    let as_of_height = resolve_balance_height(
+        q.height,
+        tip,
+        reg.as_ref().map(|r| r.registered_at_height),
+    );
+    let amount = db::balance_at(&state.pool, chain, &addr, as_of_height).await?;
     Ok(Json(serde_json::json!({
         "chain": chain,
         "address": normalize_address(&addr),
-        "height": height,
+        "height": as_of_height,
+        "as_of_height": as_of_height,
         "balance": amount.to_string(),
+        "registered": reg.is_some(),
+        "pending": pending,
+        "initial_balance": reg.as_ref().map(|r| r.initial_balance.clone()),
     })))
-}
-
-fn infer_chain(addr: &str) -> String {
-    if addr.trim().starts_with("0x") || addr.trim().starts_with("0X") {
-        "bsc".into()
-    } else {
-        "terra".into()
-    }
 }

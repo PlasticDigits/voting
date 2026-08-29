@@ -4,8 +4,14 @@ export const E2E_TERRA_ADDR = 'terra1testxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
 
 export const E2E_PROPOSAL_ID = '11111111-1111-1111-1111-111111111111'
 
-export async function mockOperatorVoting(page: Page) {
-  let registered = false
+export type MockOperatorOpts = {
+  registerPendingTicks?: number
+}
+
+export async function mockOperatorVoting(page: Page, opts: MockOperatorOpts = {}) {
+  let ledgerReady = false
+  let registerPosted = false
+  let pendingTicks = opts.registerPendingTicks ?? 0
   const proposals: Array<{
     id: string
     chain: string
@@ -62,16 +68,40 @@ export async function mockOperatorVoting(page: Page) {
   })
 
   await page.route('**/v1/register', async (route) => {
-    registered = true
-    await route.fulfill({ json: { ok: true, pending: false } })
+    registerPosted = true
+    if (pendingTicks <= 0) ledgerReady = true
+    await route.fulfill({ json: { ok: true, pending: !ledgerReady } })
   })
 
   await page.route('**/v1/registration/**', async (route) => {
+    if (!registerPosted && !ledgerReady) {
+      await route.fulfill({ status: 404, json: { error: 'not registered' } })
+      return
+    }
+    if (!ledgerReady && pendingTicks > 0) {
+      pendingTicks -= 1
+      if (pendingTicks <= 0) ledgerReady = true
+      await route.fulfill({
+        status: 200,
+        json: { terra: null, bsc: null, pending: { terra: true, bsc: false } },
+      })
+      return
+    }
+    if (!ledgerReady) {
+      await route.fulfill({ status: 404, json: { error: 'not registered' } })
+      return
+    }
     await route.fulfill({
-      status: registered ? 200 : 404,
-      json: registered
-        ? { terra: { chain: 'terra', wallet_address: E2E_TERRA_ADDR, status: 'active' } }
-        : { error: 'not registered' },
+      json: {
+        terra: {
+          chain: 'terra',
+          wallet_address: E2E_TERRA_ADDR,
+          registered_at_height: 10,
+          status: 'active',
+        },
+        bsc: null,
+        pending: { terra: false, bsc: false },
+      },
     })
   })
 
@@ -80,8 +110,12 @@ export async function mockOperatorVoting(page: Page) {
       json: {
         chain: 'terra',
         address: E2E_TERRA_ADDR,
-        height: 1,
-        balance: '1000000000000000000000',
+        height: ledgerReady ? 10 : 0,
+        as_of_height: ledgerReady ? 10 : 0,
+        balance: ledgerReady ? '1000000000000000000000' : '0',
+        registered: ledgerReady,
+        pending: registerPosted && !ledgerReady,
+        initial_balance: ledgerReady ? '1000000000000000000000' : null,
       },
     })
   })

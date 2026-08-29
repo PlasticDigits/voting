@@ -146,6 +146,35 @@ async fn bsc_register_and_isolation() {
     );
 }
 
+struct FailLive;
+
+#[async_trait]
+impl LiveBalanceSource for FailLive {
+    async fn terra_live_balance(&self, _address: &str) -> Result<(i64, BigInt), LedgerError> {
+        Err(LedgerError::Lcd("timeout".into()))
+    }
+    async fn bsc_live_balance(&self, _address: &str) -> Result<(i64, BigInt), LedgerError> {
+        Err(LedgerError::BscRpc("timeout".into()))
+    }
+}
+
+#[tokio::test]
+async fn live_balance_failure_does_not_invent_zero() {
+    let Some((pool, _lock)) = setup().await else {
+        eprintln!("skip: set LEDGER_TEST_DATABASE_URL");
+        return;
+    };
+    let alice = "terra1alice00000000000000000000000000000000";
+    let err = register_wallet(&pool, &FailLive, Chain::Terra, alice, None)
+        .await
+        .unwrap_err();
+    assert!(matches!(err, LedgerError::Lcd(_)));
+    assert!(db::get_registration(&pool, Chain::Terra, alice)
+        .await
+        .unwrap()
+        .is_none());
+}
+
 #[test]
 fn apply_transfer_math_unit() {
     let w = "terra1alice";

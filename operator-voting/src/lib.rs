@@ -3,6 +3,7 @@
 //! Invariants: [`docs/OPERATOR_VOTING.md`](../docs/OPERATOR_VOTING.md).
 
 pub mod api;
+pub mod balance_query;
 pub mod blacklist;
 pub mod config;
 pub mod crypto;

@@ -1,10 +1,10 @@
 # Ops runbook (issue #7)
 
-Cross-links: [HANDOFF.md](HANDOFF.md) · [ARCHITECTURE.md](ARCHITECTURE.md) · [OPERATOR_VOTING.md](OPERATOR_VOTING.md) · [FRONTEND.md](FRONTEND.md) · [LEDGER_INVARIANTS.md](LEDGER_INVARIANTS.md) · skill [AGENTS_OPS_STAGING.md](../skills/AGENTS_OPS_STAGING.md) · Legal [AGENTS_LEGAL_CLICKWRAP.md](../skills/AGENTS_LEGAL_CLICKWRAP.md) · wallets [AGENTS_WALLET_CONNECTORS.md](../skills/AGENTS_WALLET_CONNECTORS.md) · GitLab [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7) · [#8](https://gitlab.com/PlasticDigits/voting/-/issues/8)
+Cross-links: [HANDOFF.md](HANDOFF.md) · [ARCHITECTURE.md](ARCHITECTURE.md) · [OPERATOR_VOTING.md](OPERATOR_VOTING.md) · [FRONTEND.md](FRONTEND.md) · [LEDGER_INVARIANTS.md](LEDGER_INVARIANTS.md) · skill [AGENTS_OPS_STAGING.md](../skills/AGENTS_OPS_STAGING.md) · Legal [AGENTS_LEGAL_CLICKWRAP.md](../skills/AGENTS_LEGAL_CLICKWRAP.md) · wallets [AGENTS_WALLET_CONNECTORS.md](../skills/AGENTS_WALLET_CONNECTORS.md) · GitLab [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7) · [#8](https://gitlab.com/PlasticDigits/voting/-/issues/8) · [#9](https://gitlab.com/PlasticDigits/voting/-/issues/9)
 
 In-tree ledger / `operator-voting` / `/vote` landed in !1. This document is the remaining **ops + public-expose** checklist. Do not mark production voting done until every required item below is true on staging.
 
-## Invariants (O1–O7)
+## Invariants (O1–O8)
 
 | ID | Rule |
 |----|------|
@@ -45,7 +45,7 @@ Boot order:
 
    `/` and `/vote` and `/new` must be 200 HTML. `/assets/missing.js` must be 404. Live `nginx/1.31.x` without this fallback was the [#8](https://gitlab.com/PlasticDigits/voting/-/issues/8) Legal-return 404.
 
-`GET /health` on ledger and API must be 200 before opening DNS.
+`GET /health` on ledger and API must be 200 before opening DNS. Ledger `/health` keeps `ok: true` as **liveness** (do not bounce the poller on boot). After a holder registers, inspect `caught_up`, `terra_height`, and `terra_behind_registration` / `bsc_behind_registration`. A cursor of `0` while `voting_registrations` exists is **not** caught up ([#9](https://gitlab.com/PlasticDigits/voting/-/issues/9)). Default GET `/v1/balances` still clamps to `registered_at_height` (OV-B1); ingest catching up is still required for post-register transfers.
 
 ## 2. Legal ops (sibling repo)
 
@@ -88,11 +88,14 @@ Wrong-chain MetaMask (not 56) and missing `signArbitrary` must show the existing
 LocalTerra on this workstation is typically `http://127.0.0.1:1317`. Hardening loop:
 
 1. Mint TCL8Y to a test wallet (DEX LocalTerra fixtures — do not invent a new CW20).
-2. Register via `operator-voting` (ledger takes a **live** LCD `Balance`, L1).
+2. Register via `operator-voting` (ledger takes a **live** LCD `Balance`, L1). Confirm `CL8Y_TOKEN_ADDRESS` is the pinned hpax3 contract (wallet ticker **CL8Y-cb** is that contract unless another is proven).
 3. Transfer TCL8Y; wait for the ledger poller.
-4. Assert `voting_cl8y_balance_at(wallet, tip) ==` live LCD `Balance` for that registered wallet.
+4. Assert `voting_registrations.initial_balance` ≈ live LCD `Balance` ≈ `GET /v1/balances` default `as_of_height` ≥ `registered_at_height` for that registered wallet.
+5. Confirm ledger `GET /health` `terra_height` advances after register (`caught_up: true`).
 
-Integration coverage without LocalTerra: [`../ledger/tests/ledger_integration.rs`](../ledger/tests/ledger_integration.rs) (`register_transfer_balance_at_and_no_backfill`). Live LCD equality remains an ops check.
+Do not close [#9](https://gitlab.com/PlasticDigits/voting/-/issues/9) / [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7) on a screenshot of “Registered” if `GET /v1/balances` is still `"0"` while LCD is not.
+
+Integration coverage without LocalTerra: [`../ledger/tests/ledger_integration.rs`](../ledger/tests/ledger_integration.rs) (`register_transfer_balance_at_and_no_backfill`) and [`../operator-voting/tests/api_flow.rs`](../operator-voting/tests/api_flow.rs) (`default_balance_clamps_when_tip_lags_register`). Live LCD equality remains an ops check.
 
 Postgres integration tests take `pg_advisory_lock(739001)` ([`../ledger/src/test_lock.rs`](../ledger/src/test_lock.rs)) so parallel `cargo test` binaries cannot `TRUNCATE` each other.
 

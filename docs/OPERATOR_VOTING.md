@@ -1,6 +1,6 @@
 # operator-voting
 
-Cross-links: [LEDGER_INVARIANTS.md](LEDGER_INVARIANTS.md) · [FRONTEND.md](FRONTEND.md) · [OPS.md](OPS.md) · issues [#2](https://gitlab.com/PlasticDigits/voting/-/issues/2) · [#4](https://gitlab.com/PlasticDigits/voting/-/issues/4) · [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7) · skill [AGENTS_OPS_STAGING.md](../skills/AGENTS_OPS_STAGING.md)
+Cross-links: [LEDGER_INVARIANTS.md](LEDGER_INVARIANTS.md) · [FRONTEND.md](FRONTEND.md) · [OPS.md](OPS.md) · issues [#2](https://gitlab.com/PlasticDigits/voting/-/issues/2) · [#4](https://gitlab.com/PlasticDigits/voting/-/issues/4) · [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7) · [#9](https://gitlab.com/PlasticDigits/voting/-/issues/9) · skill [AGENTS_OPS_STAGING.md](../skills/AGENTS_OPS_STAGING.md)
 
 Standalone Axum service. **Not** merged into the DEX indexer API. Uses a **restricted** `DATABASE_URL` in production.
 
@@ -17,7 +17,7 @@ Standalone Axum service. **Not** merged into the DEX indexer API. Uses a **restr
 | `GET` | `/v1/proposals/:id` | Detail; `advisory: true` |
 | `POST` | `/v1/proposals/:id/votes` | One vote per `(proposal, chain, wallet)` |
 | `GET` | `/v1/proposals/:id/votes/:addr` | Own vote |
-| `GET` | `/v1/balances/:addr` | Thin restricted-view read |
+| `GET` | `/v1/balances/:addr` | Thin restricted-view read. Default height is **OV-B1** (below). |
 
 ## Signing domain
 
@@ -45,6 +45,34 @@ Canonical JSON (`app` = `cl8y-voting`):
 Proposal create records `{ terra_height, bsc_block }` from `indexer_state` (wall-clock aligned tips). Vote weight is the **frozen snapshot row**, not live tip. Selling after create does not change weight.
 
 Threshold: `MIN_PROPOSAL_CL8Y` (default 1000 human units) → `1000 * 10^18` raw, evaluated on the registering address’s chain only.
+
+The proposer’s freeze height on **that** chain is `max(indexer tip, registered_at_height)`. A Terra registered-at height is never applied to the BSC freeze clock (and the reverse).
+
+## Balance read (OV-B1, issue #9)
+
+`GET /v1/balances/:addr` is the dApp’s eligibility figure. It is **not** a live LCD/`balanceOf` proxy.
+
+| Field | Meaning |
+|-------|---------|
+| `registered` | `voting_registrations` row exists for the inferred chain |
+| `pending` | Unprocessed `voting.registration_intents` row; snapshot not written yet |
+| `balance` | `public.voting_*_cl8y_balance_at` at `as_of_height` |
+| `as_of_height` / `height` | Height or BSC block used for that call |
+| `initial_balance` | Live snapshot stored at register; null if unregistered |
+
+Rules:
+
+| ID | Rule |
+|----|------|
+| **OV-B1** | Omitted `height` for a registered wallet is `max(indexer tip, registered_at_height)`. If the tip is `0` or still behind the live snapshot, the default read uses `registered_at_height` so L6 does not return 0. |
+| **OV-B2** | Explicit `?height=` is used as-is. Below `registered_at_height` the SQL function still returns 0 (L6). Future heights cannot mint checkpoints the indexer never wrote. |
+| **OV-B3** | Unregistered / pending wallets still return HTTP 200 with `registered: false` and `balance: "0"`. The UI must not present that 0 as a live chain holding. |
+| **OV-B4** | `?chain=` that contradicts the address prefix (`terra1…` vs `0x…`) is `400`. No cross-chain sum. |
+| **OV-B5** | Propose/vote ignore client-supplied balances. Weight is `public.voting_*_balance_at` / frozen `proposal_snapshots` only. |
+
+`GET /v1/registration/:addr` returns `pending: { terra, bsc }` while an intent is in flight. It 404s only when there is neither a ledger row nor a pending intent.
+
+Code: [`../operator-voting/src/balance_query.rs`](../operator-voting/src/balance_query.rs). Frontend: [`FRONTEND.md`](FRONTEND.md).
 
 ## Blacklist
 
