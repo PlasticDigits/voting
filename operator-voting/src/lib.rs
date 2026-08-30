@@ -11,6 +11,7 @@ pub mod db;
 pub mod error;
 pub mod html;
 pub mod payload;
+pub mod proposal_sections;
 pub mod rate_limit;
 
 pub use config::VotingConfig;

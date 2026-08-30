@@ -18,10 +18,12 @@ export type ProposalListItem = {
   created_at: string
   status: string
   tally: { choice: string; weight: string }[] | Record<string, string>
+  summary?: string | null
 }
 
 export type ProposalDetail = ProposalListItem & {
   body_html: string
+  body_sections?: Record<string, string> | null
   advisory: boolean
 }
 
@@ -145,7 +147,7 @@ export async function getProposal(id: string): Promise<ProposalDetail> {
 }
 
 export async function createProposal(
-  req: SignedRequest & { title: string; body_html: string }
+  req: SignedRequest & { title: string; body_sections: Record<string, string> }
 ): Promise<{ id: string; terra_height: number; bsc_block: number }> {
   return api('/v1/proposals', { method: 'POST', body: JSON.stringify(req) })
 }

@@ -12,7 +12,7 @@ async function connectSimulatedTerra(page: Page, path: string) {
   }
 }
 
-async function registerProposeVote(page: Page, path: string, title: string, body: string) {
+async function registerProposeVote(page: Page, path: string, title: string) {
   await mockOperatorVoting(page)
   await connectSimulatedTerra(page, path)
 
@@ -23,13 +23,23 @@ async function registerProposeVote(page: Page, path: string, title: string, body
   await page.getByTestId('propose-cta').click()
   await expect(page.getByTestId('propose-balance')).toContainText('1000 CL8Y')
   await page.getByTestId('proposal-title').fill(title)
-  await page.locator('.tiptap').fill(body)
+  const fill = 'Playwright section text that clears the forty character minimum.'
+  await page.getByTestId('proposal-section-problem').fill(fill)
+  await page.getByTestId('proposal-section-solution').fill(fill)
+  await page.getByTestId('proposal-section-pros_cons').fill(fill)
+  await page.getByTestId('proposal-section-summary').fill(fill)
+  await page.getByTestId('proposal-section-success_criteria').fill(fill)
   await page.getByTestId('submit-proposal').click()
 
   await expect(page.getByRole('heading', { name: title })).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByTestId('proposal-sections')).toBeVisible()
+  await expect(page.getByTestId('proposal-section-view-summary')).toContainText('Summary (TL;DR)')
   await expect(page).toHaveURL(new RegExp(`/${E2E_PROPOSAL_ID}$`))
   await page.getByTestId('vote-for').click()
   await expect(page.getByTestId('vote-recorded')).toContainText('for')
+
+  await page.getByRole('link', { name: 'All proposals' }).click()
+  await expect(page.getByTestId('proposal-summary')).toContainText('Playwright section text')
 }
 
 test('unregistered connection does not look like a live 0 CL8Y', async ({ page }) => {
@@ -50,9 +60,9 @@ test('pending register polls until ledger-registered', async ({ page }) => {
 })
 
 test('register → list → create → vote (canonical /)', async ({ page }) => {
-  await registerProposeVote(page, '/', 'E2E proposal', 'Body from Playwright')
+  await registerProposeVote(page, '/', 'E2E proposal')
 })
 
 test('register → list → create → vote (/vote alias)', async ({ page }) => {
-  await registerProposeVote(page, '/vote', 'E2E alias proposal', 'Body from Playwright alias')
+  await registerProposeVote(page, '/vote', 'E2E alias proposal')
 })

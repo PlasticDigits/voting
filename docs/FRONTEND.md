@@ -1,6 +1,6 @@
 # Voting dApp
 
-Cross-links: [OPERATOR_VOTING.md](OPERATOR_VOTING.md) · [OPS.md](OPS.md) · skills [AGENTS_LEGAL_CLICKWRAP.md](../skills/AGENTS_LEGAL_CLICKWRAP.md) · [AGENTS_WALLET_CONNECTORS.md](../skills/AGENTS_WALLET_CONNECTORS.md) · [AGENTS_OPS_STAGING.md](../skills/AGENTS_OPS_STAGING.md) · issues [#3](https://gitlab.com/PlasticDigits/voting/-/issues/3) · [#5](https://gitlab.com/PlasticDigits/voting/-/issues/5) · [#6](https://gitlab.com/PlasticDigits/voting/-/issues/6) · [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7) · [#8](https://gitlab.com/PlasticDigits/voting/-/issues/8) · [#9](https://gitlab.com/PlasticDigits/voting/-/issues/9)
+Cross-links: [OPERATOR_VOTING.md](OPERATOR_VOTING.md) · [OPS.md](OPS.md) · skills [AGENTS_LEGAL_CLICKWRAP.md](../skills/AGENTS_LEGAL_CLICKWRAP.md) · [AGENTS_WALLET_CONNECTORS.md](../skills/AGENTS_WALLET_CONNECTORS.md) · [AGENTS_OPS_STAGING.md](../skills/AGENTS_OPS_STAGING.md) · [AGENTS_VOTING_BUNDLE.md](../skills/AGENTS_VOTING_BUNDLE.md) · issues [#3](https://gitlab.com/PlasticDigits/voting/-/issues/3) · [#5](https://gitlab.com/PlasticDigits/voting/-/issues/5) · [#6](https://gitlab.com/PlasticDigits/voting/-/issues/6) · [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7) · [#8](https://gitlab.com/PlasticDigits/voting/-/issues/8) · [#9](https://gitlab.com/PlasticDigits/voting/-/issues/9) · [#10](https://gitlab.com/PlasticDigits/voting/-/issues/10)
 
 Package: `frontend/`. Canonical routes on the dedicated host: `/`, `/new`, `/:id`. DEX-era `/vote`, `/vote/new`, `/vote/:id` stay as aliases.
 
@@ -42,6 +42,14 @@ The dApp never reads CW20 `Balance` or BEP-20 `balanceOf` in the browser. The ba
 - Pending intent: “Registering…” until `voting_registrations` exists. POST `/v1/register` `ok` is not Registered.
 - Registered: format the server `balance` (18-decimal). A true ledger zero is allowed; an API error is not shown as 0 and propose stays fail-closed.
 - Terra and BSC labels stay distinct. Never sum two addresses.
+
+## Proposal template (issue #10 / OV-S)
+
+Compose (`/new`) is labeled fields, not one TipTap blob. Client mirrors API minima (40 visible characters on required sections; summary ≤ 500) and still cannot bypass the server. Sign `body_hash` of canonical section JSON ([OPERATOR_VOTING.md](OPERATOR_VOTING.md) OV-S3). List shows `summary` as **text**. Detail renders labeled sections in display order; legacy `body_html` is a fallback after a client sanitize pass.
+
+Success-criteria helper copy is goalposts, not punishment. Optional context does not block submit. Legal gate and 1000 CL8Y gate are unchanged.
+
+Code: [`../frontend/src/utils/proposalSections.ts`](../frontend/src/utils/proposalSections.ts) · [`../frontend/src/pages/VoteNewPage.tsx`](../frontend/src/pages/VoteNewPage.tsx).
 
 ## Tests
 

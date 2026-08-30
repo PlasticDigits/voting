@@ -8,12 +8,12 @@ use uuid::Uuid;
 
 use crate::balance_query::{freeze_heights, resolve_balance_height, resolve_chain};
 use crate::blacklist::normalize_address;
-use crate::config::{VotingConfig, MAX_BODY_BYTES};
+use crate::config::VotingConfig;
 use crate::crypto::{verify_eip191, verify_terra};
 use crate::db;
 use crate::error::{VotingError, VotingResult};
-use crate::html::sanitize_proposal_html;
-use crate::payload::{body_hash, parse_and_validate};
+use crate::payload::parse_and_validate;
+use crate::proposal_sections::{prepare_sections, summary_html};
 use crate::rate_limit::{enforce_post_rate_limit, RateLimitState};
 
 #[derive(Clone)]
@@ -60,7 +60,11 @@ async fn openapi() -> Json<serde_json::Value> {
         "info": { "title": "operator-voting", "version": "0.1.0" },
         "paths": {
             "/v1/register": { "post": { "summary": "Register a wallet" } },
-            "/v1/proposals": { "get": { "summary": "List proposals" }, "post": { "summary": "Create proposal" } },
+            "/v1/proposals": {
+                "get": { "summary": "List proposals (includes summary TL;DR when sections exist)" },
+                "post": { "summary": "Create a templated proposal (body_sections required)" }
+            },
+            "/v1/proposals/{id}": { "get": { "summary": "Proposal detail; body_sections or legacy body_html" } },
             "/v1/proposals/{id}/votes": { "post": { "summary": "Cast vote" } }
         }
     }))
@@ -80,7 +84,10 @@ pub struct CreateProposalRequest {
     #[serde(flatten)]
     pub signed: SignedRequest,
     pub title: String,
-    pub body_html: String,
+    /// Required for new creates. Legacy `body_html` is read-only.
+    pub body_sections: Option<serde_json::Value>,
+    #[serde(default)]
+    pub body_html: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -97,7 +104,12 @@ fn verify_signed(req: &SignedRequest, message: &str) -> VotingResult<()> {
                 .pubkey
                 .as_deref()
                 .ok_or_else(|| VotingError::BadRequest("terra pubkey required".into()))?;
-            verify_terra(&normalize_address(&req.address), message, &req.signature, pubkey)
+            verify_terra(
+                &normalize_address(&req.address),
+                message,
+                &req.signature,
+                pubkey,
+            )
         }
         "bsc" => verify_eip191(&normalize_address(&req.address), message, &req.signature),
         other => Err(VotingError::BadRequest(format!(
@@ -115,7 +127,10 @@ fn deny_cross_scheme(chain: &str, payload_chain: &str) -> VotingResult<()> {
     Ok(())
 }
 
-async fn register(State(state): State<AppState>, Json(req): Json<SignedRequest>) -> VotingResult<Json<serde_json::Value>> {
+async fn register(
+    State(state): State<AppState>,
+    Json(req): Json<SignedRequest>,
+) -> VotingResult<Json<serde_json::Value>> {
     let payload = parse_and_validate(
         &req.payload,
         "register",
@@ -172,11 +187,18 @@ async fn registration(
     })))
 }
 
-async fn list_proposals(State(state): State<AppState>) -> VotingResult<Json<Vec<serde_json::Value>>> {
+async fn list_proposals(
+    State(state): State<AppState>,
+) -> VotingResult<Json<Vec<serde_json::Value>>> {
     let rows = db::list_proposals(&state.pool).await?;
     let mut out = Vec::new();
     for p in rows {
         let tallies = db::tally(&state.pool, p.id).await?;
+        let summary = p
+            .body_sections
+            .as_ref()
+            .and_then(|j| j.as_object())
+            .and_then(summary_html);
         out.push(serde_json::json!({
             "id": p.id,
             "chain": p.chain,
@@ -187,6 +209,7 @@ async fn list_proposals(State(state): State<AppState>) -> VotingResult<Json<Vec<
             "created_at": p.created_at,
             "status": p.status,
             "tally": tallies,
+            "summary": summary,
         }));
     }
     Ok(Json(out))
@@ -196,15 +219,22 @@ async fn create_proposal(
     State(state): State<AppState>,
     Json(req): Json<CreateProposalRequest>,
 ) -> VotingResult<(StatusCode, Json<serde_json::Value>)> {
-    if req.body_html.len() > MAX_BODY_BYTES || req.title.len() > 200 {
+    if req.title.len() > 200 {
         return Err(VotingError::BadRequest("proposal too large".into()));
     }
+    if req.body_html.as_ref().is_some_and(|s| !s.is_empty()) {
+        return Err(VotingError::BadRequest(
+            "new proposals must use body_sections; body_html is read-only".into(),
+        ));
+    }
+    let sections = req
+        .body_sections
+        .as_ref()
+        .ok_or_else(|| VotingError::BadRequest("body_sections is required".into()))?;
+    let prepared = prepare_sections(sections)?;
     if state.cfg.blacklist.contains(&req.signed.address) {
         return Err(VotingError::Forbidden("address is blacklisted".into()));
     }
-    let sanitized = sanitize_proposal_html(&req.body_html);
-    // Hash the submitted body the client signed. Store ammonia-sanitized HTML only.
-    let expected_hash = body_hash(&req.body_html);
     let payload = parse_and_validate(
         &req.signed.payload,
         "propose",
@@ -216,8 +246,10 @@ async fn create_proposal(
     if payload.title.as_deref() != Some(req.title.as_str()) {
         return Err(VotingError::Unauthorized("signed title mismatch".into()));
     }
-    if payload.body_hash.as_deref() != Some(expected_hash.as_str()) {
-        return Err(VotingError::Unauthorized("signed body hash mismatch".into()));
+    if payload.body_hash.as_deref() != Some(prepared.body_hash.as_str()) {
+        return Err(VotingError::Unauthorized(
+            "signed body hash mismatch".into(),
+        ));
     }
     verify_signed(&req.signed, &req.signed.payload)?;
 
@@ -250,13 +282,15 @@ async fn create_proposal(
         "propose",
     )
     .await?;
+    let sections_json = serde_json::Value::Object(prepared.sanitized.clone());
     let id = db::insert_proposal(
         &state.pool,
         &payload.chain,
         &req.signed.address,
         &req.title,
-        &sanitized,
-        &sanitized,
+        &prepared.body_html,
+        &prepared.canonical_json,
+        &sections_json,
         terra_freeze,
         bsc_freeze,
     )
@@ -279,12 +313,14 @@ async fn get_proposal(
         .await?
         .ok_or_else(|| VotingError::NotFound("proposal".into()))?;
     let tallies = db::tally(&state.pool, id).await?;
+    let sections = p.body_sections.map(|j| j.0);
     Ok(Json(serde_json::json!({
         "id": p.id,
         "chain": p.chain,
         "proposer": p.proposer,
         "title": p.title,
         "body_html": p.body_html,
+        "body_sections": sections,
         "terra_height": p.terra_height,
         "bsc_block": p.bsc_block,
         "created_at": p.created_at,
@@ -300,7 +336,9 @@ async fn cast_vote(
     Json(req): Json<CastVoteRequest>,
 ) -> VotingResult<Json<serde_json::Value>> {
     if !matches!(req.choice.as_str(), "for" | "against" | "abstain") {
-        return Err(VotingError::BadRequest("choice must be for, against, or abstain".into()));
+        return Err(VotingError::BadRequest(
+            "choice must be for, against, or abstain".into(),
+        ));
     }
     if state.cfg.blacklist.contains(&req.signed.address) {
         return Err(VotingError::Forbidden("address is blacklisted".into()));
@@ -314,7 +352,9 @@ async fn cast_vote(
     )?;
     deny_cross_scheme(&req.signed.chain, &payload.chain)?;
     if payload.proposal_id.as_deref() != Some(&id.to_string()) {
-        return Err(VotingError::Unauthorized("vote is for a different proposal".into()));
+        return Err(VotingError::Unauthorized(
+            "vote is for a different proposal".into(),
+        ));
     }
     if payload.choice.as_deref() != Some(req.choice.as_str()) {
         return Err(VotingError::Unauthorized("signed choice mismatch".into()));
@@ -329,7 +369,9 @@ async fn cast_vote(
         .ok_or_else(|| VotingError::Forbidden("register before voting".into()))?;
     let weight = db::snapshot_weight(&state.pool, id, &payload.chain, &req.signed.address).await?;
     if weight <= 0.into() {
-        return Err(VotingError::Forbidden("no snapshot weight at proposal freeze".into()));
+        return Err(VotingError::Forbidden(
+            "no snapshot weight at proposal freeze".into(),
+        ));
     }
     let hash = hex::encode(Sha256::digest(req.signed.payload.as_bytes()));
     let sig_id = db::insert_signature(
@@ -366,7 +408,9 @@ async fn get_vote(
 ) -> VotingResult<Json<serde_json::Value>> {
     let chain = resolve_chain(&addr, q.chain.as_deref())?.to_string();
     match db::get_vote(&state.pool, id, &chain, &addr).await? {
-        Some((choice, weight)) => Ok(Json(serde_json::json!({ "choice": choice, "weight": weight }))),
+        Some((choice, weight)) => Ok(Json(
+            serde_json::json!({ "choice": choice, "weight": weight }),
+        )),
         None => Err(VotingError::NotFound("vote".into())),
     }
 }
@@ -391,11 +435,8 @@ async fn get_balance(
     };
     let (terra_h, bsc_b) = db::tip_heights(&state.pool).await?;
     let tip = if chain == "terra" { terra_h } else { bsc_b };
-    let as_of_height = resolve_balance_height(
-        q.height,
-        tip,
-        reg.as_ref().map(|r| r.registered_at_height),
-    );
+    let as_of_height =
+        resolve_balance_height(q.height, tip, reg.as_ref().map(|r| r.registered_at_height));
     let amount = db::balance_at(&state.pool, chain, &addr, as_of_height).await?;
     Ok(Json(serde_json::json!({
         "chain": chain,

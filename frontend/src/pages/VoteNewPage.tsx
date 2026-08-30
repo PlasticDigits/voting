@@ -1,40 +1,46 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { EditorContent, useEditor } from '@tiptap/react'
-import StarterKit from '@tiptap/starter-kit'
 import { useConnectedIdentity } from '@/hooks/useConnectedIdentity'
 import { useVotingSnapshot } from '@/hooks/useVotingSnapshot'
 import { createProposal } from '@/services/operatorVoting'
 import { signVotingRequest } from '@/services/votingSign'
-import { sanitizeProposalHtml, sha256Hex } from '@/utils/sanitizeProposalHtml'
 import { canPropose } from '@/utils/votingPayload'
 import { MIN_PROPOSAL_CL8Y, MIN_PROPOSAL_RAW } from '@/utils/constants'
 import { formatCl8y } from '@/utils/format'
 import { ROUTES } from '@/routes'
+import {
+  type SectionKey,
+  emptySections,
+  hashSections,
+  sectionsFromPlain,
+  validateSections,
+} from '@/utils/proposalSections'
+import ProposalSectionFields, {
+  ProposalSectionsPreview,
+} from '@/components/proposal/ProposalSectionFields'
 
 export default function VoteNewPage() {
   const { address, chain, label } = useConnectedIdentity()
   const snapshot = useVotingSnapshot(address, chain)
   const navigate = useNavigate()
   const [title, setTitle] = useState('')
+  const [plain, setPlain] = useState<Record<SectionKey, string>>(emptySections)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-  const editor = useEditor({
-    extensions: [StarterKit],
-    content: '<p></p>',
-  })
+
+  const sections = useMemo(() => sectionsFromPlain(plain), [plain])
+  const sectionCheck = useMemo(() => validateSections(sections), [sections])
 
   const registered = snapshot.status === 'registered'
   const gated = !registered || snapshot.balance == null || !canPropose(snapshot.balance, MIN_PROPOSAL_RAW)
+  const canSubmit = !gated && !busy && Boolean(title.trim()) && sectionCheck.ok
 
   async function handleSubmit() {
-    if (!address || !chain || !editor) return
+    if (!address || !chain || !canSubmit) return
     setBusy(true)
     setError(null)
     try {
-      const rawHtml = editor.getHTML()
-      const body_html = sanitizeProposalHtml(rawHtml)
-      const body_hash = await sha256Hex(body_html)
+      const body_hash = await hashSections(sections)
       const signed = await signVotingRequest({
         chain,
         address,
@@ -42,7 +48,7 @@ export default function VoteNewPage() {
         title,
         body_hash,
       })
-      const created = await createProposal({ ...signed, title, body_html })
+      const created = await createProposal({ ...signed, title, body_sections: sections })
       navigate(ROUTES.proposal(created.id))
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Propose failed')
@@ -67,9 +73,10 @@ export default function VoteNewPage() {
       <section className="panel">
         <h1>New proposal</h1>
         <p className="lede">
-          Server is the source of truth for the {MIN_PROPOSAL_CL8Y} CL8Y gate. You sign a hash of the HTML you submit;
-          operator-voting checks that hash, then stores ammonia-sanitized HTML. {label} and the other chain are never
-          summed.
+          Server is the source of truth for the {MIN_PROPOSAL_CL8Y} CL8Y gate and required sections. You
+          sign a hash of the canonical section JSON; operator-voting checks that hash, then stores
+          ammonia-sanitized HTML per section. {label} and the other chain are never summed. Never enter a
+          seed phrase.
         </p>
         {registered && snapshot.balance != null && (
           <p data-testid="propose-balance">
@@ -78,8 +85,8 @@ export default function VoteNewPage() {
         )}
         {snapshot.status === 'unregistered' && (
           <p className="lede" data-testid="propose-register-hint">
-            Register to snapshot this address’s CL8Y before proposing. The list page does not show a live chain
-            balance.
+            Register to snapshot this address’s CL8Y before proposing. The list page does not show a live
+            chain balance.
           </p>
         )}
         {snapshot.status === 'pending' && (
@@ -96,12 +103,13 @@ export default function VoteNewPage() {
             data-testid="proposal-title"
           />
         </label>
-        <div className="field">
-          <span>Body</span>
-          <div className="editor" data-testid="proposal-body">
-            <EditorContent editor={editor} />
-          </div>
-        </div>
+        <ProposalSectionFields
+          values={plain}
+          errors={sectionCheck.errors}
+          disabled={busy}
+          onChange={(key, value) => setPlain((prev) => ({ ...prev, [key]: value }))}
+        />
+        <ProposalSectionsPreview sections={sections} />
         {banner && (
           <div className="alert-error" role="alert">
             {banner}
@@ -111,7 +119,7 @@ export default function VoteNewPage() {
           type="button"
           className="btn-primary"
           data-testid="submit-proposal"
-          disabled={gated || busy || !title.trim()}
+          disabled={!canSubmit}
           onClick={() => void handleSubmit()}
         >
           {busy ? 'Signing…' : 'Create proposal'}
