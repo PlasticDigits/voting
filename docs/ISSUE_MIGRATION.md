@@ -24,6 +24,7 @@ DEX tracking stub (closed): [#637](https://gitlab.com/PlasticDigits/cl8y-dex-ter
 | [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7) | Ops: Coolify, Legal property, live wallet QA, POST rate limits |
 | [#8](https://gitlab.com/PlasticDigits/voting/-/issues/8) | Legal accept and deep links 404 on `/vote` |
 | [#9](https://gitlab.com/PlasticDigits/voting/-/issues/9) | Registered holders shown as 0 after live snapshot |
+| [#12](https://gitlab.com/PlasticDigits/voting/-/issues/12) | WalletConnect stays on Connecting... (Galaxy Station, iPhone, desktop Chrome) |
 
 ## Suggested order
 
@@ -31,4 +32,4 @@ DEX tracking stub (closed): [#637](https://gitlab.com/PlasticDigits/cl8y-dex-ter
 
 Descriptions on `#1`–`#4` still mention DEX paths; those are design references. Implement in this repo.
 
-Implementation: `feat/voting-bundle` — [`HANDOFF.md`](HANDOFF.md), [`LEDGER_INVARIANTS.md`](LEDGER_INVARIANTS.md), [`OPERATOR_VOTING.md`](OPERATOR_VOTING.md), [`FRONTEND.md`](FRONTEND.md). Ops leftovers: [`OPS.md`](OPS.md) · skill [`../skills/AGENTS_OPS_STAGING.md`](../skills/AGENTS_OPS_STAGING.md). In-tree #7 extras (grants fidelity, prod migrate refuse, CSP, O3/O4 guards, CI integration) stay on `main`; Coolify / Legal admin / live wallets still block close. #8 in-tree: flattened routes, nginx `try_files`, HEALTHCHECK `/vote`, CI SPA smoke; live edge switch still ops (do not close until live `GET /vote` is 200). In-tree #9: default balance height clamp (OV-B1), pending register UX; live LCD equality on staging still blocks close.
+Implementation: `feat/voting-bundle` — [`HANDOFF.md`](HANDOFF.md), [`LEDGER_INVARIANTS.md`](LEDGER_INVARIANTS.md), [`OPERATOR_VOTING.md`](OPERATOR_VOTING.md), [`FRONTEND.md`](FRONTEND.md). Ops leftovers: [`OPS.md`](OPS.md) · skill [`../skills/AGENTS_OPS_STAGING.md`](../skills/AGENTS_OPS_STAGING.md). In-tree #7 extras (grants fidelity, prod migrate refuse, CSP, O3/O4 guards, CI integration) stay on `main`; Coolify / Legal admin / live wallets still block close. #8 in-tree: flattened routes, nginx `try_files`, HEALTHCHECK `/vote`, CI SPA smoke; live edge switch still ops (do not close until live `GET /vote` is 200). In-tree #9: default balance height clamp (OV-B1), pending register UX; live LCD equality on staging still blocks close. In-tree #12: cosmes patch + hook-before-`createRoot` + `VITE_WC_PROJECT_ID` fail-closed + CSP `frame-src`; live Galaxy/iPhone/desktop Chrome + BSC WC + Cloud origin still block close.

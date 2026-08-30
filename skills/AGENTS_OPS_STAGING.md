@@ -3,8 +3,9 @@ name: voting-ops-staging
 description: >-
   Coolify/staging deploy, Legal property/CORS/allowlist, live Keplr+MetaMask QA,
   operator-voting POST rate limits, SPA document fallback for /vote (issue #8),
-  registered-holder balance reads (issue #9 OV-B1), and optional LocalTerra LCD equality.
-  Use when verifying or implementing GitLab voting issues #7, #8, or #9 or public expose.
+  registered-holder balance reads (issue #9 OV-B1), WalletConnect pairing
+  (issue #12), and optional LocalTerra LCD equality.
+  Use when verifying or implementing GitLab voting issues #7, #8, #9, or #12 or public expose.
 ---
 
 # Ops / staging (voting issue #7)
@@ -24,8 +25,9 @@ This skill is for **3rd-party agents** continuing Coolify, Legal admin, or live 
 | POST IP/QPS (`governor`, O-RL1–O-RL5) | [`operator-voting/src/rate_limit.rs`](../operator-voting/src/rate_limit.rs) — 429 includes `Retry-After` |
 | Prod refuses zero POST quota **and** `APPLY_MIGRATIONS=true` | [`operator-voting/src/config.rs`](../operator-voting/src/config.rs) |
 | Ledger writer owns migrations | Image pins `APPLY_MIGRATIONS=false`; prod config refuses true |
-| Legal hatch + O4 BSC RPC blocked on prod build | [`frontend/src/utils/prodEnvGuards.ts`](../frontend/src/utils/prodEnvGuards.ts) + frontend Dockerfile |
-| Production CSP (`connect-src`, no blanket `https:`) | [`deploy/docker/frontend.security-headers.conf`](../deploy/docker/frontend.security-headers.conf) |
+| Legal hatch + O4 BSC RPC + WC project id blocked/required on prod build | [`frontend/src/utils/prodEnvGuards.ts`](../frontend/src/utils/prodEnvGuards.ts) + frontend Dockerfile (`test -n "$VITE_WC_PROJECT_ID"`) |
+| Production CSP (`connect-src` / `frame-src`, no blanket `https:`) | [`deploy/docker/frontend.security-headers.conf`](../deploy/docker/frontend.security-headers.conf) |
+| Cosmes WC pairing patch + hook before `createRoot` (#12) | [`frontend/patches/`](../frontend/patches/) · [`frontend/src/main.tsx`](../frontend/src/main.tsx) · [`AGENTS_WALLET_CONNECTORS.md`](AGENTS_WALLET_CONNECTORS.md) |
 | SPA `try_files` + HEALTHCHECK `/vote` (O8 / #8) | [`deploy/docker/frontend.nginx.conf`](../deploy/docker/frontend.nginx.conf) · [`deploy/docker/frontend.healthcheck.sh`](../deploy/docker/frontend.healthcheck.sh) · CI `test:frontend-spa-fallback` |
 | Flattened dApp routes + `/vote*` aliases | [`frontend/src/routes.ts`](../frontend/src/routes.ts) · [`docs/FRONTEND.md`](../docs/FRONTEND.md) |
 | Runbook + invariants O1–O8 | [`docs/OPS.md`](../docs/OPS.md) |
@@ -44,12 +46,14 @@ This skill is for **3rd-party agents** continuing Coolify, Legal admin, or live 
 
 - Put `ADMIN_TOKEN` or Legal admin credentials in this frontend.
 - Set `VITE_PLAYWRIGHT_E2E` or `VITE_DEV_MNEMONIC` on Coolify.
+- Ship a production frontend image without `VITE_WC_PROJECT_ID`, or skip adding `https://vote.cl8y.com` on that WalletConnect Cloud project ([#12](https://gitlab.com/PlasticDigits/voting/-/issues/12)).
 - Set any `VITE_*` BSC RPC for balances.
 - Point `operator-voting` `DATABASE_URL` at the ledger writer.
 - Run `APPLY_MIGRATIONS=true` on the restricted role.
 - Treat Playwright Legal-hatch E2E as live wallet QA.
 - Silently merge `terra1…` and `0x…`.
 - Close #7 until Coolify, Legal admin, and both live wallets actually pass on staging.
+- Close #12 while Galaxy / iPhone / desktop Chrome still sit on Connecting... with no QR and no Open/Copy sheet. Playwright hatch is not live WC QA.
 - Close #8 while `curl -sI https://vote.cl8y.com/vote` is 404. Flattening `/` is not a substitute for edge `try_files` on `/new` and `/vote/:id`.
 - Use `error_page 404 = /index.html` to hide missing SPA fallback (caches 404).
 - Close #9 until a registered Terra (and BSC) holder with ≥1000 pinned CL8Y sees a non-zero `GET /v1/balances` that matches LCD/`balanceOf` and the UI badge. “Registered” plus balance `"0"` is not done.

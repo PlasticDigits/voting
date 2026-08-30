@@ -24,7 +24,8 @@ See [`.env.example`](./.env.example). Copy to `.env.local`.
 ## Coolify
 
 - Unset `VITE_PLAYWRIGHT_E2E`, `VITE_DEV_MNEMONIC`, and any `VITE_*` BSC RPC on production builds (`prodEnvGuards` + [`../deploy/docker/frontend.Dockerfile`](../deploy/docker/frontend.Dockerfile) fail the build otherwise).
-- Production nginx CSP is stamped from [`../deploy/docker/frontend.security-headers.conf`](../deploy/docker/frontend.security-headers.conf) (Legal + operator-voting origins; no blanket `https:`).
+- Pass `VITE_WC_PROJECT_ID` (required). Allowlist `https://vote.cl8y.com` on that WalletConnect Cloud project ([#12](https://gitlab.com/PlasticDigits/voting/-/issues/12)).
+- Production nginx CSP is stamped from [`../deploy/docker/frontend.security-headers.conf`](../deploy/docker/frontend.security-headers.conf) (Legal + operator-voting + WalletConnect origins; no blanket `https:` / `frame-src *`).
 - Point `VITE_OPERATOR_VOTING_URL` at the public operator-voting origin.
 - The image must use [`../deploy/docker/frontend.nginx.conf`](../deploy/docker/frontend.nginx.conf) so `GET /vote` and `GET /new` are 200 HTML (Legal return, [#8](https://gitlab.com/PlasticDigits/voting/-/issues/8)). If Coolify serves static files with a default nginx, paste [`../deploy/coolify-frontend.nginx.conf`](../deploy/coolify-frontend.nginx.conf) (`try_files $uri /index.html`). Missing `/assets/*` must stay 404.
 - Register Legal property `vote.cl8y.com` in [cl8y-ecosystem-legal](https://gitlab.com/PlasticDigits/cl8y-ecosystem-legal) (interactive admin token — never `ADMIN_TOKEN` in this app).

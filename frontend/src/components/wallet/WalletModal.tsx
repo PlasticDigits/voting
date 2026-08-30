@@ -4,7 +4,7 @@ import { useWalletConnectPairingStore } from '@/hooks/useWalletConnectPairingSto
 import { useWalletExtensionInstallSnapshot } from '@/hooks/useWalletExtensionInstallSnapshot'
 import { useEvmWalletDiscovery } from '@/hooks/useEvmWalletDiscovery'
 import { useEvmWalletStore } from '@/stores/evmWallet'
-import { DEV_MODE } from '@/utils/constants'
+import { DEV_MODE, WC_PROJECT_ID } from '@/utils/constants'
 import { Modal } from '@/components/ui'
 import { WALLET_EXTENSION_INSTALL_URL } from '@/services/terraclassic/walletExtensionInstall'
 import { detectWalletInAppBrowser } from '@/utils/detectWalletInAppBrowser'
@@ -27,6 +27,7 @@ export default function WalletModal({ onClose }: WalletModalProps) {
     keplrInjected: extensionInstall.get(WalletName.KEPLR) ?? false,
     stationInjected: extensionInstall.get(WalletName.STATION) ?? false,
     cosmostationInjected: extensionInstall.get(WalletName.COSMOSTATION) ?? false,
+    walletConnectConfigured: Boolean(WC_PROJECT_ID),
   })
   const showMobileHint = isMobileClient && !detectWalletInAppBrowser().isInAppBrowser
   const { connectors } = useEvmWalletDiscovery()
@@ -48,14 +49,19 @@ export default function WalletModal({ onClose }: WalletModalProps) {
     onClose()
   }
 
-  async function handleEvmConnect(connectorId: string) {
+  async function handleEvmConnect(connector: { id: string; type: string }) {
     await disconnectTerra()
-    await evmConnect(connectorId)
+    // Bridge EvmWalletModal: close our overlay so the WalletConnect QR iframe
+    // is not trapped under Connect (z-[9999] vs Reown modal).
+    if (connector.type === 'walletConnect') {
+      useWalletStore.getState().setWalletModalOpen(false)
+    }
+    await evmConnect(connector.id)
     if (useEvmWalletStore.getState().address) onClose()
   }
 
   function handleClose() {
-    if (isConnecting) {
+    if (isConnecting || evmConnecting) {
       cancelConnection()
       return
     }
@@ -163,7 +169,7 @@ export default function WalletModal({ onClose }: WalletModalProps) {
               className="wallet-option-card disabled:opacity-50"
               disabled={evmConnecting}
               data-testid={`connect-evm-${connector.type}`}
-              onClick={() => void handleEvmConnect(connector.id)}
+              onClick={() => void handleEvmConnect(connector)}
             >
               <span className="wallet-option-main">
                 <span className="font-medium uppercase tracking-wide text-sm" style={{ color: 'var(--ink)' }}>

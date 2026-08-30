@@ -5,19 +5,22 @@
 #     -t voting-frontend .
 #
 # Invariants: never pass VITE_PLAYWRIGHT_E2E, VITE_DEV_MNEMONIC, or any
-# VITE_* BSC JSON-RPC URL. vite.config.ts (prodEnvGuards) also fails the
-# production build if those are set. Runtime stamps CSP origins from
+# VITE_* BSC JSON-RPC URL. Production requires VITE_WC_PROJECT_ID (#12).
+# vite.config.ts (prodEnvGuards) also fails the production build if those
+# are set / missing. Runtime stamps CSP origins from
 # frontend.security-headers.conf (Legal C6). See docs/OPS.md and docs/FRONTEND.md.
 
 FROM node:22-bookworm-slim AS builder
 
 WORKDIR /app
 COPY frontend/package.json frontend/package-lock.json frontend/.npmrc ./
+# postinstall runs patch-package; patches must exist before npm ci (#12 / WC-M6).
+COPY frontend/patches ./patches
 ARG GITLAB_NPM_TOKEN=
 RUN if [ -n "$GITLAB_NPM_TOKEN" ]; then \
       echo "//gitlab.com/api/v4/projects/82547916/packages/npm/:_authToken=${GITLAB_NPM_TOKEN}" >> .npmrc; \
     fi \
-  && npm ci
+    && npm ci
 
 COPY frontend/ ./
 
@@ -26,7 +29,7 @@ ARG VITE_CL8Y_TOKEN_ADDRESS=terra16wtml2q66g82fdkx66tap0qjkahqwp4lwq3ngtygacg5q0
 ARG VITE_LEGAL_PROPERTY=vote.cl8y.com
 ARG VITE_LEGAL_API_BASE_URL=https://api.terms.cl8y.com
 ARG VITE_LEGAL_TERMS_BASE_URL=https://terms.cl8y.com
-ARG VITE_WC_PROJECT_ID=
+ARG VITE_WC_PROJECT_ID
 ARG VITE_NETWORK=mainnet
 
 # Fail closed: these must never be present on a Coolify / production image.
@@ -45,6 +48,7 @@ ENV VITE_OPERATOR_VOTING_URL=$VITE_OPERATOR_VOTING_URL \
     NODE_OPTIONS=--max-old-space-size=4096
 
 RUN test -n "$VITE_OPERATOR_VOTING_URL" \
+  && test -n "$VITE_WC_PROJECT_ID" \
   && test -z "$VITE_PLAYWRIGHT_E2E" \
   && test -z "$VITE_DEV_MNEMONIC" \
   && test -z "$VITE_BSC_RPC" \

@@ -3,6 +3,26 @@ import { persist } from 'zustand/middleware'
 import { connect, disconnect, getAccount, getConnectors } from 'wagmi/actions'
 import { config } from '@/lib/wagmi'
 
+/** Bumps on cancel so a late wagmi WalletConnect session cannot attach (WC-M9 / #12). */
+let evmConnectAttemptId = 0
+
+function abortInFlightEvmWalletConnect(): void {
+  try {
+    const account = getAccount(config)
+    if (account.connector) {
+      void disconnect(config, { connector: account.connector }).catch(() => undefined)
+      return
+    }
+    for (const connector of getConnectors(config)) {
+      if (connector.type === 'walletConnect') {
+        void connector.disconnect?.().catch(() => undefined)
+      }
+    }
+  } catch {
+    /* non-fatal */
+  }
+}
+
 export type EvmWalletState = {
   connected: boolean
   connecting: boolean
@@ -12,6 +32,8 @@ export type EvmWalletState = {
   error: string | null
   connect: (connectorId: string) => Promise<void>
   disconnect: () => Promise<void>
+  /** Clears `connecting` and aborts in-flight WalletConnect (issue #12). */
+  cancelConnection: () => void
   hydrateFromWagmi: () => void
   clearError: () => void
 }
@@ -39,6 +61,7 @@ export const useEvmWalletStore = create<EvmWalletState>()(
       },
 
       connect: async (connectorId: string) => {
+        const attempt = ++evmConnectAttemptId
         set({ connecting: true, error: null })
         try {
           const connector = getConnectors(config).find((c) => c.id === connectorId || c.uid === connectorId)
@@ -46,6 +69,14 @@ export const useEvmWalletStore = create<EvmWalletState>()(
             throw new Error('EVM connector not found')
           }
           const result = await connect(config, { connector })
+          if (attempt !== evmConnectAttemptId) {
+            try {
+              await disconnect(config, { connector })
+            } catch {
+              /* late session after cancel must not stick */
+            }
+            return
+          }
           set({
             connected: true,
             connecting: false,
@@ -55,13 +86,23 @@ export const useEvmWalletStore = create<EvmWalletState>()(
             error: null,
           })
         } catch (error) {
+          if (attempt !== evmConnectAttemptId) {
+            return
+          }
           const message = error instanceof Error ? error.message : 'EVM connection failed'
           set({ connecting: false, error: message })
           throw error
         }
       },
 
+      cancelConnection: () => {
+        evmConnectAttemptId += 1
+        abortInFlightEvmWalletConnect()
+        set({ connecting: false, error: null })
+      },
+
       disconnect: async () => {
+        evmConnectAttemptId += 1
         try {
           const account = getAccount(config)
           if (account.connector) {

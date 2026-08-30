@@ -26,6 +26,9 @@ const connectors = [
         }),
       ]
     : []),
+  // WalletConnect requires a Cloud project id. Production builds fail closed
+  // without VITE_WC_PROJECT_ID (#12). Omit the connector in local/dev if unset
+  // so the Connect list cannot hang on Connecting...
   ...(WC_PROJECT_ID
     ? [
         walletConnect({
