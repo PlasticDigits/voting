@@ -418,6 +418,57 @@ fn app(pool: PgPool, url: &str) -> axum::Router {
     })
 }
 
+/// O-RL: the production `router()` composition (AppState + rate-limit layer) must 429.
+#[tokio::test]
+async fn router_post_burst_returns_429_with_retry_after() {
+    let Some((pool, _lock)) = setup_pool().await else {
+        eprintln!("skip: set LEDGER_TEST_DATABASE_URL");
+        return;
+    };
+    let url = test_db_url().unwrap();
+    let mut limited_cfg = cfg(&url, "");
+    limited_cfg.rate_limit_post_per_minute = 2;
+    limited_cfg.rate_limit_post_burst = 2;
+    limited_cfg.rate_limit_trust_forwarded = true;
+    let app = router(AppState {
+        pool,
+        cfg: limited_cfg,
+    });
+    let post = || {
+        Request::post("/v1/register")
+            .header("content-type", "application/json")
+            .header("x-forwarded-for", "203.0.113.50")
+            .body(Body::from(r#"{"chain":"terra"}"#))
+            .unwrap()
+    };
+    let (first, _) = call(app.clone(), post()).await;
+    let (second, _) = call(app.clone(), post()).await;
+    assert!(
+        first.is_client_error() && first != StatusCode::TOO_MANY_REQUESTS,
+        "first POST should reach the handler, got {first}"
+    );
+    assert!(
+        second.is_client_error() && second != StatusCode::TOO_MANY_REQUESTS,
+        "second POST should reach the handler, got {second}"
+    );
+    let resp = app
+        .clone()
+        .oneshot(post())
+        .await
+        .expect("third POST");
+    assert_eq!(resp.status(), StatusCode::TOO_MANY_REQUESTS);
+    assert!(
+        resp.headers().get(axum::http::header::RETRY_AFTER).is_some(),
+        "O-RL: 429 must include Retry-After"
+    );
+    let (health, body) = call(
+        app,
+        Request::get("/health").body(Body::empty()).unwrap(),
+    )
+    .await;
+    assert_eq!(health, StatusCode::OK, "{body}");
+}
+
 async fn insert_reg(pool: &PgPool, chain: &str, wallet: &str, height: i64, human: u64) {
     sqlx::query(
         r#"
