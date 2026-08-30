@@ -64,6 +64,8 @@ Use **EIP-191 `personal_sign`** for register / propose / vote. Injected/WC provi
 
 `https://terms.cl8y.com/sign/evm` and Terra Legal sign URLs are **terms acceptance**. They are not voting signatures. After Legal returns, the voting dApp still does its own ADR-36 / EIP-191 payloads.
 
+A voting WalletConnect or injected session does **not** follow the user to the portal ([#16](https://gitlab.com/PlasticDigits/voting/-/issues/16)). Unsigned EVM users in Chrome/Safari need the in-app/copy hint (`legalEvmInAppHint.ts`) — Open in MetaMask + copy — not a silent trip to Legal “No EVM wallet found”. Do not add a second WalletConnect Cloud id for terms (Legal owns portal WC). Skill: [`AGENTS_LEGAL_CLICKWRAP.md`](AGENTS_LEGAL_CLICKWRAP.md) (L-EVM).
+
 ## Support matrix (v1)
 
 | Chain | Preferred | Also keep if already working in the source stack | Degrade |

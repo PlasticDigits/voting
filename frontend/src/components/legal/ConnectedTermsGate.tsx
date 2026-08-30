@@ -5,6 +5,7 @@ import LegalKeplrInAppHint from '@/components/legal/LegalKeplrInAppHint'
 import {
   getLegalClickwrapClient,
   getLegalProperty,
+  LEGAL_APP_NAME,
   resolveLegalRedirectUri,
   skipLegalClickwrapForAutomation,
 } from '@/utils/legalClickwrap'
@@ -33,7 +34,7 @@ export default function ConnectedTermsGate({ children }: { children: ReactNode }
         network={legalNetwork}
         account={address}
         redirectUri={redirectUri}
-        appName="CL8Y Voting"
+        appName={LEGAL_APP_NAME}
         fallback={
           <div className="app-connected-terms-panel" role="status" aria-live="polite">
             <p className="app-connected-terms-lead">Checking terms acceptance…</p>

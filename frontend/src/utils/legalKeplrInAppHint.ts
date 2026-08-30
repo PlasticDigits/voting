@@ -1,6 +1,7 @@
 /**
  * After WalletConnect, Legal portal still needs `window.keplr` (C1 — DEX must not
  * implement ADR-036). Surface a next step instead of a dead Accept button (#554).
+ * EVM equivalent: [`legalEvmInAppHint.ts`](./legalEvmInAppHint.ts) (issue #16).
  */
 export function shouldShowLegalKeplrInAppHint(input: {
   hasKeplrExtension: boolean

@@ -3,10 +3,11 @@ name: voting-ops-staging
 description: >-
   Coolify/staging deploy, Legal property/CORS/allowlist, live Keplr+MetaMask QA,
   operator-voting POST rate limits, SPA document fallback for /vote (issue #8),
-  registered-holder balance reads (issue #9 OV-B1), WalletConnect pairing
+  registered-holder balance reads (issue #9 OV-B1),   WalletConnect pairing
   (issue #12), registration pending never becoming a snapshot (issue #14),
+  EVM Legal in-app/copy hint (issue #16),
   and optional LocalTerra LCD equality.
-  Use when verifying or implementing GitLab voting issues #7, #8, #9, #12, or #14
+  Use when verifying or implementing GitLab voting issues #7, #8, #9, #12, #14, or #16
   or public expose.
 ---
 
