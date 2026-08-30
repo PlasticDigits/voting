@@ -90,15 +90,15 @@ pub async fn get_registration(
     .bind(&wallet)
     .fetch_optional(pool)
     .await?;
-    Ok(row.map(|(chain, wallet_address, registered_at_height, initial_balance, status)| {
-        Registration {
+    Ok(row.map(
+        |(chain, wallet_address, registered_at_height, initial_balance, status)| Registration {
             chain,
             wallet_address,
             registered_at_height,
             initial_balance,
             status,
-        }
-    }))
+        },
+    ))
 }
 
 pub async fn max_registered_height(pool: &PgPool, chain: Chain) -> LedgerResult<i64> {
@@ -125,7 +125,12 @@ pub async fn registered_set(pool: &PgPool, chain: Chain) -> LedgerResult<Vec<Str
     Ok(rows.into_iter().map(|(a,)| a).collect())
 }
 
-pub async fn balance_at(pool: &PgPool, chain: Chain, wallet: &str, height: i64) -> LedgerResult<BigInt> {
+pub async fn balance_at(
+    pool: &PgPool,
+    chain: Chain,
+    wallet: &str,
+    height: i64,
+) -> LedgerResult<BigInt> {
     let wallet = normalize_wallet(chain, wallet)?;
     let fn_name = match chain {
         Chain::Terra => "public.voting_cl8y_balance_at",
@@ -342,11 +347,10 @@ pub async fn rewind_bsc(pool: &PgPool, after_block: i64) -> LedgerResult<()> {
 }
 
 pub async fn get_state(pool: &PgPool, key: &str) -> LedgerResult<Option<String>> {
-    let v: Option<String> =
-        sqlx::query_scalar("SELECT value FROM indexer_state WHERE key = $1")
-            .bind(key)
-            .fetch_optional(pool)
-            .await?;
+    let v: Option<String> = sqlx::query_scalar("SELECT value FROM indexer_state WHERE key = $1")
+        .bind(key)
+        .fetch_optional(pool)
+        .await?;
     Ok(v)
 }
 
@@ -404,18 +408,16 @@ pub async fn mark_intent_processed(pool: &PgPool, id: uuid::Uuid) -> LedgerResul
         .execute(pool)
         .await
         .map(|_| ())
-        .or_else(|e| {
-            // voting schema may not exist until operator-voting migrations run.
-            if e.to_string().contains("voting.registration_intents") {
-                Ok(())
-            } else {
-                Err(LedgerError::Database(e))
-            }
+        .map_err(|e| {
+            tracing::error!(error = %e, "mark_intent_processed failed (L12)");
+            LedgerError::Database(e)
         })
 }
 
-pub async fn pending_intents(pool: &PgPool) -> LedgerResult<Vec<(uuid::Uuid, String, String, Option<uuid::Uuid>)>> {
-    let rows = sqlx::query_as::<_, (uuid::Uuid, String, String, Option<uuid::Uuid>)>(
+pub async fn pending_intents(
+    pool: &PgPool,
+) -> LedgerResult<Vec<(uuid::Uuid, String, String, Option<uuid::Uuid>)>> {
+    sqlx::query_as::<_, (uuid::Uuid, String, String, Option<uuid::Uuid>)>(
         r#"
         SELECT id, chain, wallet_address, signature_id
         FROM voting.registration_intents
@@ -424,12 +426,14 @@ pub async fn pending_intents(pool: &PgPool) -> LedgerResult<Vec<(uuid::Uuid, Str
         "#,
     )
     .fetch_all(pool)
-    .await;
-    match rows {
-        Ok(v) => Ok(v),
-        Err(e) if e.to_string().contains("voting.registration_intents") => Ok(vec![]),
-        Err(e) => Err(e.into()),
-    }
+    .await
+    .map_err(|e| {
+        tracing::error!(
+            error = %e,
+            "pending_intents query failed; not treating as an empty queue (L12)"
+        );
+        LedgerError::Database(e)
+    })
 }
 
 fn unique_nonempty(addrs: &[&str]) -> Vec<String> {

@@ -59,6 +59,31 @@ test('pending register polls until ledger-registered', async ({ page }) => {
   await expect(page.getByTestId('connected-chain')).toContainText('1000 CL8Y')
 })
 
+test('pending timeout shows Retry without a second seed prompt', async ({ page }) => {
+  await mockOperatorVoting(page, { registerPendingTicks: 4 })
+  await connectSimulatedTerra(page, '/')
+  await page.getByTestId('register-cta').click()
+  await expect(page.getByTestId('registration-pending')).toBeVisible()
+  await expect(page.getByTestId('register-retry')).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByRole('alert')).toContainText('still pending')
+  await expect(page.getByTestId('connected-chain')).not.toContainText('CL8Y')
+  await page.getByTestId('register-retry').click()
+  await expect(page.getByTestId('registration-pending')).toBeVisible()
+  await expect(page.getByTestId('registration-status')).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByTestId('connected-chain')).toContainText('1000 CL8Y')
+})
+
+test('reload while pending resumes polling', async ({ page }) => {
+  await mockOperatorVoting(page, { alreadyPending: true, registerPendingTicks: 3 })
+  await connectSimulatedTerra(page, '/')
+  await expect(page.getByTestId('register-cta')).toHaveCount(0)
+  await expect(
+    page.getByTestId('registration-pending').or(page.getByTestId('registration-status')),
+  ).toBeVisible()
+  await expect(page.getByTestId('registration-status')).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByTestId('connected-chain')).toContainText('1000 CL8Y')
+})
+
 test('register → list → create → vote (canonical /)', async ({ page }) => {
   await registerProposeVote(page, '/', 'E2E proposal')
 })

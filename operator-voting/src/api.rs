@@ -438,6 +438,7 @@ async fn get_balance(
     let as_of_height =
         resolve_balance_height(q.height, tip, reg.as_ref().map(|r| r.registered_at_height));
     let amount = db::balance_at(&state.pool, chain, &addr, as_of_height).await?;
+    // OV-B6: always emit registered/pending/as_of_height/initial_balance (issue #14).
     Ok(Json(serde_json::json!({
         "chain": chain,
         "address": normalize_address(&addr),

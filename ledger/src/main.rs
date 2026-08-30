@@ -1,4 +1,5 @@
 use std::net::SocketAddr;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use axum::{extract::State, routing::get, Json, Router};
@@ -10,10 +11,13 @@ use voting_ledger::config::LedgerConfig;
 use voting_ledger::db;
 use voting_ledger::db::Chain;
 use voting_ledger::health::indexer_behind_registration;
+use voting_ledger::ingest::{self, INGEST_CHUNK, INGEST_STALE_GAP};
 use voting_ledger::lcd::LcdClient;
-use voting_ledger::ingest;
 use voting_ledger::register::process_pending_intents;
 use voting_ledger::LedgerError;
+
+/// Last `process_pending_intents` SQL result. Independent of ingest catch-up (#14 / L12).
+static INTENTS_OK: AtomicBool = AtomicBool::new(true);
 
 #[derive(Clone)]
 struct AppState {
@@ -29,6 +33,8 @@ struct Health {
     caught_up: bool,
     terra_behind_registration: bool,
     bsc_behind_registration: bool,
+    /// False when `voting.registration_intents` SELECT/UPDATE failed (L12). Not LCD retry.
+    intents_ok: bool,
 }
 
 #[tokio::main]
@@ -62,16 +68,31 @@ async fn main() -> Result<(), LedgerError> {
         },
     };
 
-    let poll_cfg = cfg.clone();
-    let poll_pool = pool.clone();
-    let poll_lcd = lcd.clone();
-    let poll_bsc = bsc.clone();
+    let ingest_cfg = cfg.clone();
+    let ingest_pool = pool.clone();
+    let ingest_lcd = lcd.clone();
+    let ingest_bsc = bsc.clone();
+    let intent_source = source;
+    let intent_pool = pool.clone();
+    let intent_interval = cfg.poll_interval_ms;
     tokio::spawn(async move {
         loop {
-            if let Err(e) = poll_once(&poll_pool, &poll_lcd, &poll_bsc, &source, &poll_cfg).await {
-                tracing::error!(error = %e, "ledger poll failed");
+            match process_pending_intents(&intent_pool, &intent_source).await {
+                Ok(_) => INTENTS_OK.store(true, Ordering::Relaxed),
+                Err(e) => {
+                    INTENTS_OK.store(false, Ordering::Relaxed);
+                    tracing::error!(error = %e, "registration intent poll failed");
+                }
             }
-            tokio::time::sleep(Duration::from_millis(poll_cfg.poll_interval_ms)).await;
+            tokio::time::sleep(Duration::from_millis(intent_interval)).await;
+        }
+    });
+    tokio::spawn(async move {
+        loop {
+            if let Err(e) = ingest_once(&ingest_pool, &ingest_lcd, &ingest_bsc, &ingest_cfg).await {
+                tracing::error!(error = %e, "ledger ingest poll failed");
+            }
+            tokio::time::sleep(Duration::from_millis(ingest_cfg.poll_interval_ms)).await;
         }
     });
 
@@ -107,18 +128,16 @@ async fn health(State(state): State<AppState>) -> Json<Health> {
         caught_up,
         terra_behind_registration,
         bsc_behind_registration,
+        intents_ok: INTENTS_OK.load(Ordering::Relaxed),
     })
 }
 
-async fn poll_once(
+async fn ingest_once(
     pool: &sqlx::PgPool,
     lcd: &Option<LcdClient>,
     bsc: &BscClient,
-    source: &CompositeBalanceSource,
     cfg: &LedgerConfig,
 ) -> Result<(), LedgerError> {
-    process_pending_intents(pool, source).await?;
-
     if let Some(lcd) = lcd {
         let last = db::indexed_terra_height(pool).await?;
         let max_reg = db::max_registered_height(pool, Chain::Terra).await?;
@@ -132,11 +151,19 @@ async fn poll_once(
         ingest::maybe_rewind_terra(pool, lcd, last).await?;
         let last = db::indexed_terra_height(pool).await?;
         let tip = lcd.latest_height().await?;
-        let start = if last == 0 { tip } else { last + 1 };
-        for h in start..=tip {
-            ingest::ingest_terra_height(pool, lcd, cfg, h).await?;
-            if let Ok(hash) = lcd.block_hash(h).await {
-                db::set_state(pool, "last_indexed_block_hash", &hash).await?;
+        if let Some(window) = ingest::ingest_window(last, tip, INGEST_CHUNK, INGEST_STALE_GAP) {
+            if window.jumped_to_tip && last > 0 {
+                tracing::warn!(
+                    last,
+                    tip,
+                    "terra last_indexed_height is a stale non-zero cursor; jumping to tip (L1, no archive)"
+                );
+            }
+            for h in window.start..=window.end {
+                ingest::ingest_terra_height(pool, lcd, cfg, h).await?;
+                if let Ok(hash) = lcd.block_hash(h).await {
+                    db::set_state(pool, "last_indexed_block_hash", &hash).await?;
+                }
             }
         }
         let after = db::indexed_terra_height(pool).await?;
@@ -159,11 +186,15 @@ async fn poll_once(
             );
         }
         let tip = bsc.block_number().await?;
-        let start = if last == 0 { tip } else { last + 1 };
-        // Cap catch-up window to avoid huge eth_getLogs.
-        let end = tip.min(start + 2_000);
-        if start <= end {
-            ingest::ingest_bsc_range(pool, bsc, cfg, start, end).await?;
+        if let Some(window) = ingest::ingest_window(last, tip, INGEST_CHUNK, INGEST_STALE_GAP) {
+            if window.jumped_to_tip && last > 0 {
+                tracing::warn!(
+                    last,
+                    tip,
+                    "bsc last_indexed_bsc_block is a stale non-zero cursor; jumping to tip (L1, no archive)"
+                );
+            }
+            ingest::ingest_bsc_range(pool, bsc, cfg, window.start, window.end).await?;
         }
         let after = db::indexed_bsc_block(pool).await?;
         if after == 0 && max_reg > 0 {
