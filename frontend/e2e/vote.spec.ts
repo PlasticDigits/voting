@@ -23,13 +23,15 @@ async function registerDraftCommentOpenVote(page: Page, path: string, title: str
   await page.getByTestId('propose-cta').click()
   await expect(page.getByTestId('propose-balance')).toContainText('1000 CL8Y')
   await page.getByTestId('proposal-title').fill(title)
-  const section = 'This draft section has forty visible characters.'
+  const section = 'Playwright section text has more than forty visible characters.'
   for (const key of ['problem', 'solution', 'pros_cons', 'summary', 'success_criteria']) {
-    await page.getByTestId(`section-${key}`).fill(section)
+    await page.getByTestId(`proposal-section-${key}`).fill(section)
   }
   await page.getByTestId('submit-proposal').click()
 
   await expect(page.getByRole('heading', { name: title })).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByTestId('proposal-sections')).toBeVisible()
+  await expect(page.getByTestId('proposal-section-view-summary')).toContainText('Summary (TL;DR)')
   await expect(page).toHaveURL(new RegExp(`/${E2E_PROPOSAL_ID}$`))
   await expect(page.getByTestId('proposal-status')).toHaveText('draft')
   await expect(page.getByTestId('vote-for')).toHaveCount(0)
@@ -42,6 +44,9 @@ async function registerDraftCommentOpenVote(page: Page, path: string, title: str
   await expect(page.getByTestId('proposal-status')).toHaveText('open')
   await page.getByTestId('vote-for').click()
   await expect(page.getByTestId('vote-recorded')).toContainText('for')
+
+  await page.getByRole('link', { name: 'All proposals' }).click()
+  await expect(page.getByTestId('proposal-summary')).toContainText('Playwright section text')
 }
 
 test('unregistered connection does not look like a live 0 CL8Y', async ({ page }) => {

@@ -41,11 +41,11 @@ deploy/              # grants.sql, Coolify env, Dockerfiles (issue #7)
 docs/OPS.md          # Coolify / Legal / live QA / rate limits
 ```
 
-Three deployables (ledger worker, API, dApp) and **two** DB roles. Coolify images: [`../deploy/docker/`](../deploy/docker/). Public-expose checklist: [OPS.md](OPS.md) (issue [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7)). SPA documents for Legal return: [FRONTEND.md](FRONTEND.md) (issue [#8](https://gitlab.com/PlasticDigits/voting/-/issues/8), invariant O8). Default GET `/v1/balances` clamp: [OPERATOR_VOTING.md](OPERATOR_VOTING.md) OV-B1 (issue [#9](https://gitlab.com/PlasticDigits/voting/-/issues/9)).
+Three deployables (ledger worker, API, dApp) and **two** DB roles. Coolify images: [`../deploy/docker/`](../deploy/docker/). Public-expose checklist: [OPS.md](OPS.md) (issue [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7)). SPA documents for Legal return: [FRONTEND.md](FRONTEND.md) (issue [#8](https://gitlab.com/PlasticDigits/voting/-/issues/8), invariant O8). Default GET `/v1/balances` clamp: [OPERATOR_VOTING.md](OPERATOR_VOTING.md) OV-B1 (issue [#9](https://gitlab.com/PlasticDigits/voting/-/issues/9)). Proposal template: [OPERATOR_VOTING.md](OPERATOR_VOTING.md) OV-S (issue [#10](https://gitlab.com/PlasticDigits/voting/-/issues/10)). WalletConnect pairing (cosmes patch, project id, CSP frames): [FRONTEND.md](FRONTEND.md) (issue [#12](https://gitlab.com/PlasticDigits/voting/-/issues/12)). Pending registration retry: [FRONTEND.md](FRONTEND.md) (issue [#14](https://gitlab.com/PlasticDigits/voting/-/issues/14)).
 
 ## Snapshot
 
-A proposal **draft** does not freeze the electorate. Committee `open_vote` records `{ terra_height, bsc_block }` from current `indexer_state` tips (wall-clock aligned). Terra voters use the CW20 ledger at that height. EVM voters use the BEP-20 ledger at that block. Do not convert via USD. Register **before votes open**. Details: [OPERATOR_VOTING.md](OPERATOR_VOTING.md) OV-S1–S6 (issue [#11](https://gitlab.com/PlasticDigits/voting/-/issues/11)).
+A proposal **draft** does not freeze the electorate. Committee `open_vote` records `{ terra_height, bsc_block }` from current `indexer_state` tips (wall-clock aligned). Terra voters use the CW20 ledger at that height. EVM voters use the BEP-20 ledger at that block. Do not convert via USD. Register **before votes open**. Details: [OPERATOR_VOTING.md](OPERATOR_VOTING.md) OV-D1–D6 (issue [#11](https://gitlab.com/PlasticDigits/voting/-/issues/11)).
 
 ## Double-count
 

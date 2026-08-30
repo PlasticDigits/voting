@@ -18,7 +18,7 @@ For wallet connecting software, as there has been many problems with it, the ter
 - EVM: [`frontend/src/lib/wagmi.ts`](../frontend/src/lib/wagmi.ts) (BSC electorate; Anvil mock in DEV only)
 - Signing: [`frontend/src/services/terraSign.ts`](../frontend/src/services/terraSign.ts), [`frontend/src/services/evmSign.ts`](../frontend/src/services/evmSign.ts)
 - [`docs/FRONTEND.md`](../docs/FRONTEND.md)
-- Live staging QA (Keplr + MetaMask + WC mobile): [`docs/OPS.md`](../docs/OPS.md) §3 · [`AGENTS_OPS_STAGING.md`](AGENTS_OPS_STAGING.md) · issue [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7)
+- Live staging QA (Keplr + MetaMask + WC mobile): [`docs/OPS.md`](../docs/OPS.md) §3 · [`AGENTS_OPS_STAGING.md`](AGENTS_OPS_STAGING.md) · issues [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7) · [#12](https://gitlab.com/PlasticDigits/voting/-/issues/12)
 
 ## Terra Classic — copy from DEX
 
@@ -77,3 +77,23 @@ Use **EIP-191 `personal_sign`** for register / propose / vote. Injected/WC provi
 2. One connected address at a time for a given flow (Terra **or** EVM). Do not auto-link chains.
 3. Never prompt for a seed or private key.
 4. Domain-separate signed payloads (`voting`, chain-id, purpose, proposal id). Reject cross-scheme blobs (ADR-36 posted as EVM and the reverse).
+
+## WalletConnect pairing (issue #12)
+
+DEX already solved WC-M1–WC-M12 ([`AGENTS_FRONTEND_WALLETCONNECT_MOBILE.md`](https://gitlab.com/PlasticDigits/cl8y-dex-terraclassic/-/blob/main/skills/AGENTS_FRONTEND_WALLETCONNECT_MOBILE.md)). Voting #6 copied the connect UI; #12 completes the intercept that actually opens the pairing sheet.
+
+Invariants and file map: [`docs/FRONTEND.md`](../docs/FRONTEND.md) § WalletConnect.
+
+| Must | Must not |
+|------|----------|
+| Copy the DEX cosmes `QRCodeModal` patch via `frontend/patches/` + `postinstall` `patch-package` | Add Reown AppKit / `@walletconnect/modal` as a new Terra pairing UI |
+| Call `installWalletConnectPairingHook()` in `main.tsx` **before** `createRoot` | Install the hook in a `useEffect` after first paint |
+| Fail production builds without `VITE_WC_PROJECT_ID` (`prodEnvGuards` + Dockerfile `test -n`) | Commit the project id; log the full id in retail UI |
+| CSP: add WC/Reown/verify/LuncDash hosts + `frame-src` for the EVM QR iframe | `connect-src https:` or `frame-src *` |
+| Cancel aborts Terra **and** wagmi WC; late session ignored (WC-M9) | Leave Cancel wired to Terra-only `cancelConnection` |
+| Close Connect when EVM WalletConnect is tapped so the QR is visible | Sit Connecting... on top of the Reown modal |
+| Android Galaxy Open = `intent://…scheme=galaxystation` | Leave `https://station.hexxagon.io/…#Intent` as the href |
+
+Do **not** close [#12](https://gitlab.com/PlasticDigits/voting/-/issues/12) (or #7’s Cosmos WC checkbox) on Playwright hatch E2E. Live proof is iPhone Galaxy Station Open/Copy, desktop Chrome QR, and at least one BSC WalletConnect session on `https://vote.cl8y.com`. Coolify must pass `VITE_WC_PROJECT_ID`; WalletConnect Cloud must list that origin.
+
+Tests: `walletConnectPairing.test.ts`, `walletConnectPairingHook.test.ts`, `WalletConnectPairingModal.test.tsx`, `cosmesPatch12.test.ts`, `prodEnvGuards.test.ts` (WC id + CSP `frame-src`). After `npm ci`, `node_modules/@goblinhunt/cosmes/.../QRCodeModal.js` must contain `__CL8Y_WC_PAIRING_MODAL__`.

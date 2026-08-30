@@ -5,17 +5,17 @@ use http_body_util::BodyExt;
 use k256::ecdsa::signature::Signer;
 use k256::ecdsa::SigningKey;
 use operator_voting::api::{router, AppState};
+use operator_voting::blacklist::parse_committee;
 use operator_voting::config::{VotingConfig, APP_NAME};
 use operator_voting::crypto::{cosmos_address_from_pubkey, eip191_hash, verify_terra};
-use sha3::Digest;
 use operator_voting::db;
 use operator_voting::payload::SignedPayload;
-use operator_voting::sections::{
-    analysis_hash, sanitize_analysis_sections, sanitize_proposal_sections, sections_hash,
-    AnalysisSections, ProposalSections,
+use operator_voting::proposal_sections::{
+    analysis_hash, prepare_sections, sanitize_analysis_sections, sanitize_proposal_sections,
+    sections_hash, AnalysisSections, ProposalSections,
 };
-use operator_voting::blacklist::parse_committee;
 use serde_json::Value;
+use sha3::Digest;
 use sqlx::PgPool;
 use tower::ServiceExt;
 
@@ -28,7 +28,9 @@ fn test_db_url() -> Option<String> {
 
 async fn setup_pool() -> Option<(PgPool, voting_ledger::test_lock::IntegrationDbLock)> {
     let url = test_db_url()?;
-    let lock = voting_ledger::test_lock::hold_integration_db(&url).await.ok()?;
+    let lock = voting_ledger::test_lock::hold_integration_db(&url)
+        .await
+        .ok()?;
     let pool = PgPool::connect(&url).await.ok()?;
     voting_ledger::db::migrate(&pool).await.ok()?;
     db::migrate(&pool).await.ok()?;
@@ -77,7 +79,10 @@ fn terra_wallet() -> (String, String, SigningKey) {
     let vk = k256::ecdsa::VerifyingKey::from(&sk);
     let compressed = vk.to_encoded_point(true);
     let address = cosmos_address_from_pubkey(compressed.as_bytes(), "terra").unwrap();
-    let pubkey = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, compressed.as_bytes());
+    let pubkey = base64::Engine::encode(
+        &base64::engine::general_purpose::STANDARD,
+        compressed.as_bytes(),
+    );
     (address, pubkey, sk)
 }
 
@@ -139,6 +144,23 @@ fn sample_sections() -> ProposalSections {
 
 fn sections_body_hash(sections: &ProposalSections) -> String {
     sections_hash(&sanitize_proposal_sections(sections))
+}
+
+fn valid_sections() -> Value {
+    serde_json::to_value(sample_sections()).unwrap()
+}
+
+fn draft_payload(
+    chain: &str,
+    chain_id: &str,
+    addr: &str,
+    title: &str,
+    sections: &Value,
+) -> SignedPayload {
+    let mut p = payload(chain, chain_id, "draft", addr);
+    p.title = Some(title.into());
+    p.body_hash = Some(prepare_sections(sections).unwrap().body_hash);
+    p
 }
 
 fn sample_analysis() -> AnalysisSections {
@@ -212,15 +234,18 @@ async fn terra_register_propose_vote_and_replay() {
         app.clone(),
         Request::post("/v1/proposals")
             .header("content-type", "application/json")
-            .body(Body::from(serde_json::json!({
-                "chain": "terra",
-                "address": addr,
-                "payload": raw,
-                "signature": sig,
-                "pubkey": pubkey,
-                "title": "Test poll",
-                "sections": sections,
-            }).to_string()))
+            .body(Body::from(
+                serde_json::json!({
+                    "chain": "terra",
+                    "address": addr,
+                    "payload": raw,
+                    "signature": sig,
+                    "pubkey": pubkey,
+                    "title": "Test poll",
+                    "sections": sections,
+                })
+                .to_string(),
+            ))
             .unwrap(),
     )
     .await;
@@ -261,15 +286,18 @@ async fn terra_register_propose_vote_and_replay() {
         app.clone(),
         Request::post(format!("/v1/proposals/{id}/open"))
             .header("content-type", "application/json")
-            .body(Body::from(serde_json::json!({
-                "chain": "terra",
-                "address": addr,
-                "payload": oraw,
-                "signature": sign_terra(&sk, &oraw),
-                "pubkey": pubkey,
-                "terra_height": 999_999,
-                "bsc_block": 9_999_999,
-            }).to_string()))
+            .body(Body::from(
+                serde_json::json!({
+                    "chain": "terra",
+                    "address": addr,
+                    "payload": oraw,
+                    "signature": sign_terra(&sk, &oraw),
+                    "pubkey": pubkey,
+                    "terra_height": 999_999,
+                    "bsc_block": 9_999_999,
+                })
+                .to_string(),
+            ))
             .unwrap(),
     )
     .await;
@@ -306,14 +334,17 @@ async fn terra_register_propose_vote_and_replay() {
         app,
         Request::post(format!("/v1/proposals/{id}/votes"))
             .header("content-type", "application/json")
-            .body(Body::from(serde_json::json!({
-                "chain": "terra",
-                "address": addr,
-                "payload": rraw,
-                "signature": sign_terra(&sk, &rraw),
-                "pubkey": pubkey,
-                "choice": "for",
-            }).to_string()))
+            .body(Body::from(
+                serde_json::json!({
+                    "chain": "terra",
+                    "address": addr,
+                    "payload": rraw,
+                    "signature": sign_terra(&sk, &rraw),
+                    "pubkey": pubkey,
+                    "choice": "for",
+                })
+                .to_string(),
+            ))
             .unwrap(),
     )
     .await;
@@ -354,14 +385,17 @@ async fn blacklist_and_threshold_and_evm() {
         app,
         Request::post("/v1/proposals")
             .header("content-type", "application/json")
-            .body(Body::from(serde_json::json!({
-                "chain": "bsc",
-                "address": evm,
-                "payload": raw,
-                "signature": sign_evm(&sk, &raw),
-                "title": "x",
-                "sections": sections,
-            }).to_string()))
+            .body(Body::from(
+                serde_json::json!({
+                    "chain": "bsc",
+                    "address": evm,
+                    "payload": raw,
+                    "signature": sign_evm(&sk, &raw),
+                    "title": "x",
+                    "sections": sections,
+                })
+                .to_string(),
+            ))
             .unwrap(),
     )
     .await;
@@ -400,23 +434,28 @@ async fn xss_stripped_on_create() {
         app.clone(),
         Request::post("/v1/proposals")
             .header("content-type", "application/json")
-            .body(Body::from(serde_json::json!({
-                "chain": "terra",
-                "address": addr,
-                "payload": raw,
-                "signature": sign_terra(&sk, &raw),
-                "pubkey": pubkey,
-                "title": "xss",
-                "sections": sections,
-            }).to_string()))
+            .body(Body::from(
+                serde_json::json!({
+                    "chain": "terra",
+                    "address": addr,
+                    "payload": raw,
+                    "signature": sign_terra(&sk, &raw),
+                    "pubkey": pubkey,
+                    "title": "xss",
+                    "sections": sections,
+                })
+                .to_string(),
+            ))
             .unwrap(),
     )
     .await;
     assert_eq!(status, StatusCode::CREATED, "{created}");
     let id = created["id"].as_str().unwrap();
     let (status, detail) = call(
-        app,
-        Request::get(format!("/v1/proposals/{id}")).body(Body::empty()).unwrap(),
+        app.clone(),
+        Request::get(format!("/v1/proposals/{id}"))
+            .body(Body::empty())
+            .unwrap(),
     )
     .await;
     assert_eq!(status, StatusCode::OK);
@@ -431,6 +470,51 @@ fn app(pool: PgPool, url: &str) -> axum::Router {
         pool,
         cfg: cfg(url, ""),
     })
+}
+
+/// O-RL: the production `router()` composition (AppState + rate-limit layer) must 429.
+#[tokio::test]
+async fn router_post_burst_returns_429_with_retry_after() {
+    let Some((pool, _lock)) = setup_pool().await else {
+        eprintln!("skip: set LEDGER_TEST_DATABASE_URL");
+        return;
+    };
+    let url = test_db_url().unwrap();
+    let mut limited_cfg = cfg(&url, "");
+    limited_cfg.rate_limit_post_per_minute = 2;
+    limited_cfg.rate_limit_post_burst = 2;
+    limited_cfg.rate_limit_trust_forwarded = true;
+    let app = router(AppState {
+        pool,
+        cfg: limited_cfg,
+    });
+    let post = || {
+        Request::post("/v1/register")
+            .header("content-type", "application/json")
+            .header("x-forwarded-for", "203.0.113.50")
+            .body(Body::from(r#"{"chain":"terra"}"#))
+            .unwrap()
+    };
+    let (first, _) = call(app.clone(), post()).await;
+    let (second, _) = call(app.clone(), post()).await;
+    assert!(
+        first.is_client_error() && first != StatusCode::TOO_MANY_REQUESTS,
+        "first POST should reach the handler, got {first}"
+    );
+    assert!(
+        second.is_client_error() && second != StatusCode::TOO_MANY_REQUESTS,
+        "second POST should reach the handler, got {second}"
+    );
+    let resp = app.clone().oneshot(post()).await.expect("third POST");
+    assert_eq!(resp.status(), StatusCode::TOO_MANY_REQUESTS);
+    assert!(
+        resp.headers()
+            .get(axum::http::header::RETRY_AFTER)
+            .is_some(),
+        "O-RL: 429 must include Retry-After"
+    );
+    let (health, body) = call(app, Request::get("/health").body(Body::empty()).unwrap()).await;
+    assert_eq!(health, StatusCode::OK, "{body}");
 }
 
 async fn insert_reg(pool: &PgPool, chain: &str, wallet: &str, height: i64, human: u64) {
@@ -461,7 +545,9 @@ async fn unregistered_balance_is_flagged_not_a_live_zero() {
 
     let (status, body) = call(
         app.clone(),
-        Request::get(format!("/v1/balances/{addr}")).body(Body::empty()).unwrap(),
+        Request::get(format!("/v1/balances/{addr}"))
+            .body(Body::empty())
+            .unwrap(),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
@@ -472,7 +558,9 @@ async fn unregistered_balance_is_flagged_not_a_live_zero() {
 
     let (status, _) = call(
         app,
-        Request::get(format!("/v1/registration/{addr}")).body(Body::empty()).unwrap(),
+        Request::get(format!("/v1/registration/{addr}"))
+            .body(Body::empty())
+            .unwrap(),
     )
     .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
@@ -511,7 +599,9 @@ async fn pending_intent_is_visible_before_ledger_row() {
 
     let (status, lookup) = call(
         app.clone(),
-        Request::get(format!("/v1/registration/{addr}")).body(Body::empty()).unwrap(),
+        Request::get(format!("/v1/registration/{addr}"))
+            .body(Body::empty())
+            .unwrap(),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{lookup}");
@@ -520,7 +610,9 @@ async fn pending_intent_is_visible_before_ledger_row() {
 
     let (status, bal) = call(
         app,
-        Request::get(format!("/v1/balances/{addr}")).body(Body::empty()).unwrap(),
+        Request::get(format!("/v1/balances/{addr}"))
+            .body(Body::empty())
+            .unwrap(),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{bal}");
@@ -544,7 +636,9 @@ async fn default_balance_clamps_when_tip_lags_register() {
     set_tip(&pool, 0, 0).await;
     let (status, body) = call(
         app.clone(),
-        Request::get(format!("/v1/balances/{addr}")).body(Body::empty()).unwrap(),
+        Request::get(format!("/v1/balances/{addr}"))
+            .body(Body::empty())
+            .unwrap(),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
@@ -556,7 +650,9 @@ async fn default_balance_clamps_when_tip_lags_register() {
     set_tip(&pool, 50, 0).await;
     let (status, body) = call(
         app.clone(),
-        Request::get(format!("/v1/balances/{addr}")).body(Body::empty()).unwrap(),
+        Request::get(format!("/v1/balances/{addr}"))
+            .body(Body::empty())
+            .unwrap(),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
@@ -565,7 +661,9 @@ async fn default_balance_clamps_when_tip_lags_register() {
 
     let (status, historical) = call(
         app.clone(),
-        Request::get(format!("/v1/balances/{addr}?height=50")).body(Body::empty()).unwrap(),
+        Request::get(format!("/v1/balances/{addr}?height=50"))
+            .body(Body::empty())
+            .unwrap(),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{historical}");
@@ -575,7 +673,9 @@ async fn default_balance_clamps_when_tip_lags_register() {
     set_tip(&pool, 120, 0).await;
     let (status, caught_up) = call(
         app.clone(),
-        Request::get(format!("/v1/balances/{addr}")).body(Body::empty()).unwrap(),
+        Request::get(format!("/v1/balances/{addr}"))
+            .body(Body::empty())
+            .unwrap(),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{caught_up}");
@@ -592,7 +692,9 @@ async fn default_balance_clamps_when_tip_lags_register() {
     .unwrap();
     let (status, after_xfer) = call(
         app.clone(),
-        Request::get(format!("/v1/balances/{addr}")).body(Body::empty()).unwrap(),
+        Request::get(format!("/v1/balances/{addr}"))
+            .body(Body::empty())
+            .unwrap(),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{after_xfer}");
@@ -600,7 +702,9 @@ async fn default_balance_clamps_when_tip_lags_register() {
 
     let (status, reject) = call(
         app,
-        Request::get(format!("/v1/balances/{addr}?chain=bsc")).body(Body::empty()).unwrap(),
+        Request::get(format!("/v1/balances/{addr}?chain=bsc"))
+            .body(Body::empty())
+            .unwrap(),
     )
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "{reject}");
@@ -620,7 +724,9 @@ async fn bsc_default_balance_clamps_when_tip_lags_register() {
     let app = app(pool, &url);
     let (status, body) = call(
         app.clone(),
-        Request::get(format!("/v1/balances/{evm}")).body(Body::empty()).unwrap(),
+        Request::get(format!("/v1/balances/{evm}"))
+            .body(Body::empty())
+            .unwrap(),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
@@ -631,7 +737,9 @@ async fn bsc_default_balance_clamps_when_tip_lags_register() {
 
     let (status, historical) = call(
         app.clone(),
-        Request::get(format!("/v1/balances/{evm}?height=40")).body(Body::empty()).unwrap(),
+        Request::get(format!("/v1/balances/{evm}?height=40"))
+            .body(Body::empty())
+            .unwrap(),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{historical}");
@@ -639,7 +747,9 @@ async fn bsc_default_balance_clamps_when_tip_lags_register() {
 
     let (status, reject) = call(
         app,
-        Request::get(format!("/v1/balances/{evm}?chain=terra")).body(Body::empty()).unwrap(),
+        Request::get(format!("/v1/balances/{evm}?chain=terra"))
+            .body(Body::empty())
+            .unwrap(),
     )
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "{reject}");
@@ -691,7 +801,10 @@ fn terra_wallet_seed(seed: u8) -> (String, String, SigningKey) {
     let vk = k256::ecdsa::VerifyingKey::from(&sk);
     let compressed = vk.to_encoded_point(true);
     let address = cosmos_address_from_pubkey(compressed.as_bytes(), "terra").unwrap();
-    let pubkey = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, compressed.as_bytes());
+    let pubkey = base64::Engine::encode(
+        &base64::engine::general_purpose::STANDARD,
+        compressed.as_bytes(),
+    );
     (address, pubkey, sk)
 }
 
@@ -856,7 +969,8 @@ async fn draft_comment_amend_open_and_register_before_freeze() {
     assert_eq!(status, StatusCode::BAD_REQUEST, "{empty_body}");
 
     let mut amended = sample_sections();
-    amended.solution = "<p>updated solution needs forty visible characters in this fixture.</p>".into();
+    amended.solution =
+        "<p>updated solution needs forty visible characters in this fixture.</p>".into();
     let mut amend = payload("terra", "columbus-5", "amend", &commenter);
     amend.proposal_id = Some(id.clone());
     amend.title = Some("Idea".into());
@@ -1108,4 +1222,328 @@ async fn below_1000_cannot_draft() {
     )
     .await;
     assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+}
+
+async fn post_propose(
+    app: axum::Router,
+    chain: &str,
+    chain_id: &str,
+    addr: &str,
+    pubkey: Option<&str>,
+    sign: impl Fn(&str) -> String,
+    title: &str,
+    sections: &Value,
+    extra: serde_json::Value,
+) -> (StatusCode, Value) {
+    let p = draft_payload(chain, chain_id, addr, title, sections);
+    let raw = serde_json::to_string(&p).unwrap();
+    let mut body = serde_json::json!({
+        "chain": chain,
+        "address": addr,
+        "payload": raw,
+        "signature": sign(&raw),
+        "title": title,
+        "body_sections": sections,
+    });
+    if let Some(pk) = pubkey {
+        body["pubkey"] = serde_json::json!(pk);
+    }
+    if let Some(map) = extra.as_object() {
+        for (k, v) in map {
+            body[k] = v.clone();
+        }
+    }
+    call(
+        app,
+        Request::post("/v1/proposals")
+            .header("content-type", "application/json")
+            .body(Body::from(body.to_string()))
+            .unwrap(),
+    )
+    .await
+}
+
+#[tokio::test]
+async fn templated_propose_happy_path_and_legacy_get() {
+    let Some((pool, _lock)) = setup_pool().await else {
+        eprintln!("skip: set LEDGER_TEST_DATABASE_URL");
+        return;
+    };
+    let url = test_db_url().unwrap();
+    let (addr, pubkey, sk) = terra_wallet();
+    insert_reg(&pool, "terra", &addr, 10, 2000).await;
+    set_tip(&pool, 20, 0).await;
+    let app = app(pool.clone(), &url);
+    let sections = valid_sections();
+    let (status, created) = post_propose(
+        app.clone(),
+        "terra",
+        "columbus-5",
+        &addr,
+        Some(&pubkey),
+        |m| sign_terra(&sk, m),
+        "Template",
+        &sections,
+        serde_json::json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{created}");
+    let id = created["id"].as_str().unwrap();
+
+    let (status, detail) = call(
+        app.clone(),
+        Request::get(format!("/v1/proposals/{id}"))
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{detail}");
+    assert_eq!(detail["body_sections"]["context"], "");
+    assert!(detail["body_html"]
+        .as_str()
+        .unwrap()
+        .contains("Summary (TL;DR)"));
+    assert_eq!(detail["body_sections"]["summary"], sections["summary"]);
+
+    let (status, listed) = call(
+        app.clone(),
+        Request::get("/v1/proposals").body(Body::empty()).unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{listed}");
+    assert_eq!(listed[0]["summary"], sections["summary"]);
+
+    sqlx::query(
+        r#"
+        INSERT INTO voting.proposals
+            (id, chain, proposer, title, body_html, body_canonical, terra_height, bsc_block)
+        VALUES ('22222222-2222-2222-2222-222222222222', 'terra', $1, 'Legacy', '<p>old body</p>', '<p>old body</p>', 1, 1)
+        "#,
+    )
+    .bind(&addr)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let (status, legacy) = call(
+        app,
+        Request::get("/v1/proposals/22222222-2222-2222-2222-222222222222")
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{legacy}");
+    assert!(legacy["body_sections"].is_null());
+    assert_eq!(legacy["body_html"], "<p>old body</p>");
+}
+
+#[tokio::test]
+async fn templated_propose_rejects_empty_sections_and_body_html() {
+    let Some((pool, _lock)) = setup_pool().await else {
+        return;
+    };
+    let url = test_db_url().unwrap();
+    let (addr, pubkey, sk) = terra_wallet();
+    insert_reg(&pool, "terra", &addr, 10, 2000).await;
+    let app = app(pool, &url);
+
+    for empty in ["", "   ", "<p></p>", "<p><br></p>"] {
+        let mut sections = valid_sections();
+        sections["pros_cons"] = serde_json::json!(empty);
+        let (status, body) = post_propose(
+            app.clone(),
+            "terra",
+            "columbus-5",
+            &addr,
+            Some(&pubkey),
+            |m| sign_terra(&sk, m),
+            "Bad",
+            &sections,
+            serde_json::json!({}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{empty:?} {body}");
+    }
+
+    let (status, body) = call(
+        app.clone(),
+        Request::post("/v1/proposals")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "chain": "terra",
+                    "address": addr,
+                    "payload": "{}",
+                    "signature": "x",
+                    "pubkey": pubkey,
+                    "title": "Old",
+                    "body_html": "<p>freeform</p>",
+                })
+                .to_string(),
+            ))
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert!(body["error"].as_str().unwrap().contains("body_sections"));
+
+    let sections = valid_sections();
+    let (status, body) = post_propose(
+        app,
+        "terra",
+        "columbus-5",
+        &addr,
+        Some(&pubkey),
+        |m| sign_terra(&sk, m),
+        "Both",
+        &sections,
+        serde_json::json!({ "body_html": "<p>freeform</p>" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+}
+
+#[tokio::test]
+async fn templated_propose_hash_and_summary_bounds() {
+    let Some((pool, _lock)) = setup_pool().await else {
+        return;
+    };
+    let url = test_db_url().unwrap();
+    let (addr, pubkey, sk) = terra_wallet();
+    insert_reg(&pool, "terra", &addr, 10, 2000).await;
+    let app = app(pool, &url);
+    let sections = valid_sections();
+
+    let mut p = payload("terra", "columbus-5", "draft", &addr);
+    p.title = Some("Hash".into());
+    p.body_hash = Some(operator_voting::payload::body_hash("<p>freeform</p>"));
+    let raw = serde_json::to_string(&p).unwrap();
+    let (status, body) = call(
+        app.clone(),
+        Request::post("/v1/proposals")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "chain": "terra",
+                    "address": addr,
+                    "payload": raw,
+                    "signature": sign_terra(&sk, &raw),
+                    "pubkey": pubkey,
+                    "title": "Hash",
+                    "body_sections": sections,
+                })
+                .to_string(),
+            ))
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED, "{body}");
+
+    let dirty = format!("<p>{}</p><script>alert(1)</script>", "x".repeat(40));
+    let mut dirty_sections = valid_sections();
+    dirty_sections["problem"] = serde_json::json!(dirty);
+    let mut unsorted = serde_json::Map::new();
+    for key in [
+        "summary",
+        "success_criteria",
+        "pros_cons",
+        "solution",
+        "problem",
+        "context",
+    ] {
+        unsorted.insert(key.to_string(), dirty_sections[key].clone());
+    }
+    let dirty_canonical = serde_json::to_string(&Value::Object(unsorted)).unwrap();
+    let mut p = payload("terra", "columbus-5", "draft", &addr);
+    p.title = Some("Dirty".into());
+    p.body_hash = Some(operator_voting::payload::body_hash(&dirty_canonical));
+    let raw = serde_json::to_string(&p).unwrap();
+    let (status, body) = call(
+        app.clone(),
+        Request::post("/v1/proposals")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "chain": "terra",
+                    "address": addr,
+                    "payload": raw,
+                    "signature": sign_terra(&sk, &raw),
+                    "pubkey": pubkey,
+                    "title": "Dirty",
+                    "body_sections": dirty_sections,
+                })
+                .to_string(),
+            ))
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED, "{body}");
+
+    let mut over = valid_sections();
+    over["summary"] = serde_json::json!(format!("<p>{}</p>", "s".repeat(501)));
+    let (status, body) = post_propose(
+        app.clone(),
+        "terra",
+        "columbus-5",
+        &addr,
+        Some(&pubkey),
+        |m| sign_terra(&sk, m),
+        "Long",
+        &over,
+        serde_json::json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+
+    let mut huge = valid_sections();
+    huge["problem"] = serde_json::json!(format!("<p>{}</p>", "a".repeat(65 * 1024)));
+    let (status, body) = post_propose(
+        app,
+        "terra",
+        "columbus-5",
+        &addr,
+        Some(&pubkey),
+        |m| sign_terra(&sk, m),
+        "Huge",
+        &huge,
+        serde_json::json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+}
+
+#[tokio::test]
+async fn bsc_templated_propose() {
+    let Some((pool, _lock)) = setup_pool().await else {
+        return;
+    };
+    let url = test_db_url().unwrap();
+    let (evm, sk) = evm_wallet();
+    insert_reg(&pool, "bsc", &evm, 5, 1500).await;
+    set_tip(&pool, 0, 10).await;
+    let app = app(pool, &url);
+    let sections = valid_sections();
+    let (status, created) = post_propose(
+        app.clone(),
+        "bsc",
+        "56",
+        &evm,
+        None,
+        |m| sign_evm(&sk, m),
+        "BSC template",
+        &sections,
+        serde_json::json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{created}");
+    let id = created["id"].as_str().unwrap();
+    let (status, detail) = call(
+        app,
+        Request::get(format!("/v1/proposals/{id}"))
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{detail}");
+    assert_eq!(detail["chain"], "bsc");
+    assert!(detail["body_sections"].is_object());
 }

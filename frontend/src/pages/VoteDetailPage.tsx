@@ -12,12 +12,14 @@ import {
 } from '@/services/operatorVoting'
 import { signVotingRequest } from '@/services/votingSign'
 import type { VoteChoice } from '@/utils/votingPayload'
-import { sha256Hex } from '@/utils/sanitizeProposalHtml'
+import { sanitizeProposalHtml, sha256Hex } from '@/utils/sanitizeProposalHtml'
 import { ROUTES } from '@/routes'
+import { ProposalSectionView } from '@/components/proposal/ProposalSectionFields'
 import {
   ANALYSIS_LABELS,
   CANONICAL_ANALYSIS_KEYS,
   CANONICAL_SECTION_KEYS,
+  SECTION_DISPLAY_ORDER,
   canonicalizeAnalysisSections,
   canonicalizeProposalSections,
   emptyAnalysis,
@@ -143,8 +145,8 @@ export default function VoteDetailPage() {
     setBusy(true)
     setError(null)
     try {
-      const prev = proposal.sections
-        ? canonicalizeProposalSections(sanitizeSections(proposal.sections))
+      const prev = proposal.body_sections
+        ? canonicalizeProposalSections(sanitizeSections(proposal.body_sections))
         : ''
       const prev_body_hash = await sha256Hex(prev)
       const body_hash = await sha256Hex(canonicalizeProposalSections(amendSections))
@@ -157,7 +159,7 @@ export default function VoteDetailPage() {
         body_hash,
         prev_body_hash,
       })
-      await amendProposal(id, { ...signed, title: proposal.title, sections: amendSections })
+      await amendProposal(id, { ...signed, title: proposal.title, body_sections: amendSections })
       setAmendFields(null)
       await reload()
     } catch (err) {
@@ -168,11 +170,13 @@ export default function VoteDetailPage() {
   }
 
   async function handleOpen() {
-    if (!address || !chain || !proposal?.sections) return
+    if (!address || !chain || !proposal?.body_sections) return
     setBusy(true)
     setError(null)
     try {
-      const body_hash = await sha256Hex(canonicalizeProposalSections(sanitizeSections(proposal.sections)))
+      const body_hash = await sha256Hex(
+        canonicalizeProposalSections(sanitizeSections(proposal.body_sections))
+      )
       const signed = await signVotingRequest({
         chain,
         address,
@@ -235,25 +239,10 @@ export default function VoteDetailPage() {
             <p className="lede">
               Offchain / advisory. {freezeCopy} Identity v1 is one address, one voter.
             </p>
-            {proposal.sections ? (
-              <div className="proposal-sections">
-                {CANONICAL_SECTION_KEYS.map((key) => (
-                  <article key={key} className="proposal-section" data-testid={`section-view-${key}`}>
-                    <h2>{SECTION_LABELS[key]}</h2>
-                    {proposal.sections?.[key] ? (
-                      <div
-                        className="proposal-body"
-                        dangerouslySetInnerHTML={{ __html: proposal.sections[key] }}
-                      />
-                    ) : (
-                      <p className="lede">None provided.</p>
-                    )}
-                  </article>
-                ))}
-              </div>
-            ) : (
-              <article className="proposal-body" dangerouslySetInnerHTML={{ __html: proposal.body_html }} />
-            )}
+            <ProposalSectionView
+              sections={proposal.body_sections}
+              fallbackHtml={sanitizeProposalHtml(proposal.body_html)}
+            />
 
             <h2>Independent analysis</h2>
             {(proposal.analysis ?? []).length === 0 ? (
@@ -316,7 +305,7 @@ export default function VoteDetailPage() {
                 {amendFields ? (
                   <>
                     <h2>Amend draft sections</h2>
-                    {CANONICAL_SECTION_KEYS.map((key) => (
+                    {SECTION_DISPLAY_ORDER.map((key) => (
                       <label className="field" key={key}>
                         <span>{SECTION_LABELS[key]}</span>
                         <textarea
@@ -345,8 +334,8 @@ export default function VoteDetailPage() {
                     onClick={() => {
                       const next = emptySections()
                       for (const key of CANONICAL_SECTION_KEYS) {
-                        next[key] = proposal.sections?.[key]
-                          ? visibleTextFallback(proposal.sections[key])
+                        next[key] = proposal.body_sections?.[key]
+                          ? visibleTextFallback(proposal.body_sections[key])
                           : ''
                       }
                       setAmendFields(next)

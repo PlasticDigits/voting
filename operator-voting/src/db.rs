@@ -5,13 +5,15 @@ use uuid::Uuid;
 use crate::blacklist::normalize_address;
 use crate::config::MAX_COMMENTS_PER_WALLET_PER_PROPOSAL;
 use crate::error::{VotingError, VotingResult};
-use crate::sections::{AnalysisSections, ProposalSections};
+use crate::proposal_sections::AnalysisSections;
 
 pub async fn migrate(pool: &PgPool) -> VotingResult<()> {
     // One sqlx migrator owns the database (ledger crate). Avoid checksum clashes.
     // Production: only the ledger writer runs this. operator-voting sets
     // APPLY_MIGRATIONS=false (the default when RUN_MODE=prod). See docs/OPS.md.
-    voting_ledger::db::migrate(pool).await.map_err(|e| VotingError::InvalidConfig(e.to_string()))
+    voting_ledger::db::migrate(pool)
+        .await
+        .map_err(|e| VotingError::InvalidConfig(e.to_string()))
 }
 
 pub async fn connect(url: &str) -> VotingResult<PgPool> {
@@ -47,7 +49,12 @@ pub async fn ledger_registration(
     Ok(row)
 }
 
-pub async fn balance_at(pool: &PgPool, chain: &str, wallet: &str, height: i64) -> VotingResult<BigInt> {
+pub async fn balance_at(
+    pool: &PgPool,
+    chain: &str,
+    wallet: &str,
+    height: i64,
+) -> VotingResult<BigInt> {
     let wallet = normalize_address(wallet);
     let sql = match chain {
         "terra" => "SELECT public.voting_cl8y_balance_at($1, $2)::text",
@@ -64,18 +71,16 @@ pub async fn balance_at(pool: &PgPool, chain: &str, wallet: &str, height: i64) -
 }
 
 pub async fn tip_heights(pool: &PgPool) -> VotingResult<(i64, i64)> {
-    let terra: String = sqlx::query_scalar(
-        "SELECT value FROM indexer_state WHERE key = 'last_indexed_height'",
-    )
-    .fetch_optional(pool)
-    .await?
-    .unwrap_or_else(|| "0".into());
-    let bsc: String = sqlx::query_scalar(
-        "SELECT value FROM indexer_state WHERE key = 'last_indexed_bsc_block'",
-    )
-    .fetch_optional(pool)
-    .await?
-    .unwrap_or_else(|| "0".into());
+    let terra: String =
+        sqlx::query_scalar("SELECT value FROM indexer_state WHERE key = 'last_indexed_height'")
+            .fetch_optional(pool)
+            .await?
+            .unwrap_or_else(|| "0".into());
+    let bsc: String =
+        sqlx::query_scalar("SELECT value FROM indexer_state WHERE key = 'last_indexed_bsc_block'")
+            .fetch_optional(pool)
+            .await?
+            .unwrap_or_else(|| "0".into());
     Ok((terra.parse().unwrap_or(0), bsc.parse().unwrap_or(0)))
 }
 
@@ -157,7 +162,7 @@ pub struct ProposalRow {
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub status: String,
     pub opened_at: Option<chrono::DateTime<chrono::Utc>>,
-    pub body_sections: Option<sqlx::types::Json<ProposalSections>>,
+    pub body_sections: Option<sqlx::types::Json<serde_json::Value>>,
 }
 
 pub async fn insert_draft(
@@ -167,7 +172,7 @@ pub async fn insert_draft(
     title: &str,
     body_html: &str,
     body_canonical: &str,
-    sections: &ProposalSections,
+    sections: &serde_json::Value,
 ) -> VotingResult<Uuid> {
     let id = Uuid::new_v4();
     sqlx::query(
@@ -183,7 +188,7 @@ pub async fn insert_draft(
     .bind(title)
     .bind(body_html)
     .bind(body_canonical)
-    .bind(sqlx::types::Json(sections.clone()))
+    .bind(sqlx::types::Json(sections))
     .execute(pool)
     .await?;
     Ok(id)
@@ -195,7 +200,7 @@ pub async fn update_draft_sections(
     title: &str,
     body_html: &str,
     body_canonical: &str,
-    sections: &ProposalSections,
+    sections: &serde_json::Value,
 ) -> VotingResult<()> {
     let result = sqlx::query(
         r#"
@@ -208,11 +213,13 @@ pub async fn update_draft_sections(
     .bind(title)
     .bind(body_html)
     .bind(body_canonical)
-    .bind(sqlx::types::Json(sections.clone()))
+    .bind(sqlx::types::Json(sections))
     .execute(pool)
     .await?;
     if result.rows_affected() == 0 {
-        return Err(VotingError::Conflict("cannot amend after votes are open".into()));
+        return Err(VotingError::Conflict(
+            "cannot amend after votes are open".into(),
+        ));
     }
     Ok(())
 }
@@ -238,7 +245,9 @@ pub async fn open_proposal(
     .await?;
     if result.rows_affected() == 0 {
         tx.rollback().await?;
-        return Err(VotingError::Conflict("proposal is not a draft (already open?)".into()));
+        return Err(VotingError::Conflict(
+            "proposal is not a draft (already open?)".into(),
+        ));
     }
     sqlx::query(
         r#"

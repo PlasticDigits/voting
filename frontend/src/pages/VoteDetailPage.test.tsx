@@ -23,7 +23,7 @@ const base: ProposalDetail = {
   status: 'draft',
   tally: [],
   body_html: '<p>legacy</p>',
-  sections: {
+  body_sections: {
     context: '',
     problem: '<p>problem text that is long enough for the template minimum.</p>',
     solution: '<p>solution text that is long enough for the template minimum.</p>',

@@ -1,4 +1,5 @@
--- Draft collaboration + structured sections (issues #10 / #11).
+-- Draft collaboration lifecycle (issue #11).
+-- Applies after 20260830000001_proposal_sections.sql.
 -- Snapshot freeze moves to vote-open. New rows start as draft.
 -- Existing open rows keep their freeze heights and stay votable.
 
@@ -8,7 +9,6 @@ ALTER TABLE voting.proposals
     ALTER COLUMN status SET DEFAULT 'draft';
 
 ALTER TABLE voting.proposals
-    ADD COLUMN IF NOT EXISTS body_sections JSONB,
     ADD COLUMN IF NOT EXISTS opened_at TIMESTAMPTZ;
 
 UPDATE voting.proposals

@@ -12,7 +12,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "postinstall": "patch-package"
   },
   "dependencies": {
     "@goblinhunt/cosmes": "^0.0.71-ghunt.22",
@@ -27,7 +28,8 @@
     "react-router-dom": "^7.9.5",
     "viem": "^2.21.0",
     "wagmi": "^2.14.0",
-    "zustand": "^5.0.8"
+    "zustand": "^5.0.8",
+    "patch-package": "^8.0.1"
   },
   "devDependencies": {
     "@playwright/test": "^1.58.2",

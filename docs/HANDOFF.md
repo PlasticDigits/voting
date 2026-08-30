@@ -3,7 +3,7 @@
 **Last updated:** 2026-08-30  
 **Repo:** [PlasticDigits/voting](https://gitlab.com/PlasticDigits/voting)  
 **Local:** `~/repos/voting`  
-**Implementation branch:** `feat/voting-bundle` (merged). Ops follow-up: [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7) · [`OPS.md`](OPS.md). Legal `/vote` 404: [#8](https://gitlab.com/PlasticDigits/voting/-/issues/8) · [`FRONTEND.md`](FRONTEND.md). Draft/review + template: [#10](https://gitlab.com/PlasticDigits/voting/-/issues/10) · [#11](https://gitlab.com/PlasticDigits/voting/-/issues/11) · [`OPERATOR_VOTING.md`](OPERATOR_VOTING.md) · [`../skills/AGENTS_DRAFT_REVIEW.md`](../skills/AGENTS_DRAFT_REVIEW.md).
+**Implementation branch:** `feat/voting-bundle` (merged). Ops: [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7). Legal `/vote` 404 [#8](https://gitlab.com/PlasticDigits/voting/-/issues/8) is closed. Registered balance: [#9](https://gitlab.com/PlasticDigits/voting/-/issues/9). Structured proposals: [#10](https://gitlab.com/PlasticDigits/voting/-/issues/10) (OV-S). Draft lifecycle: [#11](https://gitlab.com/PlasticDigits/voting/-/issues/11) (OV-D). WalletConnect: [#12](https://gitlab.com/PlasticDigits/voting/-/issues/12). Governance research: [#13](https://gitlab.com/PlasticDigits/voting/-/issues/13). Pending registration: [#14](https://gitlab.com/PlasticDigits/voting/-/issues/14).
 
 ## Current state
 
@@ -15,9 +15,9 @@ In-tree packages:
 | `operator-voting/` | ADR-36 + EIP-191 API |
 | `frontend/` | dApp (`/`, `/new`, `/:id`; `/vote*` aliases), Legal gate, DEX Terra + Bridge EVM wallets |
 
-GitLab issues **#1–#6** are implemented in this tree. [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7) tracks remaining ops. [#8](https://gitlab.com/PlasticDigits/voting/-/issues/8) is the Legal-return / deep-link 404 (`GET /vote` must be 200 HTML). [#9](https://gitlab.com/PlasticDigits/voting/-/issues/9) (registered holders shown as 0) is in-tree: default GET `/v1/balances` clamps to `registered_at_height` (OV-B1), pending register UX, BSC analogue. [#10](https://gitlab.com/PlasticDigits/voting/-/issues/10) / [#11](https://gitlab.com/PlasticDigits/voting/-/issues/11) (template + draft → committee open → freeze) are in-tree; still ops: set `VOTING_COMMITTEE_ADDRESSES`, live Legal Accept, both-chain draft/comment/open/vote. Skills: [`../skills/AGENTS_OPS_STAGING.md`](../skills/AGENTS_OPS_STAGING.md) · [`../skills/AGENTS_LEGAL_CLICKWRAP.md`](../skills/AGENTS_LEGAL_CLICKWRAP.md) · [`../skills/AGENTS_DRAFT_REVIEW.md`](../skills/AGENTS_DRAFT_REVIEW.md).
+GitLab issues **#1–#6** are implemented in this tree. [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7) tracks remaining ops. [#8](https://gitlab.com/PlasticDigits/voting/-/issues/8) is **closed** on live `GET /vote` 200 HTML. [#9](https://gitlab.com/PlasticDigits/voting/-/issues/9) adds OV-B1 registered-balance handling. [#10](https://gitlab.com/PlasticDigits/voting/-/issues/10) adds structured `body_sections`, the OV-S canonical hash, labeled compose, list TL;DR, and detail sections. [#11](https://gitlab.com/PlasticDigits/voting/-/issues/11) adds draft/comment/analysis/open APIs and OV-D freeze-at-open. [#12](https://gitlab.com/PlasticDigits/voting/-/issues/12) adds the cosmes pairing patch, hook before `createRoot`, production project-id fail-closed, CSP frames, and EVM Cancel. [#13](https://gitlab.com/PlasticDigits/voting/-/issues/13) is governance research only. [#14](https://gitlab.com/PlasticDigits/voting/-/issues/14) adds 120-second pending poll/retry, the independent ledger intent loop, L12, and OV-B6.
 
-Issue mapping: [`ISSUE_MIGRATION.md`](ISSUE_MIGRATION.md). Invariants: [`LEDGER_INVARIANTS.md`](LEDGER_INVARIANTS.md), [`OPERATOR_VOTING.md`](OPERATOR_VOTING.md), [`FRONTEND.md`](FRONTEND.md), [`OPS.md`](OPS.md). #7 in-tree extras: prod refuses `APPLY_MIGRATIONS=true`, privilege tests apply [`../deploy/grants.sql`](../deploy/grants.sql), frontend CSP snippet, `prodEnvGuards` (O3/O4), CI `test:rust-integration`. #8 in-tree extras: [`../frontend/src/routes.ts`](../frontend/src/routes.ts), [`../deploy/docker/frontend.nginx.conf`](../deploy/docker/frontend.nginx.conf), CI `test:frontend-spa-fallback`. #9 in-tree: [`../operator-voting/src/balance_query.rs`](../operator-voting/src/balance_query.rs), pending poll in the dApp, ledger `/health.caught_up`. #10/#11 in-tree: [`../operator-voting/src/sections.rs`](../operator-voting/src/sections.rs), draft/comment/analysis/open APIs, freeze-at-open, dApp template compose.
+Issue mapping: [`ISSUE_MIGRATION.md`](ISSUE_MIGRATION.md). Invariants: [`LEDGER_INVARIANTS.md`](LEDGER_INVARIANTS.md) (L12), [`OPERATOR_VOTING.md`](OPERATOR_VOTING.md) (OV-B6, OV-S, OV-D), [`FRONTEND.md`](FRONTEND.md), [`OPS.md`](OPS.md). #10 owns `20260830000001_proposal_sections.sql`; #11 applies `20260830000002_draft_lifecycle.sql` on top.
 
 ## Why a new repo
 
@@ -31,8 +31,8 @@ Voting is a separate product surface (dual-chain electorate, its own Postgres ro
 2. **`operator-voting` (control plane)** — #2 + EIP-191 from #4  
    Restricted DB role. ADR-36 **and** EIP-191. Drafts, comments, committee `open_vote`, proposals, votes, `VOTING_BLACKLIST_ADDRESSES` / `VOTING_COMMITTEE_ADDRESSES`. Snapshot freeze `{ terra_height, bsc_block }` at **open**, not draft create. ≥1000 CL8Y to start a draft (per registering address’s chain).
 
-3. **Voting dApp** — #3 with #5 + #6 + #8  
-   `/` register / templated draft / vote (`/vote*` aliases). Vote CTAs only when `open`. **Blocked behind CL8Y Legal.** Terra connect from DEX; EVM connect from Bridge. SPA documents must be 200 HTML on hard navigation (Legal return).
+3. **Voting dApp** — #3 with #5 + #6 + #8 + #10 + #11
+   `/` register / templated draft / review / committee-open / vote (`/vote*` aliases). Vote CTAs appear only when `status=open`. **Blocked behind CL8Y Legal.** Terra connect from DEX; EVM connect from Bridge.
 
 Do not mark production voting “done” while BSC holders cannot register and vote on staging with real wallets.
 

@@ -28,6 +28,8 @@ export type SignedPayload = {
   address: string
   issued_at: number
   expires_at: number
+  title?: string
+  body_hash?: string
   proposal_id?: string
   choice?: VoteChoice
   prev_body_hash?: string

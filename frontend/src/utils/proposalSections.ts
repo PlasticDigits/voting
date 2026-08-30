@@ -1,15 +1,14 @@
 /**
- * Structured proposal template (issues #10 / #11).
- * Canonical JSON must match operator-voting `sections.rs`: compact UTF-8,
- * sorted keys, ammonia-sanitized HTML values.
+ * Structured proposal sections (issue #10).
+ *
+ * Must stay aligned with `operator-voting/src/proposal_sections.rs` and
+ * `docs/OPERATOR_VOTING.md` (OV-S1–S8). `body_hash` is SHA-256 of this
+ * canonical JSON (sorted keys, ammonia-cleaned HTML values, compact encoding).
  */
 
-import { sanitizeProposalHtml } from '@/utils/sanitizeProposalHtml'
+import { sanitizeProposalHtml, sha256Hex } from './sanitizeProposalHtml'
 
-export const MIN_SECTION_VISIBLE = 40
-export const MAX_SUMMARY_VISIBLE = 500
-
-export const CANONICAL_SECTION_KEYS = [
+export const SECTION_KEYS_SORTED = [
   'context',
   'problem',
   'pros_cons',
@@ -18,35 +17,34 @@ export const CANONICAL_SECTION_KEYS = [
   'summary',
 ] as const
 
-export type SectionKey = (typeof CANONICAL_SECTION_KEYS)[number]
+export const SECTION_DISPLAY_ORDER = [
+  'summary',
+  'problem',
+  'context',
+  'solution',
+  'pros_cons',
+  'success_criteria',
+] as const
 
-export const REQUIRED_SECTION_KEYS: SectionKey[] = [
+export const REQUIRED_SECTION_KEYS = [
   'problem',
   'solution',
   'pros_cons',
   'summary',
   'success_criteria',
-]
+] as const
+
+export const MIN_SECTION_VISIBLE_CHARS = 40
+export const MAX_SUMMARY_VISIBLE_CHARS = 500
+export const MAX_BODY_BYTES = 64 * 1024
+
+export type SectionKey = (typeof SECTION_KEYS_SORTED)[number]
+export type RequiredSectionKey = (typeof REQUIRED_SECTION_KEYS)[number]
 
 export type ProposalSections = Record<SectionKey, string>
-
-export const SECTION_LABELS: Record<SectionKey, string> = {
-  problem: 'The idea or problem to be solved',
-  context: 'Supporting context, real-world issues, and alternatives',
-  solution: 'Proposed solution and supporting evidence',
-  pros_cons: 'Pros and cons / trade-offs',
-  summary: 'Summary (TL;DR)',
-  success_criteria: 'Success criteria / goalposts',
-}
-
-export const SECTION_HELP: Record<SectionKey, string> = {
-  problem: 'What should change, and for whom?',
-  context: 'Optional. Alternatives and background.',
-  solution: 'What you propose and the evidence behind it.',
-  pros_cons: 'Trade-offs. Do not leave critique only as self-praise.',
-  summary: 'Short enough for the proposal list. Max 500 visible characters.',
-  success_criteria: 'Goalposts for later spend/outcome justification — not a punishment clause.',
-}
+export const CANONICAL_SECTION_KEYS = SECTION_KEYS_SORTED
+export const MIN_SECTION_VISIBLE = MIN_SECTION_VISIBLE_CHARS
+export const MAX_SUMMARY_VISIBLE = MAX_SUMMARY_VISIBLE_CHARS
 
 export const CANONICAL_ANALYSIS_KEYS = ['benefits', 'long_term', 'risks', 'short_term', 'what'] as const
 export type AnalysisKey = (typeof CANONICAL_ANALYSIS_KEYS)[number]
@@ -60,71 +58,123 @@ export const ANALYSIS_LABELS: Record<AnalysisKey, string> = {
   long_term: 'Long-term impact',
 }
 
-export function emptySections(): ProposalSections {
-  return {
-    context: '',
-    problem: '',
-    pros_cons: '',
-    solution: '',
-    success_criteria: '',
-    summary: '',
-  }
+export const SECTION_LABELS: Record<SectionKey, string> = {
+  summary: 'Summary (TL;DR)',
+  problem: 'The idea or problem to be solved',
+  context: 'Supporting context, real-world issues, and alternatives',
+  solution: 'Proposed solution and supporting evidence',
+  pros_cons: 'Pros and cons / trade-offs',
+  success_criteria: 'Success criteria / goalposts',
 }
 
-export function emptyAnalysis(): AnalysisSections {
-  return { benefits: '', long_term: '', risks: '', short_term: '', what: '' }
+export const SECTION_HELP: Record<SectionKey, string> = {
+  summary: 'Short TL;DR shown on the list and at the top of the proposal.',
+  problem: 'What is being asked, and why it matters.',
+  context: 'Optional. Background, alternatives, or real-world constraints.',
+  solution: 'What you propose, with the evidence you have.',
+  pros_cons: 'Trade-offs. Name downsides; do not only list praise.',
+  success_criteria:
+    'Goalposts for spend and outcome justification — not a later punishment or slashing mechanism.',
 }
 
-export function escapeHtml(raw: string): string {
+export const EMPTY_SECTIONS: ProposalSections = {
+  context: '',
+  problem: '',
+  pros_cons: '',
+  solution: '',
+  success_criteria: '',
+  summary: '',
+}
+
+const ZERO_WIDTH = /[\u00AD\u200B\u200C\u200D\u2060\uFEFF]/g
+
+export function stripTags(html: string): string {
+  return html.replace(/<[^>]*>/g, '')
+}
+
+function decodeEntities(raw: string): string {
   return raw
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-}
-
-export function textToSectionHtml(raw: string): string {
-  const t = raw.trim()
-  if (!t) return ''
-  return `<p>${escapeHtml(t)}</p>`
+    .replace(/&nbsp;/gi, '\u00A0')
+    .replace(/&#x([0-9a-f]+);/gi, (_, hex: string) => {
+      const cp = Number.parseInt(hex, 16)
+      return Number.isFinite(cp) && cp >= 0 ? String.fromCodePoint(cp) : ''
+    })
+    .replace(/&#(\d+);/g, (_, dec: string) => {
+      const cp = Number.parseInt(dec, 10)
+      return Number.isFinite(cp) && cp >= 0 ? String.fromCodePoint(cp) : ''
+    })
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
 }
 
 export function visibleText(html: string): string {
-  const stripped = html
-    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/&nbsp;/gi, ' ')
-    .replace(/[\u200b\u200c\u200d\ufeff]/g, '')
-    .replace(/\u00a0/g, ' ')
-  return stripped.split(/\s+/).filter(Boolean).join(' ')
+  const decoded = decodeEntities(stripTags(html)).replace(ZERO_WIDTH, '')
+  return decoded.replace(/\s+/g, ' ').trim()
 }
 
 export function visibleLen(html: string): number {
   return [...visibleText(html)].length
 }
 
-export function sanitizeSections(raw: ProposalSections): ProposalSections {
+export function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
+/** Collapse whitespace then wrap in a single paragraph. Empty stays empty. */
+export function plainToSectionHtml(text: string): string {
+  const collapsed = text.replace(/\s+/g, ' ').trim()
+  if (!collapsed) return ''
+  return `<p>${escapeHtml(collapsed)}</p>`
+}
+
+export const textToSectionHtml = plainToSectionHtml
+
+export function emptySections(): ProposalSections {
+  return { ...EMPTY_SECTIONS }
+}
+
+export function sanitizeSectionHtml(raw: string): string {
+  const clean = sanitizeProposalHtml(raw)
+  return visibleLen(clean) === 0 ? '' : clean
+}
+
+export function sanitizeSectionObject(input: Partial<ProposalSections> | Record<string, string>): ProposalSections {
   const out = emptySections()
-  for (const key of CANONICAL_SECTION_KEYS) {
-    out[key] = sanitizeProposalHtml(raw[key] ?? '')
+  for (const key of SECTION_KEYS_SORTED) {
+    out[key] = sanitizeSectionHtml(input[key] ?? '')
   }
   return out
+}
+
+export const sanitizeSections = sanitizeSectionObject
+
+export function canonicalizeSections(sections: ProposalSections): string {
+  const ordered: Record<string, string> = {}
+  for (const key of SECTION_KEYS_SORTED) {
+    ordered[key] = sections[key]
+  }
+  return JSON.stringify(ordered)
+}
+
+export const canonicalizeProposalSections = canonicalizeSections
+
+export function emptyAnalysis(): AnalysisSections {
+  return { benefits: '', long_term: '', risks: '', short_term: '', what: '' }
 }
 
 export function sanitizeAnalysis(raw: AnalysisSections): AnalysisSections {
   const out = emptyAnalysis()
   for (const key of CANONICAL_ANALYSIS_KEYS) {
-    out[key] = sanitizeProposalHtml(raw[key] ?? '')
+    out[key] = sanitizeSectionHtml(raw[key] ?? '')
   }
   return out
-}
-
-export function canonicalizeProposalSections(sections: ProposalSections): string {
-  const ordered: Record<string, string> = {}
-  for (const key of CANONICAL_SECTION_KEYS) {
-    ordered[key] = sections[key] ?? ''
-  }
-  return JSON.stringify(ordered)
 }
 
 export function canonicalizeAnalysisSections(sections: AnalysisSections): string {
@@ -136,28 +186,68 @@ export function canonicalizeAnalysisSections(sections: AnalysisSections): string
 }
 
 export function sectionErrors(sections: ProposalSections): Partial<Record<SectionKey, string>> {
-  const errors: Partial<Record<SectionKey, string>> = {}
-  for (const key of REQUIRED_SECTION_KEYS) {
-    if (visibleLen(sections[key]) < MIN_SECTION_VISIBLE) {
-      errors[key] = `Need at least ${MIN_SECTION_VISIBLE} visible characters`
-    }
-  }
-  if (visibleLen(sections.summary) > MAX_SUMMARY_VISIBLE) {
-    errors.summary = `Summary must be at most ${MAX_SUMMARY_VISIBLE} visible characters`
-  }
-  return errors
+  return validateSections(sections).errors
 }
 
 export function sectionsAreValid(sections: ProposalSections): boolean {
-  return Object.keys(sectionErrors(sections)).length === 0
+  return validateSections(sections).ok
 }
 
-export function analysisErrors(sections: AnalysisSections): Partial<Record<AnalysisKey, string>> {
-  const errors: Partial<Record<AnalysisKey, string>> = {}
-  for (const key of CANONICAL_ANALYSIS_KEYS) {
-    if (visibleLen(sections[key]) < MIN_SECTION_VISIBLE) {
-      errors[key] = `Need at least ${MIN_SECTION_VISIBLE} visible characters`
+export async function hashSections(sections: ProposalSections): Promise<string> {
+  return sha256Hex(canonicalizeSections(sections))
+}
+
+export type SectionValidation = {
+  ok: boolean
+  errors: Partial<Record<SectionKey, string>>
+}
+
+export function validateSections(sections: ProposalSections): SectionValidation {
+  const errors: Partial<Record<SectionKey, string>> = {}
+  let combined = 0
+  for (const key of SECTION_KEYS_SORTED) {
+    combined += sections[key].length
+  }
+  if (combined > MAX_BODY_BYTES || canonicalizeSections(sections).length > MAX_BODY_BYTES) {
+    errors.problem = 'Proposal is too large'
+    return { ok: false, errors }
+  }
+  for (const key of REQUIRED_SECTION_KEYS) {
+    const n = visibleLen(sections[key])
+    if (n < MIN_SECTION_VISIBLE_CHARS) {
+      errors[key] = `Need at least ${MIN_SECTION_VISIBLE_CHARS} characters`
+    } else if (key === 'summary' && n > MAX_SUMMARY_VISIBLE_CHARS) {
+      errors[key] = `Keep the summary to ${MAX_SUMMARY_VISIBLE_CHARS} characters`
     }
   }
-  return errors
+  return { ok: Object.keys(errors).length === 0, errors }
 }
+
+export function sectionsFromPlain(plain: Record<SectionKey, string>): ProposalSections {
+  const out = emptySections()
+  for (const key of SECTION_KEYS_SORTED) {
+    out[key] = sanitizeSectionHtml(plainToSectionHtml(plain[key] ?? ''))
+  }
+  return out
+}
+
+export function isSectionRecord(value: unknown): value is ProposalSections {
+  if (!value || typeof value !== 'object') return false
+  const rec = value as Record<string, unknown>
+  return SECTION_KEYS_SORTED.every((key) => typeof rec[key] === 'string')
+}
+
+/** Golden vector shared with operator-voting `golden_canonical_json_and_hash`. */
+export const GOLDEN_SECTIONS: ProposalSections = {
+  context: '',
+  problem: '<p>Holders often vote without enough information about impact and risks.</p>',
+  pros_cons: '<p>Pros: proposals are comparable. Cons: writing takes more care.</p>',
+  solution: '<p>Require labeled sections with server-enforced minimums.</p>',
+  success_criteria: '<p>Voters can scan TL;DR, trade-offs, and goalposts before they sign.</p>',
+  summary: '<p>Standard sections so every proposal is scannable before a vote.</p>',
+}
+
+export const GOLDEN_CANONICAL_JSON =
+  '{"context":"","problem":"<p>Holders often vote without enough information about impact and risks.</p>","pros_cons":"<p>Pros: proposals are comparable. Cons: writing takes more care.</p>","solution":"<p>Require labeled sections with server-enforced minimums.</p>","success_criteria":"<p>Voters can scan TL;DR, trade-offs, and goalposts before they sign.</p>","summary":"<p>Standard sections so every proposal is scannable before a vote.</p>"}'
+
+export const GOLDEN_BODY_HASH = '85b0e3985805be8d192178665cf0b745ddcb14cb5ccfc37d2b49c137fe0f5ed1'

@@ -1,0 +1,593 @@
+diff --git a/node_modules/@goblinhunt/cosmes/dist/wallet/walletconnect/QRCodeModal.js b/node_modules/@goblinhunt/cosmes/dist/wallet/walletconnect/QRCodeModal.js
+index 6f2724b..58310e9 100644
+--- a/node_modules/@goblinhunt/cosmes/dist/wallet/walletconnect/QRCodeModal.js
++++ b/node_modules/@goblinhunt/cosmes/dist/wallet/walletconnect/QRCodeModal.js
+@@ -1,11 +1,33 @@
+ import { isAndroid, isMobile } from "../utils/os.js";
+ import { qrcodegen } from "./qrcodegen.js";
++function cl8yPairingHook() {
++    const hook = globalThis.__CL8Y_WC_PAIRING_MODAL__;
++    if (!hook || typeof hook.open !== "function" || typeof hook.close !== "function") {
++        return undefined;
++    }
++    return hook;
++}
+ export class QRCodeModal {
+     constructor(details) {
+         this.id = "wc-modal-" + Date.now();
+         this.details = details;
+     }
+     open(uri) {
++        // GitLab #519: dApp mobile pairing sheet (deep-link buttons + copy). Desktop QR unchanged.
++        const hook = cl8yPairingHook();
++        if (hook) {
++            const handled = hook.open({
++                uri,
++                name: this.details.name,
++                android: this.details.android || "",
++                ios: this.details.ios || "",
++                isStation: !!this.details.isStation,
++                isLuncDash: !!this.details.isLuncDash,
++            });
++            if (handled) {
++                return;
++            }
++        }
+         const overlay = document.createElement("div");
+         overlay.style.cssText = [
+             "background-color: rgba(0, 0, 0, 0.5)",
+@@ -55,13 +77,42 @@ export class QRCodeModal {
+             }
+         }
+         if (isMobile()) {
+-            // On mobile, redirect to mobile app
+-            window.location.href = this.details.isStation
+-                ? schemeUri
+-                : isAndroid()
+-                    ? this.generateAndroidIntent(uri)
+-                    : this.generateIosIntent(uri);
+-            // TODO: render button to open mobile app
++            // GitLab #519: do not auto-redirect — async WC callback is not a user gesture.
++            const actions = document.createElement("div");
++            actions.style.cssText = "display:flex;flex-direction:column;gap:0.5rem;margin-bottom:0.75rem;";
++            const openBtn = document.createElement("button");
++            openBtn.type = "button";
++            openBtn.textContent = `Open ${this.details.name}`;
++            openBtn.style.cssText = "padding:0.6rem 0.75rem;border-radius:0.4rem;border:0;background:#18181b;color:#f4f4f5;font-size:0.95rem;cursor:pointer;";
++            openBtn.onclick = (e) => {
++                e.stopPropagation();
++                window.location.href = this.details.isStation
++                    ? schemeUri
++                    : isAndroid()
++                        ? this.generateAndroidIntent(uri)
++                        : this.generateIosIntent(uri);
++            };
++            const copyBtn = document.createElement("button");
++            copyBtn.type = "button";
++            copyBtn.textContent = "Copy pairing link";
++            copyBtn.style.cssText = "padding:0.6rem 0.75rem;border-radius:0.4rem;border:1px solid #18181b;background:#f4f4f5;color:#18181b;font-size:0.95rem;cursor:pointer;";
++            copyBtn.onclick = (e) => {
++                e.stopPropagation();
++                const done = () => {
++                    copyBtn.textContent = "Copied";
++                };
++                if (navigator.clipboard && navigator.clipboard.writeText) {
++                    navigator.clipboard.writeText(uri).then(done).catch(() => {
++                        window.prompt("Copy pairing link", uri);
++                    });
++                }
++                else {
++                    window.prompt("Copy pairing link", uri);
++                }
++            };
++            actions.appendChild(openBtn);
++            actions.appendChild(copyBtn);
++            modal.appendChild(actions);
+         }
+         else {
+             // On desktop, show help message to scan the QR code
+@@ -84,6 +135,10 @@ export class QRCodeModal {
+         document.body.appendChild(rootDiv);
+     }
+     close() {
++        const hook = cl8yPairingHook();
++        if (hook) {
++            hook.close();
++        }
+         const rootDiv = document.getElementById(this.id);
+         if (rootDiv) {
+             document.body.removeChild(rootDiv);
+diff --git a/node_modules/@goblinhunt/cosmes/dist/wallet/wallets/keplr/KeplrExtension.js b/node_modules/@goblinhunt/cosmes/dist/wallet/wallets/keplr/KeplrExtension.js
+index bcfd177..d5e04a7 100644
+--- a/node_modules/@goblinhunt/cosmes/dist/wallet/wallets/keplr/KeplrExtension.js
++++ b/node_modules/@goblinhunt/cosmes/dist/wallet/wallets/keplr/KeplrExtension.js
+@@ -1,7 +1,107 @@
+ import { RpcClient, Tx, } from "../../../client/index.js";
++import { CosmosTxV1beta1AuthInfo as ProtoAuthInfo, } from "../../../protobufs/index.js";
+ import { WalletType } from "../../constants/WalletType.js";
+ import { ConnectedWallet, } from "../ConnectedWallet.js";
+ import { WalletError } from "../WalletError.js";
++/** Per-request sign options — Station LocalTerra may ignore defaultOptions alone (GitLab #127). */
++const EXTENSION_SIGN_OPTIONS = {
++    preferNoSetFee: true,
++    preferNoSetMemo: true,
++};
++const EXTENSION_SIGNED_FEE_UNDERSHOOT_USER_MESSAGE = "Transaction fee mismatch. Please reconnect your wallet and try again. If the problem persists, contact support.";
++const EXTENSION_SIGNED_FEE_UNDERSHOOT_PREFIX = "Wallet signed a fee far below what this dApp submitted (GitLab #127).";
++const EXTENSION_SIGNED_FEE_MIN_PERCENT = 95n;
++function extensionSignedFeeUndershootError(expectedUluna, expectedGas, signedUluna, signedGas) {
++    const gasNote = expectedGas > 0n && signedGas > 0n && signedGas < expectedGas
++        ? ` Expected gas at least ~${expectedGas}; wallet returned ~${signedGas}.`
++        : "";
++    const detail = `${EXTENSION_SIGNED_FEE_UNDERSHOOT_PREFIX} On LocalTerra with Station: disconnect, reconnect, and approve any chain-update prompt. Run \`cd frontend-dapp && npm ci\` so the cosmes patch is applied, then retry. Expected at least ~${expectedUluna} uluna; wallet returned ~${signedUluna} uluna.${gasNote}`;
++    console.warn("[KeplrExtension]", detail);
++    return new Error(EXTENSION_SIGNED_FEE_UNDERSHOOT_USER_MESSAGE);
++}
++function meetsMinSignedRatio(signed, expected) {
++    if (expected <= 0n)
++        return true;
++    if (signed <= 0n)
++        return false;
++    return signed * 100n >= expected * EXTENSION_SIGNED_FEE_MIN_PERCENT;
++}
++/** Reject broadcast when a wallet rewrites fees/gas far below the dApp `Fee` (Station LocalTerra repro: ~3000 uluna; #134 ~23 vs ~36 LUNC). */
++function ulunaFromAminoFee(fee) {
++    const coin = fee?.amount?.find((c) => c.denom === "uluna");
++    return coin?.amount ? BigInt(coin.amount) : 0n;
++}
++function gasFromAminoFee(fee) {
++    const g = fee?.gas;
++    if (g == null || g === "")
++        return 0n;
++    try {
++        return BigInt(g);
++    }
++    catch {
++        return 0n;
++    }
++}
++/** Plain JSON amino doc — extensions may ignore protobuf Coin fee amounts (GitLab #127 swap repro). */
++function toPlainAminoStdSignDoc(stdDoc) {
++    const fee = stdDoc.fee ?? { amount: [], gas: "0" };
++    return {
++        ...stdDoc,
++        fee: {
++            gas: String(fee.gas ?? "0"),
++            amount: (fee.amount ?? []).map((c) => ({
++                denom: String(c.denom),
++                amount: String(c.amount),
++            })),
++            ...(fee.payer ? { payer: fee.payer } : {}),
++            ...(fee.granter ? { granter: fee.granter } : {}),
++        },
++    };
++}
++function gasLimitFromProtobufFee(fee) {
++    return fee?.gasLimit ? BigInt(fee.gasLimit) : 0n;
++}
++function ulunaFromDirectSignedAuthInfoBytes(authInfoBytes) {
++    if (!authInfoBytes?.length)
++        return 0n;
++    const auth = ProtoAuthInfo.fromBinary(authInfoBytes);
++    const coin = auth.fee?.amount?.find((c) => c.denom === "uluna");
++    return coin?.amount ? BigInt(coin.amount) : 0n;
++}
++function gasFromDirectSignedAuthInfoBytes(authInfoBytes) {
++    if (!authInfoBytes?.length)
++        return 0n;
++    const auth = ProtoAuthInfo.fromBinary(authInfoBytes);
++    return auth.fee?.gasLimit ? BigInt(auth.fee.gasLimit) : 0n;
++}
++function assertExtensionSignedFeeMeetsExpected(signedDoc, expectedAminoFee, chainId) {
++    const isLocalTerra = typeof chainId === "string" && chainId.toLowerCase() === "localterra";
++    if (!isLocalTerra)
++        return;
++    const expectedUluna = ulunaFromAminoFee(expectedAminoFee);
++    const expectedGas = gasFromAminoFee(expectedAminoFee);
++    if (expectedUluna <= 0n && expectedGas <= 0n)
++        return;
++    if (!signedDoc?.fee)
++        throw extensionSignedFeeUndershootError(expectedUluna, expectedGas, 0n, 0n);
++    const signedUluna = ulunaFromAminoFee(signedDoc.fee);
++    const signedGas = gasFromAminoFee(signedDoc.fee);
++    if (!meetsMinSignedRatio(signedGas, expectedGas) || !meetsMinSignedRatio(signedUluna, expectedUluna))
++        throw extensionSignedFeeUndershootError(expectedUluna, expectedGas, signedUluna, signedGas);
++}
++function assertExtensionSignedDirectFeeMeetsExpected(signed, expectedFee, chainId) {
++    const isLocalTerra = typeof chainId === "string" && chainId.toLowerCase() === "localterra";
++    if (!isLocalTerra)
++        return;
++    const expectedUluna = ulunaFromAminoFee(expectedFee);
++    const expectedGas = gasLimitFromProtobufFee(expectedFee);
++    if (expectedUluna <= 0n && expectedGas <= 0n)
++        return;
++    const signedUluna = ulunaFromDirectSignedAuthInfoBytes(signed.authInfoBytes);
++    const signedGas = gasFromDirectSignedAuthInfoBytes(signed.authInfoBytes);
++    if (!meetsMinSignedRatio(signedGas, expectedGas) || !meetsMinSignedRatio(signedUluna, expectedUluna))
++        throw extensionSignedFeeUndershootError(expectedUluna, expectedGas, signedUluna, signedGas);
++}
+ export class KeplrExtension extends ConnectedWallet {
+     constructor(walletName, label, ext, chainId, pubKey, address, rpc, gasPrice, useAmino) {
+         super(walletName, WalletType.EXTENSION, label, chainId, pubKey, address, rpc, gasPrice);
+@@ -43,11 +143,15 @@ export class KeplrExtension extends ConnectedWallet {
+         };
+         let txRaw;
+         if (this.useAmino) {
+-            const { signed, signature } = await WalletError.wrap(this.ext.signAmino(this.chainId, this.address, tx.toStdSignDoc(params)));
++            const stdDoc = toPlainAminoStdSignDoc(tx.toStdSignDoc(params));
++            const { signed, signature } = await WalletError.wrap(this.ext.signAmino(this.chainId, this.address, stdDoc, EXTENSION_SIGN_OPTIONS));
++            // Single sign only — a second signAmino after approval often yields "User denied, extension popup was closed" (GitLab #208).
++            assertExtensionSignedFeeMeetsExpected(signed, stdDoc.fee, this.chainId);
+             txRaw = tx.toSignedAmino(signed, signature.signature);
+         }
+         else {
+-            const { signed, signature } = await WalletError.wrap(this.ext.signDirect(this.chainId, this.address, tx.toSignDoc(params)));
++            const { signed, signature } = await WalletError.wrap(this.ext.signDirect(this.chainId, this.address, tx.toSignDoc(params), EXTENSION_SIGN_OPTIONS));
++            assertExtensionSignedDirectFeeMeetsExpected(signed, fee, this.chainId);
+             txRaw = tx.toSignedDirect(signed, signature.signature);
+         }
+         return RpcClient.broadcastTx(this.rpc, txRaw);
+diff --git a/node_modules/@goblinhunt/cosmes/dist/wallet/wallets/luncdash/LUNCDashController.js b/node_modules/@goblinhunt/cosmes/dist/wallet/wallets/luncdash/LUNCDashController.js
+index 641a1e0..37c6857 100644
+--- a/node_modules/@goblinhunt/cosmes/dist/wallet/wallets/luncdash/LUNCDashController.js
++++ b/node_modules/@goblinhunt/cosmes/dist/wallet/wallets/luncdash/LUNCDashController.js
+@@ -50,17 +50,22 @@ export class LUNCDashController extends WalletController {
+         const address = wc.accounts[0];
+         for (let i = 0; i < chains.length; i++) {
+             const { chainId, rpc, gasPrice } = chains[i];
++            let key;
+             try {
+-                // Since Station's WalletConnect doesn't support getting pub keys, we
+-                // need to query the account to get it. However, if the wallet does
+-                // not contain funds, the RPC will throw errors.
+-                const key = await WalletError.wrap(this.getPubKey(chainId, rpc, address));
+-                wallets.set(chainId, new LUNCDashWalletConnectV1(undefined, wc, chainId, key, address, rpc, gasPrice));
++                key = await WalletError.wrap(this.getPubKey(chainId, rpc, address));
+             }
+             catch (err) {
+-                // We simply log and ignore the error for now
+-                console.warn(err);
++                // Account may not have a pub key on-chain yet (no outgoing tx).
++                // Use a placeholder — LuncDash WalletConnect handles signing in the
++                // wallet app, so the pub key is not needed for transactions.
++                console.warn(`[LUNCDash] Could not fetch on-chain pub key for ${address} on ${chainId}. ` +
++                    `Using placeholder; wallet will still function via WalletConnect.`, err);
++                key = new Secp256k1PubKey({
++                    chainId,
++                    key: new Uint8Array(33),
++                });
+             }
++            wallets.set(chainId, new LUNCDashWalletConnectV1(undefined, wc, chainId, key, address, rpc, gasPrice));
+         }
+         this.wc.cacheSession(wc);
+         return { wallets, wc: this.wc };
+diff --git a/node_modules/@goblinhunt/cosmes/dist/wallet/wallets/station/StationController.js b/node_modules/@goblinhunt/cosmes/dist/wallet/wallets/station/StationController.js
+index 021a61a..7ffb746 100644
+--- a/node_modules/@goblinhunt/cosmes/dist/wallet/wallets/station/StationController.js
++++ b/node_modules/@goblinhunt/cosmes/dist/wallet/wallets/station/StationController.js
+@@ -49,17 +49,22 @@ export class StationController extends WalletController {
+         const address = wc.accounts[0];
+         for (let i = 0; i < chains.length; i++) {
+             const { chainId, rpc, gasPrice } = chains[i];
++            let key;
+             try {
+-                // Since Station's WalletConnect doesn't support getting pub keys, we
+-                // need to query the account to get it. However, if the wallet does
+-                // not contain funds, the RPC will throw errors.
+-                const key = await WalletError.wrap(this.getPubKey(chainId, rpc, address));
+-                wallets.set(chainId, new StationWalletConnectV1(undefined, wc, chainId, key, address, rpc, gasPrice));
++                key = await WalletError.wrap(this.getPubKey(chainId, rpc, address));
+             }
+             catch (err) {
+-                // We simply log and ignore the error for now
+-                console.warn(err);
++                // Account may not have a pub key on-chain yet (no outgoing tx).
++                // Use a placeholder — Station WalletConnect handles signing in the
++                // wallet app, so the pub key is not needed for transactions.
++                console.warn(`[Station] Could not fetch on-chain pub key for ${address} on ${chainId}. ` +
++                    `Using placeholder; wallet will still function via WalletConnect.`, err);
++                key = new Secp256k1PubKey({
++                    chainId,
++                    key: new Uint8Array(33),
++                });
+             }
++            wallets.set(chainId, new StationWalletConnectV1(undefined, wc, chainId, key, address, rpc, gasPrice));
+         }
+         this.wc.cacheSession(wc);
+         return { wallets, wc: this.wc };
+@@ -79,7 +84,10 @@ export class StationController extends WalletController {
+                     key: pubKey,
+                     chainId,
+                 });
+-                wallets.set(chainId, new StationExtension(this.id, name, ext, chainId, key, bech32Address, rpc, gasPrice, isNanoLedger));
++                // GitLab #127 / #208: Station's Keplr shim mishandles signDirect (fee rewrite, false "User denied").
++                // Always use amino for the extension path; Ledger already required amino in upstream cosmes.
++                const useAminoSigning = true;
++                wallets.set(chainId, new StationExtension(this.id, name, ext, chainId, key, bech32Address, rpc, gasPrice, useAminoSigning));
+             }
+             catch (err) {
+                 if (err instanceof Error) {
+diff --git a/node_modules/@goblinhunt/cosmes/src/wallet/walletconnect/QRCodeModal.ts b/node_modules/@goblinhunt/cosmes/src/wallet/walletconnect/QRCodeModal.ts
+index a03302f..c3a0b02 100644
+--- a/node_modules/@goblinhunt/cosmes/src/wallet/walletconnect/QRCodeModal.ts
++++ b/node_modules/@goblinhunt/cosmes/src/wallet/walletconnect/QRCodeModal.ts
+@@ -11,6 +11,29 @@ export type MobileAppDetails = {
+   isLuncDash?: boolean | undefined;
+ };
+ 
++type Cl8yPairingHook = {
++  open: (payload: {
++    uri: string;
++    name: string;
++    android: string;
++    ios: string;
++    isStation: boolean;
++    isLuncDash: boolean;
++  }) => boolean;
++  close: () => void;
++};
++
++function cl8yPairingHook(): Cl8yPairingHook | undefined {
++  const bag = globalThis as typeof globalThis & {
++    __CL8Y_WC_PAIRING_MODAL__?: Cl8yPairingHook;
++  };
++  const hook = bag.__CL8Y_WC_PAIRING_MODAL__;
++  if (!hook || typeof hook.open !== "function" || typeof hook.close !== "function") {
++    return undefined;
++  }
++  return hook;
++}
++
+ export class QRCodeModal implements IQRCodeModal {
+   private readonly id = "wc-modal-" + Date.now();
+   private readonly details: MobileAppDetails;
+@@ -20,6 +43,22 @@ export class QRCodeModal implements IQRCodeModal {
+   }
+ 
+   public open(uri: string): void {
++    // GitLab #519: dApp mobile pairing sheet (deep-link buttons + copy). Desktop QR unchanged.
++    const hook = cl8yPairingHook();
++    if (hook) {
++      const handled = hook.open({
++        uri,
++        name: this.details.name,
++        android: this.details.android || "",
++        ios: this.details.ios || "",
++        isStation: !!this.details.isStation,
++        isLuncDash: !!this.details.isLuncDash,
++      });
++      if (handled) {
++        return;
++      }
++    }
++
+     const overlay = document.createElement("div");
+     overlay.style.cssText = [
+       "background-color: rgba(0, 0, 0, 0.5)",
+@@ -77,13 +116,43 @@ export class QRCodeModal implements IQRCodeModal {
+     }
+ 
+     if (isMobile()) {
+-      // On mobile, redirect to mobile app
+-      window.location.href = this.details.isStation
+-        ? schemeUri
+-        : isAndroid()
+-        ? this.generateAndroidIntent(uri)
+-        : this.generateIosIntent(uri);
+-      // TODO: render button to open mobile app
++      // GitLab #519: do not auto-redirect — async WC callback is not a user gesture.
++      const actions = document.createElement("div");
++      actions.style.cssText = "display:flex;flex-direction:column;gap:0.5rem;margin-bottom:0.75rem;";
++      const openBtn = document.createElement("button");
++      openBtn.type = "button";
++      openBtn.textContent = `Open ${this.details.name}`;
++      openBtn.style.cssText =
++        "padding:0.6rem 0.75rem;border-radius:0.4rem;border:0;background:#18181b;color:#f4f4f5;font-size:0.95rem;cursor:pointer;";
++      openBtn.onclick = (e): void => {
++        e.stopPropagation();
++        window.location.href = this.details.isStation
++          ? schemeUri
++          : isAndroid()
++          ? this.generateAndroidIntent(uri)
++          : this.generateIosIntent(uri);
++      };
++      const copyBtn = document.createElement("button");
++      copyBtn.type = "button";
++      copyBtn.textContent = "Copy pairing link";
++      copyBtn.style.cssText =
++        "padding:0.6rem 0.75rem;border-radius:0.4rem;border:1px solid #18181b;background:#f4f4f5;color:#18181b;font-size:0.95rem;cursor:pointer;";
++      copyBtn.onclick = (e): void => {
++        e.stopPropagation();
++        const done = (): void => {
++          copyBtn.textContent = "Copied";
++        };
++        if (navigator.clipboard?.writeText) {
++          void navigator.clipboard.writeText(uri).then(done).catch(() => {
++            window.prompt("Copy pairing link", uri);
++          });
++        } else {
++          window.prompt("Copy pairing link", uri);
++        }
++      };
++      actions.appendChild(openBtn);
++      actions.appendChild(copyBtn);
++      modal.appendChild(actions);
+     } else {
+       // On desktop, show help message to scan the QR code
+       const msg = document.createElement("div");
+@@ -108,6 +177,10 @@ export class QRCodeModal implements IQRCodeModal {
+   }
+ 
+   public close(): void {
++    const hook = cl8yPairingHook();
++    if (hook) {
++      hook.close();
++    }
+     const rootDiv = document.getElementById(this.id);
+     if (rootDiv) {
+       document.body.removeChild(rootDiv);
+diff --git a/node_modules/@goblinhunt/cosmes/src/wallet/wallets/keplr/KeplrExtension.ts b/node_modules/@goblinhunt/cosmes/src/wallet/wallets/keplr/KeplrExtension.ts
+index eb54188..845a813 100644
+--- a/node_modules/@goblinhunt/cosmes/src/wallet/wallets/keplr/KeplrExtension.ts
++++ b/node_modules/@goblinhunt/cosmes/src/wallet/wallets/keplr/KeplrExtension.ts
+@@ -23,6 +23,15 @@ import {
+ import { WalletError } from "../WalletError";
+ import { AddChainInfo } from "cosmes/wallet/walletconnect/WalletConnectV2";
+ 
++/**
++ * Pass on every `signAmino` / `signDirect` call. Station on LocalTerra can ignore
++ * `defaultOptions.sign` alone and rebuild fees from a stale gas step (GitLab #127).
++ */
++const EXTENSION_SIGN_OPTIONS = {
++  preferNoSetFee: true,
++  preferNoSetMemo: true,
++} as const;
++
+ export class KeplrExtension extends ConnectedWallet {
+   private readonly ext: Keplr;
+   private readonly useAmino: boolean;
+@@ -99,12 +108,22 @@ export class KeplrExtension extends ConnectedWallet {
+     let txRaw: TxRaw;
+     if (this.useAmino) {
+       const { signed, signature } = await WalletError.wrap(
+-        this.ext.signAmino(this.chainId, this.address, tx.toStdSignDoc(params))
++        this.ext.signAmino(
++          this.chainId,
++          this.address,
++          tx.toStdSignDoc(params),
++          EXTENSION_SIGN_OPTIONS
++        )
+       );
+       txRaw = tx.toSignedAmino(signed, signature.signature);
+     } else {
+       const { signed, signature } = await WalletError.wrap(
+-        this.ext.signDirect(this.chainId, this.address, tx.toSignDoc(params))
++        this.ext.signDirect(
++          this.chainId,
++          this.address,
++          tx.toSignDoc(params),
++          EXTENSION_SIGN_OPTIONS
++        )
+       );
+       txRaw = tx.toSignedDirect(signed, signature.signature);
+     }
+diff --git a/node_modules/@goblinhunt/cosmes/src/wallet/wallets/luncdash/LUNCDashController.ts b/node_modules/@goblinhunt/cosmes/src/wallet/wallets/luncdash/LUNCDashController.ts
+index 707d1df..fb101ac 100644
+--- a/node_modules/@goblinhunt/cosmes/src/wallet/wallets/luncdash/LUNCDashController.ts
++++ b/node_modules/@goblinhunt/cosmes/src/wallet/wallets/luncdash/LUNCDashController.ts
+@@ -64,29 +64,37 @@ export class LUNCDashController extends WalletController {
+     const address = wc.accounts[0];
+     for (let i = 0; i < chains.length; i++) {
+       const { chainId, rpc, gasPrice } = chains[i];
++      let key: Secp256k1PubKey;
+       try {
+-        // Since Station's WalletConnect doesn't support getting pub keys, we
+-        // need to query the account to get it. However, if the wallet does
+-        // not contain funds, the RPC will throw errors.
+-        const key = await WalletError.wrap(
++        key = await WalletError.wrap(
+           this.getPubKey(chainId, rpc, address)
+         );
+-        wallets.set(
+-          chainId,
+-          new LUNCDashWalletConnectV1(
+-            undefined,
+-            wc,
+-            chainId,
+-            key,
+-            address,
+-            rpc,
+-            gasPrice
+-          )
+-        );
+       } catch (err) {
+-        // We simply log and ignore the error for now
+-        console.warn(err);
++        // Account may not have a pub key on-chain yet (no outgoing tx).
++        // Use a placeholder — LuncDash WalletConnect handles signing in the
++        // wallet app, so the pub key is not needed for transactions.
++        console.warn(
++          `[LUNCDash] Could not fetch on-chain pub key for ${address} on ${chainId}. ` +
++          `Using placeholder; wallet will still function via WalletConnect.`,
++          err
++        );
++        key = new Secp256k1PubKey({
++          chainId,
++          key: new Uint8Array(33),
++        });
+       }
++      wallets.set(
++        chainId,
++        new LUNCDashWalletConnectV1(
++          undefined,
++          wc,
++          chainId,
++          key,
++          address,
++          rpc,
++          gasPrice
++        )
++      );
+     }
+     this.wc.cacheSession(wc);
+     return { wallets, wc: this.wc };
+diff --git a/node_modules/@goblinhunt/cosmes/src/wallet/wallets/station/StationController.ts b/node_modules/@goblinhunt/cosmes/src/wallet/wallets/station/StationController.ts
+index d372281..e88620d 100644
+--- a/node_modules/@goblinhunt/cosmes/src/wallet/wallets/station/StationController.ts
++++ b/node_modules/@goblinhunt/cosmes/src/wallet/wallets/station/StationController.ts
+@@ -63,29 +63,37 @@ export class StationController extends WalletController {
+     const address = wc.accounts[0];
+     for (let i = 0; i < chains.length; i++) {
+       const { chainId, rpc, gasPrice } = chains[i];
++      let key: Secp256k1PubKey;
+       try {
+-        // Since Station's WalletConnect doesn't support getting pub keys, we
+-        // need to query the account to get it. However, if the wallet does
+-        // not contain funds, the RPC will throw errors.
+-        const key = await WalletError.wrap(
++        key = await WalletError.wrap(
+           this.getPubKey(chainId, rpc, address)
+         );
+-        wallets.set(
+-          chainId,
+-          new StationWalletConnectV1(
+-            undefined,
+-            wc,
+-            chainId,
+-            key,
+-            address,
+-            rpc,
+-            gasPrice
+-          )
+-        );
+       } catch (err) {
+-        // We simply log and ignore the error for now
+-        console.warn(err);
++        // Account may not have a pub key on-chain yet (no outgoing tx).
++        // Use a placeholder — Station WalletConnect handles signing in the
++        // wallet app, so the pub key is not needed for transactions.
++        console.warn(
++          `[Station] Could not fetch on-chain pub key for ${address} on ${chainId}. ` +
++          `Using placeholder; wallet will still function via WalletConnect.`,
++          err
++        );
++        key = new Secp256k1PubKey({
++          chainId,
++          key: new Uint8Array(33),
++        });
+       }
++      wallets.set(
++        chainId,
++        new StationWalletConnectV1(
++          undefined,
++          wc,
++          chainId,
++          key,
++          address,
++          rpc,
++          gasPrice
++        )
++      );
+     }
+     this.wc.cacheSession(wc);
+     return { wallets, wc: this.wc };

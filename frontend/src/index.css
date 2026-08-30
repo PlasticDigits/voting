@@ -354,9 +354,9 @@ body,
 }
 
 .proposal-list a {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px 12px;
   padding: 12px 14px;
   border: 1px solid var(--line);
   border-radius: 16px;
@@ -367,6 +367,13 @@ body,
 .proposal-list span {
   color: var(--ink-subtle);
   font-size: 0.85rem;
+}
+
+.proposal-summary {
+  grid-column: 1 / -1;
+  font-style: normal;
+  color: var(--ink-dim);
+  font-size: 0.9rem;
 }
 
 .field {
@@ -383,6 +390,28 @@ body,
   background: var(--control-surface);
   color: var(--ink);
   padding: 10px 12px;
+  font: inherit;
+}
+
+.field textarea {
+  min-height: 96px;
+  resize: vertical;
+}
+
+.field-help {
+  margin: 0;
+  color: var(--ink-subtle);
+  font-size: 0.85rem;
+}
+
+.field-count {
+  color: var(--ink-subtle);
+  font-size: 0.75rem;
+}
+
+.field-error {
+  color: var(--alert-error-text);
+  font-size: 0.8rem;
 }
 
 .editor .tiptap {
@@ -405,4 +434,21 @@ body,
 .field textarea {
   min-height: 88px;
   resize: vertical;
+}
+
+.proposal-body section {
+  margin: 0 0 18px;
+}
+
+.proposal-body h2 {
+  margin: 0 0 8px;
+  font-size: 1rem;
+  color: var(--ink);
+}
+
+.proposal-preview {
+  margin: 18px 0;
+  padding: 14px 16px;
+  border: 1px dashed var(--line);
+  border-radius: 16px;
 }

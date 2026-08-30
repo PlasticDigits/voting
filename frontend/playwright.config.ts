@@ -22,6 +22,7 @@ export default defineConfig({
       VITE_DEV_MODE: 'true',
       VITE_NETWORK: 'local',
       VITE_OPERATOR_VOTING_URL: 'http://127.0.0.1:3999',
+      VITE_REGISTER_POLL_TIMEOUT_MS: '4000',
       VITE_DEV_MNEMONIC:
         process.env.VITE_DEV_MNEMONIC ||
         'notice oak worry limit wrap speak medal online prefer cluster roof addict wrist behave treat actual wasp year salad speed social layer crew genius',

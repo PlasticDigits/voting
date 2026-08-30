@@ -4,54 +4,43 @@ import { useConnectedIdentity } from '@/hooks/useConnectedIdentity'
 import { useVotingSnapshot } from '@/hooks/useVotingSnapshot'
 import { createProposal } from '@/services/operatorVoting'
 import { signVotingRequest } from '@/services/votingSign'
-import { sha256Hex } from '@/utils/sanitizeProposalHtml'
 import { canPropose } from '@/utils/votingPayload'
 import { MIN_PROPOSAL_CL8Y, MIN_PROPOSAL_RAW } from '@/utils/constants'
 import { formatCl8y } from '@/utils/format'
 import { ROUTES } from '@/routes'
 import {
-  CANONICAL_SECTION_KEYS,
-  canonicalizeProposalSections,
-  emptySections,
-  MIN_SECTION_VISIBLE,
-  SECTION_HELP,
-  SECTION_LABELS,
-  sanitizeSections,
-  sectionsAreValid,
-  textToSectionHtml,
-  visibleLen,
-  type ProposalSections,
   type SectionKey,
+  emptySections,
+  hashSections,
+  sectionsFromPlain,
+  validateSections,
 } from '@/utils/proposalSections'
-
-function sectionsFromText(raw: Record<SectionKey, string>): ProposalSections {
-  const out = emptySections()
-  for (const key of CANONICAL_SECTION_KEYS) {
-    out[key] = textToSectionHtml(raw[key] ?? '')
-  }
-  return sanitizeSections(out)
-}
+import ProposalSectionFields, {
+  ProposalSectionsPreview,
+} from '@/components/proposal/ProposalSectionFields'
 
 export default function VoteNewPage() {
   const { address, chain, label } = useConnectedIdentity()
   const snapshot = useVotingSnapshot(address, chain)
   const navigate = useNavigate()
   const [title, setTitle] = useState('')
-  const [fields, setFields] = useState<Record<SectionKey, string>>(emptySections())
+  const [plain, setPlain] = useState<Record<SectionKey, string>>(emptySections)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
+  const sections = useMemo(() => sectionsFromPlain(plain), [plain])
+  const sectionCheck = useMemo(() => validateSections(sections), [sections])
+
   const registered = snapshot.status === 'registered'
   const gated = !registered || snapshot.balance == null || !canPropose(snapshot.balance, MIN_PROPOSAL_RAW)
-  const sections = useMemo(() => sectionsFromText(fields), [fields])
-  const templateOk = sectionsAreValid(sections)
+  const canSubmit = !gated && !busy && Boolean(title.trim()) && sectionCheck.ok
 
   async function handleSubmit() {
-    if (!address || !chain) return
+    if (!address || !chain || !canSubmit) return
     setBusy(true)
     setError(null)
     try {
-      const body_hash = await sha256Hex(canonicalizeProposalSections(sections))
+      const body_hash = await hashSections(sections)
       const signed = await signVotingRequest({
         chain,
         address,
@@ -59,7 +48,7 @@ export default function VoteNewPage() {
         title,
         body_hash,
       })
-      const created = await createProposal({ ...signed, title, sections })
+      const created = await createProposal({ ...signed, title, body_sections: sections })
       navigate(ROUTES.proposal(created.id))
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Draft failed')
@@ -84,9 +73,10 @@ export default function VoteNewPage() {
       <section className="panel">
         <h1>New draft</h1>
         <p className="lede">
-          Starts as a <strong>draft</strong> — not a votable poll. Snapshot freeze happens when a committee wallet
-          opens voting. Server enforces the {MIN_PROPOSAL_CL8Y} CL8Y gate on this address only. {label} and the
-          other chain are never summed. Required sections need at least {MIN_SECTION_VISIBLE} visible characters.
+          Starts as a <strong>draft</strong>, not a votable poll. The snapshot freezes only when a
+          committee wallet opens voting. Server is the source of truth for the {MIN_PROPOSAL_CL8Y} CL8Y
+          gate and required sections. {label} and the other chain are never summed. Never enter a seed
+          phrase.
         </p>
         {registered && snapshot.balance != null && (
           <p data-testid="propose-balance">
@@ -95,14 +85,24 @@ export default function VoteNewPage() {
         )}
         {snapshot.status === 'unregistered' && (
           <p className="lede" data-testid="propose-register-hint">
-            Register to snapshot this address’s CL8Y before starting a draft. The list page does not show a live
-            chain balance.
+            Register before votes open. The list page does not show a live chain balance.
           </p>
         )}
         {snapshot.status === 'pending' && (
           <p className="lede" data-testid="propose-pending">
             Registration snapshot pending. Draft stays disabled until the ledger row exists.
           </p>
+        )}
+        {snapshot.canRetry && (
+          <button
+            type="button"
+            className="btn-primary"
+            data-testid="register-retry"
+            disabled={snapshot.polling}
+            onClick={() => void snapshot.retryPending()}
+          >
+            Retry snapshot
+          </button>
         )}
         <label className="field">
           <span>Title</span>
@@ -113,25 +113,13 @@ export default function VoteNewPage() {
             data-testid="proposal-title"
           />
         </label>
-        {CANONICAL_SECTION_KEYS.map((key) => (
-          <label className="field" key={key}>
-            <span>
-              {SECTION_LABELS[key]}
-              {key === 'context' ? ' (optional)' : ''}
-            </span>
-            <p className="lede">{SECTION_HELP[key]}</p>
-            <textarea
-              value={fields[key]}
-              onChange={(e) => setFields((prev) => ({ ...prev, [key]: e.target.value }))}
-              rows={key === 'summary' ? 3 : 5}
-              data-testid={`section-${key}`}
-            />
-            <span className="lede">
-              {visibleLen(textToSectionHtml(fields[key]))} visible
-              {key !== 'context' ? ` / ${MIN_SECTION_VISIBLE} min` : ''}
-            </span>
-          </label>
-        ))}
+        <ProposalSectionFields
+          values={plain}
+          errors={sectionCheck.errors}
+          disabled={busy}
+          onChange={(key, value) => setPlain((prev) => ({ ...prev, [key]: value }))}
+        />
+        <ProposalSectionsPreview sections={sections} />
         {banner && (
           <div className="alert-error" role="alert">
             {banner}
@@ -141,7 +129,7 @@ export default function VoteNewPage() {
           type="button"
           className="btn-primary"
           data-testid="submit-proposal"
-          disabled={gated || busy || !title.trim() || !templateOk}
+          disabled={!canSubmit}
           onClick={() => void handleSubmit()}
         >
           {busy ? 'Signing…' : 'Create draft'}

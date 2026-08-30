@@ -6,6 +6,8 @@ import { ROUTES } from '@/routes'
 import { listProposals, type ProposalListItem } from '@/services/operatorVoting'
 import { signVotingRequest } from '@/services/votingSign'
 import { formatCl8y } from '@/utils/format'
+import { formatLastPoll } from '@/utils/ledgerDisplay'
+import { visibleText } from '@/utils/proposalSections'
 
 export default function VoteListPage() {
   const { address, chain, label } = useConnectedIdentity()
@@ -67,6 +69,15 @@ export default function VoteListPage() {
                 <span className="pill" data-testid="registration-status">
                   Registered
                 </span>
+              ) : snapshot.canRetry && !busy ? (
+                <button
+                  type="button"
+                  className="btn-primary"
+                  data-testid="register-retry"
+                  onClick={() => void snapshot.retryPending()}
+                >
+                  Retry snapshot
+                </button>
               ) : snapshot.status === 'pending' || busy ? (
                 <span className="pill" data-testid="registration-pending">
                   Registering…
@@ -92,6 +103,11 @@ export default function VoteListPage() {
                 not a wallet balance read.
               </p>
             )}
+            {snapshot.status === 'pending' && snapshot.lastPollAt != null && (
+              <p className="lede" data-testid="register-last-poll">
+                Last ledger check {formatLastPoll(snapshot.lastPollAt)}.
+              </p>
+            )}
           </>
         ) : (
           <p className="lede">Connect a Terra Classic or BSC wallet to register and vote.</p>
@@ -114,7 +130,11 @@ export default function VoteListPage() {
                   <span>
                     {p.chain} · {p.status}
                   </span>
-                  {p.summary ? <span data-testid={`summary-${p.id}`}>{p.summary}</span> : null}
+                  {p.summary ? (
+                    <em className="proposal-summary" data-testid="proposal-summary">
+                      {visibleText(p.summary)}
+                    </em>
+                  ) : null}
                 </Link>
               </li>
             ))}

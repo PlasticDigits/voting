@@ -1,4 +1,4 @@
-import { StrictMode, useEffect } from 'react'
+import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -13,19 +13,18 @@ if (typeof window !== 'undefined') {
   window.Buffer = window.Buffer || Buffer
 }
 
-const queryClient = new QueryClient()
+// WC-M6 / issue #12: register before createRoot so auto-reconnect and the first
+// WalletConnect tap cannot race a useEffect. DEX main.tsx does the same.
+installWalletConnectPairingHook()
 
-function Boot() {
-  useEffect(() => installWalletConnectPairingHook(), [])
-  return <App />
-}
+const queryClient = new QueryClient()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <WagmiProvider config={config}>
       <QueryClientProvider client={queryClient}>
         <BrowserRouter>
-          <Boot />
+          <App />
         </BrowserRouter>
       </QueryClientProvider>
     </WagmiProvider>

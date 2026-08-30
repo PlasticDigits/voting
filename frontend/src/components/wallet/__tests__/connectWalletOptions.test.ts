@@ -83,4 +83,14 @@ describe('resolveConnectWalletOptions (GitLab #554 / #566)', () => {
       WalletName.GALAXYSTATION,
     ])
   })
+
+  it('hides Galaxy and Keplr/Cosmostation WC rows when the project id is missing (#12)', () => {
+    const env: ConnectWalletOptionEnv = { ...mobileNone, walletConnectConfigured: false }
+    expect(shouldOfferKeplrWalletConnect(env)).toBe(false)
+    expect(shouldOfferCosmostationWalletConnect(env)).toBe(false)
+    expect(row(env, WalletName.KEPLR)?.walletType).toBe(WalletType.EXTENSION)
+    expect(row(env, WalletName.GALAXYSTATION)).toBeUndefined()
+    expect(row(env, WalletName.LUNCDASH)?.walletType).toBe(WalletType.WALLETCONNECT)
+    expect(row(env, WalletName.STATION)?.walletType).toBe(WalletType.WALLETCONNECT)
+  })
 })

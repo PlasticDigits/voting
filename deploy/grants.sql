@@ -3,7 +3,9 @@
 -- This role must NOT write ledger ingest tables.
 -- Coolify order: ledger writer boot → this file → operator-voting (restricted URL).
 -- Apply with: psql -v ON_ERROR_STOP=1 -d "$WRITER_URL" -f deploy/grants.sql
--- See docs/OPS.md (O1–O2) and docs/LEDGER_INVARIANTS.md (L10).
+-- See docs/OPS.md (O1–O2) and docs/LEDGER_INVARIANTS.md (L10, L11, L12).
+-- The ledger writer (migration owner) must SELECT/UPDATE voting.registration_intents.
+-- operator_voting INSERTs intents; it must not INSERT voting_registrations.
 --
 -- Invariant: GRANT EXECUTE must name public.voting_*_balance_at. The writer
 -- role is often `voting` and schema `voting` exists, so unqualified names

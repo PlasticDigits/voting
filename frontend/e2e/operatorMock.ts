@@ -6,6 +6,7 @@ export const E2E_PROPOSAL_ID = '11111111-1111-1111-1111-111111111111'
 
 export type MockOperatorOpts = {
   registerPendingTicks?: number
+  alreadyPending?: boolean
 }
 
 const SECTION_HTML =
@@ -13,7 +14,7 @@ const SECTION_HTML =
 
 export async function mockOperatorVoting(page: Page, opts: MockOperatorOpts = {}) {
   let ledgerReady = false
-  let registerPosted = false
+  let registerPosted = Boolean(opts.alreadyPending)
   let pendingTicks = opts.registerPendingTicks ?? 0
   const proposals: Array<{
     id: string
@@ -29,7 +30,7 @@ export async function mockOperatorVoting(page: Page, opts: MockOperatorOpts = {}
     status: string
     tally: Record<string, string>
     advisory: boolean
-    sections: Record<string, string>
+    body_sections: Record<string, string>
     comments: Array<{ id: string; chain: string; wallet_address: string; body_html: string; created_at: string }>
     analysis: unknown[]
   }> = []
@@ -38,13 +39,15 @@ export async function mockOperatorVoting(page: Page, opts: MockOperatorOpts = {}
   await page.route('**/v1/proposals', async (route) => {
     if (route.request().method() === 'GET') {
       await route.fulfill({
-        json: proposals.map(({ body_html: _b, sections: _s, comments: _c, analysis: _a, ...rest }) => rest),
+        json: proposals.map(
+          ({ body_html: _b, body_sections: _s, comments: _c, analysis: _a, ...rest }) => rest
+        ),
       })
       return
     }
     const body = route.request().postDataJSON() as {
       title: string
-      sections?: Record<string, string>
+      body_sections?: Record<string, string>
       address: string
     }
     proposals.push({
@@ -52,8 +55,8 @@ export async function mockOperatorVoting(page: Page, opts: MockOperatorOpts = {}
       chain: 'terra',
       proposer: body.address,
       title: body.title,
-      body_html: body.sections?.problem ?? SECTION_HTML,
-      summary: 'This draft section has forty visible characters for the template.',
+      body_html: body.body_sections?.problem ?? SECTION_HTML,
+      summary: body.body_sections?.summary ?? SECTION_HTML,
       terra_height: null,
       bsc_block: null,
       created_at: new Date().toISOString(),
@@ -61,7 +64,7 @@ export async function mockOperatorVoting(page: Page, opts: MockOperatorOpts = {}
       status: 'draft',
       tally: {},
       advisory: true,
-      sections: body.sections ?? {
+      body_sections: body.body_sections ?? {
         context: '',
         problem: SECTION_HTML,
         solution: SECTION_HTML,
@@ -133,12 +136,14 @@ export async function mockOperatorVoting(page: Page, opts: MockOperatorOpts = {}
     }
     if (!ledgerReady && pendingTicks > 0) {
       pendingTicks -= 1
-      if (pendingTicks <= 0) ledgerReady = true
-      await route.fulfill({
-        status: 200,
-        json: { terra: null, bsc: null, pending: { terra: true, bsc: false } },
-      })
-      return
+      if (pendingTicks > 0) {
+        await route.fulfill({
+          status: 200,
+          json: { terra: null, bsc: null, pending: { terra: true, bsc: false } },
+        })
+        return
+      }
+      ledgerReady = true
     }
     if (!ledgerReady) {
       await route.fulfill({ status: 404, json: { error: 'not registered' } })

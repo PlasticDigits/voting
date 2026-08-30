@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import VoteNewPage from '@/pages/VoteNewPage'
 import { MIN_PROPOSAL_RAW } from '@/utils/constants'
+import { MIN_SECTION_VISIBLE_CHARS } from '@/utils/proposalSections'
 
 const identity = {
   address: 'terra1proposerxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
@@ -16,7 +17,11 @@ const snapshot = {
   asOfHeight: 1,
   error: null as string | null,
   loading: false,
+  polling: false,
+  lastPollAt: null as number | null,
+  canRetry: false,
   refresh: async () => undefined,
+  retryPending: async () => undefined,
   completeRegister: async () => undefined,
 }
 
@@ -36,7 +41,7 @@ const SECTION = 'This draft section has forty visible characters.'
 
 function fillRequiredSections() {
   for (const key of ['problem', 'solution', 'pros_cons', 'summary', 'success_criteria']) {
-    fireEvent.change(screen.getByTestId(`section-${key}`), { target: { value: SECTION } })
+    fireEvent.change(screen.getByTestId(`proposal-section-${key}`), { target: { value: SECTION } })
   }
 }
 
@@ -45,12 +50,15 @@ describe('propose gate', () => {
     snapshot.status = 'registered'
     snapshot.balance = (MIN_PROPOSAL_RAW - 1n).toString()
     snapshot.error = null
+    snapshot.canRetry = false
     render(
       <MemoryRouter>
         <VoteNewPage />
       </MemoryRouter>
     )
     const button = await screen.findByTestId('submit-proposal')
+    fireEvent.change(screen.getByTestId('proposal-title'), { target: { value: 'Title' } })
+    fillRequiredSections()
     expect(button).toBeDisabled()
     expect(screen.getByTestId('propose-balance')).toHaveTextContent('need 1000')
   })
@@ -71,6 +79,38 @@ describe('propose gate', () => {
     await waitFor(() => {
       expect(screen.getByTestId('submit-proposal')).toBeEnabled()
     })
+  })
+
+  it('does not block on empty optional context', async () => {
+    snapshot.status = 'registered'
+    snapshot.balance = MIN_PROPOSAL_RAW.toString()
+    snapshot.error = null
+    render(
+      <MemoryRouter>
+        <VoteNewPage />
+      </MemoryRouter>
+    )
+    fireEvent.change(await screen.findByTestId('proposal-title'), { target: { value: 'Ctx' } })
+    fillRequiredSections()
+    expect(screen.getByTestId('proposal-section-context')).toHaveValue('')
+    await waitFor(() => {
+      expect(screen.getByTestId('submit-proposal')).toBeEnabled()
+    })
+  })
+
+  it('shows labeled template fields', async () => {
+    snapshot.status = 'registered'
+    snapshot.balance = MIN_PROPOSAL_RAW.toString()
+    snapshot.error = null
+    render(
+      <MemoryRouter>
+        <VoteNewPage />
+      </MemoryRouter>
+    )
+    expect(await screen.findByText('The idea or problem to be solved')).toBeInTheDocument()
+    expect(screen.getByText('Pros and cons / trade-offs')).toBeInTheDocument()
+    expect(screen.getByText(/Goalposts for spend and outcome justification/)).toBeInTheDocument()
+    expect(screen.queryByText(/hang the proposer/i)).toBeNull()
   })
 
   it('does not treat an unregistered ledger 0 as a live balance', async () => {
@@ -97,6 +137,21 @@ describe('propose gate', () => {
       </MemoryRouter>
     )
     expect(screen.getByRole('alert')).toHaveTextContent('operator down')
+    expect(await screen.findByTestId('submit-proposal')).toBeDisabled()
+    expect(screen.queryByTestId('propose-balance')).toBeNull()
+  })
+
+  it('keeps propose disabled while the ledger snapshot is pending', async () => {
+    snapshot.status = 'pending'
+    snapshot.balance = null
+    snapshot.error = null
+    snapshot.canRetry = false
+    render(
+      <MemoryRouter>
+        <VoteNewPage />
+      </MemoryRouter>
+    )
+    expect(screen.getByTestId('propose-pending')).toBeInTheDocument()
     expect(await screen.findByTestId('submit-proposal')).toBeDisabled()
     expect(screen.queryByTestId('propose-balance')).toBeNull()
   })

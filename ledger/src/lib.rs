@@ -17,8 +17,9 @@ pub mod test_lock;
 pub use amount::{parse_raw_amount, Amount};
 pub use config::LedgerConfig;
 pub use error::LedgerError;
+pub use ingest::{ingest_window, IngestWindow, INGEST_CHUNK, INGEST_STALE_GAP};
 pub use parser::{
     apply_transfer, parse_bep20_transfer_log, parse_cw20_wasm_events, Bep20Transfer, Cw20Transfer,
     ZERO_EVM_ADDRESS,
 };
-pub use register::{LiveBalanceSource, RegistrationOutcome};
+pub use register::{process_pending_intents, LiveBalanceSource, RegistrationOutcome};

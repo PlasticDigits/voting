@@ -8,18 +8,17 @@ use uuid::Uuid;
 
 use crate::balance_query::{resolve_balance_height, resolve_chain};
 use crate::blacklist::normalize_address;
-use crate::config::{VotingConfig, MAX_COMMENT_BYTES, MAX_COMMENTS_PER_WALLET_PER_PROPOSAL};
+use crate::config::{VotingConfig, MAX_COMMENTS_PER_WALLET_PER_PROPOSAL, MAX_COMMENT_BYTES};
 use crate::crypto::{verify_eip191, verify_terra};
 use crate::db;
 use crate::error::{VotingError, VotingResult};
 use crate::html::sanitize_proposal_html;
 use crate::payload::{body_hash, parse_and_validate};
-use crate::rate_limit::{enforce_post_rate_limit, RateLimitState};
-use crate::sections::{
-    analysis_hash, canonicalize_proposal_sections, render_analysis_html, render_proposal_html,
-    sanitize_analysis_sections, sanitize_proposal_sections, sections_hash, validate_analysis_sections,
-    validate_proposal_sections, visible_len, AnalysisSections, ProposalSections,
+use crate::proposal_sections::{
+    prepare_analysis, prepare_sections, render_analysis_html, summary_html, visible_len,
+    AnalysisSections,
 };
+use crate::rate_limit::{enforce_post_rate_limit, RateLimitState};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -99,7 +98,10 @@ pub struct CreateDraftRequest {
     #[serde(flatten)]
     pub signed: SignedRequest,
     pub title: String,
-    pub sections: ProposalSections,
+    #[serde(alias = "sections")]
+    pub body_sections: Option<serde_json::Value>,
+    #[serde(default)]
+    pub body_html: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -107,7 +109,8 @@ pub struct AmendRequest {
     #[serde(flatten)]
     pub signed: SignedRequest,
     pub title: String,
-    pub sections: ProposalSections,
+    #[serde(alias = "sections")]
+    pub body_sections: serde_json::Value,
 }
 
 #[derive(Debug, Deserialize)]
@@ -147,7 +150,12 @@ fn verify_signed(req: &SignedRequest, message: &str) -> VotingResult<()> {
                 .pubkey
                 .as_deref()
                 .ok_or_else(|| VotingError::BadRequest("terra pubkey required".into()))?;
-            verify_terra(&normalize_address(&req.address), message, &req.signature, pubkey)
+            verify_terra(
+                &normalize_address(&req.address),
+                message,
+                &req.signature,
+                pubkey,
+            )
         }
         "bsc" => verify_eip191(&normalize_address(&req.address), message, &req.signature),
         other => Err(VotingError::BadRequest(format!(
@@ -203,7 +211,8 @@ async fn insert_purpose_signature(
 fn proposal_summary(p: &db::ProposalRow) -> Option<String> {
     p.body_sections
         .as_ref()
-        .map(|s| crate::sections::visible_text(&s.0.summary))
+        .and_then(|s| s.0.as_object())
+        .and_then(summary_html)
 }
 
 fn proposal_list_json(p: &db::ProposalRow, tallies: Vec<db::TallyRow>) -> serde_json::Value {
@@ -222,7 +231,10 @@ fn proposal_list_json(p: &db::ProposalRow, tallies: Vec<db::TallyRow>) -> serde_
     })
 }
 
-async fn register(State(state): State<AppState>, Json(req): Json<SignedRequest>) -> VotingResult<Json<serde_json::Value>> {
+async fn register(
+    State(state): State<AppState>,
+    Json(req): Json<SignedRequest>,
+) -> VotingResult<Json<serde_json::Value>> {
     let payload = parse_and_validate(
         &req.payload,
         "register",
@@ -278,7 +290,9 @@ async fn list_proposals(
 ) -> VotingResult<Json<Vec<serde_json::Value>>> {
     if let Some(status) = q.status.as_deref() {
         if status != "draft" && status != "open" {
-            return Err(VotingError::BadRequest("status must be draft or open".into()));
+            return Err(VotingError::BadRequest(
+                "status must be draft or open".into(),
+            ));
         }
     }
     let rows = db::list_proposals(&state.pool, q.status.as_deref()).await?;
@@ -297,10 +311,17 @@ async fn create_draft(
     if req.title.len() > 200 {
         return Err(VotingError::BadRequest("proposal too large".into()));
     }
+    if req.body_html.as_ref().is_some_and(|html| !html.is_empty()) {
+        return Err(VotingError::BadRequest(
+            "new drafts must use body_sections; body_html is read-only".into(),
+        ));
+    }
     deny_blacklisted(&state.cfg, &req.signed.address)?;
-    let sanitized = sanitize_proposal_sections(&req.sections);
-    validate_proposal_sections(&sanitized)?;
-    let expected_hash = sections_hash(&sanitized);
+    let sections = req
+        .body_sections
+        .as_ref()
+        .ok_or_else(|| VotingError::BadRequest("body_sections is required".into()))?;
+    let prepared = prepare_sections(sections)?;
     let payload = parse_and_validate(
         &req.signed.payload,
         "draft",
@@ -312,8 +333,10 @@ async fn create_draft(
     if payload.title.as_deref() != Some(req.title.as_str()) {
         return Err(VotingError::Unauthorized("signed title mismatch".into()));
     }
-    if payload.body_hash.as_deref() != Some(expected_hash.as_str()) {
-        return Err(VotingError::Unauthorized("signed body hash mismatch".into()));
+    if payload.body_hash.as_deref() != Some(prepared.body_hash.as_str()) {
+        return Err(VotingError::Unauthorized(
+            "signed body hash mismatch".into(),
+        ));
     }
     verify_signed(&req.signed, &req.signed.payload)?;
 
@@ -321,7 +344,11 @@ async fn create_draft(
         .await?
         .ok_or_else(|| VotingError::Forbidden("register before drafting".into()))?;
     let (terra_h, bsc_b) = db::tip_heights(&state.pool).await?;
-    let tip = if payload.chain == "terra" { terra_h } else { bsc_b };
+    let tip = if payload.chain == "terra" {
+        terra_h
+    } else {
+        bsc_b
+    };
     let height = resolve_balance_height(None, tip, Some(reg.registered_at_height));
     let bal = db::balance_at(&state.pool, &payload.chain, &req.signed.address, height).await?;
     if bal < state.cfg.min_proposal_raw {
@@ -331,16 +358,15 @@ async fn create_draft(
     }
 
     insert_purpose_signature(&state.pool, &payload.chain, &req.signed, "draft").await?;
-    let canonical = canonicalize_proposal_sections(&sanitized);
-    let body_html = render_proposal_html(&sanitized);
+    let sections = serde_json::Value::Object(prepared.sanitized);
     let id = db::insert_draft(
         &state.pool,
         &payload.chain,
         &req.signed.address,
         &req.title,
-        &body_html,
-        &canonical,
-        &sanitized,
+        &prepared.body_html,
+        &prepared.canonical_json,
+        &sections,
     )
     .await?;
     Ok((
@@ -370,7 +396,7 @@ async fn get_proposal(
         "proposer": p.proposer,
         "title": p.title,
         "body_html": p.body_html,
-        "sections": p.body_sections.as_ref().map(|s| &s.0),
+        "body_sections": p.body_sections.as_ref().map(|s| &s.0),
         "summary": proposal_summary(&p),
         "terra_height": p.terra_height,
         "bsc_block": p.bsc_block,
@@ -406,18 +432,21 @@ async fn amend_sections(
         .await?
         .ok_or_else(|| VotingError::NotFound("proposal".into()))?;
     if proposal.status != "draft" {
-        return Err(VotingError::Conflict("cannot amend after votes are open".into()));
+        return Err(VotingError::Conflict(
+            "cannot amend after votes are open".into(),
+        ));
     }
     if normalize_address(&req.signed.address) != proposal.proposer {
-        return Err(VotingError::Forbidden("only the proposer may amend sections".into()));
+        return Err(VotingError::Forbidden(
+            "only the proposer may amend sections".into(),
+        ));
     }
     let current_hash = match &proposal.body_sections {
-        Some(s) => sections_hash(&s.0),
+        Some(s) => prepare_sections(&s.0)?.body_hash,
         None => body_hash(&proposal.body_html),
     };
-    let sanitized = sanitize_proposal_sections(&req.sections);
-    validate_proposal_sections(&sanitized)?;
-    let new_hash = sections_hash(&sanitized);
+    let prepared = prepare_sections(&req.body_sections)?;
+    let new_hash = prepared.body_hash.clone();
     let payload = parse_and_validate(
         &req.signed.payload,
         "amend",
@@ -427,23 +456,38 @@ async fn amend_sections(
     )?;
     deny_cross_scheme(&req.signed.chain, &payload.chain)?;
     if payload.proposal_id.as_deref() != Some(&id.to_string()) {
-        return Err(VotingError::Unauthorized("amend is for a different proposal".into()));
+        return Err(VotingError::Unauthorized(
+            "amend is for a different proposal".into(),
+        ));
     }
     if payload.title.as_deref() != Some(req.title.as_str()) {
         return Err(VotingError::Unauthorized("signed title mismatch".into()));
     }
     if payload.body_hash.as_deref() != Some(new_hash.as_str()) {
-        return Err(VotingError::Unauthorized("signed body hash mismatch".into()));
+        return Err(VotingError::Unauthorized(
+            "signed body hash mismatch".into(),
+        ));
     }
     if payload.prev_body_hash.as_deref() != Some(current_hash.as_str()) {
-        return Err(VotingError::Conflict("stale prev_body_hash; reload and re-sign".into()));
+        return Err(VotingError::Conflict(
+            "stale prev_body_hash; reload and re-sign".into(),
+        ));
     }
     verify_signed(&req.signed, &req.signed.payload)?;
     insert_purpose_signature(&state.pool, &payload.chain, &req.signed, "amend").await?;
-    let canonical = canonicalize_proposal_sections(&sanitized);
-    let body_html = render_proposal_html(&sanitized);
-    db::update_draft_sections(&state.pool, id, &req.title, &body_html, &canonical, &sanitized).await?;
-    Ok(Json(serde_json::json!({ "ok": true, "body_hash": new_hash })))
+    let sections = serde_json::Value::Object(prepared.sanitized);
+    db::update_draft_sections(
+        &state.pool,
+        id,
+        &req.title,
+        &prepared.body_html,
+        &prepared.canonical_json,
+        &sections,
+    )
+    .await?;
+    Ok(Json(
+        serde_json::json!({ "ok": true, "body_hash": new_hash }),
+    ))
 }
 
 async fn add_comment(
@@ -475,16 +519,21 @@ async fn add_comment(
     )?;
     deny_cross_scheme(&req.signed.chain, &payload.chain)?;
     if payload.proposal_id.as_deref() != Some(&id.to_string()) {
-        return Err(VotingError::Unauthorized("comment is for a different proposal".into()));
+        return Err(VotingError::Unauthorized(
+            "comment is for a different proposal".into(),
+        ));
     }
     if payload.body_hash.as_deref() != Some(expected_hash.as_str()) {
-        return Err(VotingError::Unauthorized("signed body hash mismatch".into()));
+        return Err(VotingError::Unauthorized(
+            "signed body hash mismatch".into(),
+        ));
     }
     verify_signed(&req.signed, &req.signed.payload)?;
     db::ledger_registration(&state.pool, &payload.chain, &req.signed.address)
         .await?
         .ok_or_else(|| VotingError::Forbidden("register before commenting".into()))?;
-    let sig_id = insert_purpose_signature(&state.pool, &payload.chain, &req.signed, "comment").await?;
+    let sig_id =
+        insert_purpose_signature(&state.pool, &payload.chain, &req.signed, "comment").await?;
     let comment_id = db::insert_comment(
         &state.pool,
         id,
@@ -524,16 +573,16 @@ async fn attach_analysis(
         .await?
         .ok_or_else(|| VotingError::NotFound("proposal".into()))?;
     if proposal.status != "draft" {
-        return Err(VotingError::Conflict("analysis is append-only before open".into()));
+        return Err(VotingError::Conflict(
+            "analysis is append-only before open".into(),
+        ));
     }
     if normalize_address(&req.signed.address) == proposal.proposer {
         return Err(VotingError::Forbidden(
             "proposer cannot attach independent analysis".into(),
         ));
     }
-    let sanitized = sanitize_analysis_sections(&req.sections);
-    validate_analysis_sections(&sanitized)?;
-    let expected_hash = analysis_hash(&sanitized);
+    let (sanitized, _canonical, expected_hash) = prepare_analysis(&req.sections)?;
     let payload = parse_and_validate(
         &req.signed.payload,
         "analyze",
@@ -543,13 +592,18 @@ async fn attach_analysis(
     )?;
     deny_cross_scheme(&req.signed.chain, &payload.chain)?;
     if payload.proposal_id.as_deref() != Some(&id.to_string()) {
-        return Err(VotingError::Unauthorized("analysis is for a different proposal".into()));
+        return Err(VotingError::Unauthorized(
+            "analysis is for a different proposal".into(),
+        ));
     }
     if payload.body_hash.as_deref() != Some(expected_hash.as_str()) {
-        return Err(VotingError::Unauthorized("signed body hash mismatch".into()));
+        return Err(VotingError::Unauthorized(
+            "signed body hash mismatch".into(),
+        ));
     }
     verify_signed(&req.signed, &req.signed.payload)?;
-    let sig_id = insert_purpose_signature(&state.pool, &payload.chain, &req.signed, "analyze").await?;
+    let sig_id =
+        insert_purpose_signature(&state.pool, &payload.chain, &req.signed, "analyze").await?;
     let analysis_id = db::insert_analysis(
         &state.pool,
         id,
@@ -604,15 +658,18 @@ async fn open_vote(
         .await?
         .ok_or_else(|| VotingError::NotFound("proposal".into()))?;
     if proposal.status != "draft" {
-        return Err(VotingError::Conflict("proposal is not a draft (already open?)".into()));
+        return Err(VotingError::Conflict(
+            "proposal is not a draft (already open?)".into(),
+        ));
     }
     let sections = proposal
         .body_sections
         .as_ref()
         .map(|s| s.0.clone())
-        .ok_or_else(|| VotingError::BadRequest("legacy proposal has no template sections".into()))?;
-    validate_proposal_sections(&sections)?;
-    let current_hash = sections_hash(&sections);
+        .ok_or_else(|| {
+            VotingError::BadRequest("legacy proposal has no template sections".into())
+        })?;
+    let current_hash = prepare_sections(&sections)?.body_hash;
     let payload = parse_and_validate(
         &req.signed.payload,
         "open_vote",
@@ -622,7 +679,9 @@ async fn open_vote(
     )?;
     deny_cross_scheme(&req.signed.chain, &payload.chain)?;
     if payload.proposal_id.as_deref() != Some(&id.to_string()) {
-        return Err(VotingError::Unauthorized("open is for a different proposal".into()));
+        return Err(VotingError::Unauthorized(
+            "open is for a different proposal".into(),
+        ));
     }
     if payload.body_hash.as_deref() != Some(current_hash.as_str()) {
         return Err(VotingError::Unauthorized(
@@ -647,7 +706,9 @@ async fn cast_vote(
     Json(req): Json<CastVoteRequest>,
 ) -> VotingResult<Json<serde_json::Value>> {
     if !matches!(req.choice.as_str(), "for" | "against" | "abstain") {
-        return Err(VotingError::BadRequest("choice must be for, against, or abstain".into()));
+        return Err(VotingError::BadRequest(
+            "choice must be for, against, or abstain".into(),
+        ));
     }
     deny_blacklisted(&state.cfg, &req.signed.address)?;
     let payload = parse_and_validate(
@@ -659,7 +720,9 @@ async fn cast_vote(
     )?;
     deny_cross_scheme(&req.signed.chain, &payload.chain)?;
     if payload.proposal_id.as_deref() != Some(&id.to_string()) {
-        return Err(VotingError::Unauthorized("vote is for a different proposal".into()));
+        return Err(VotingError::Unauthorized(
+            "vote is for a different proposal".into(),
+        ));
     }
     if payload.choice.as_deref() != Some(req.choice.as_str()) {
         return Err(VotingError::Unauthorized("signed choice mismatch".into()));
@@ -670,14 +733,18 @@ async fn cast_vote(
         .await?
         .ok_or_else(|| VotingError::NotFound("proposal".into()))?;
     if proposal.status != "open" {
-        return Err(VotingError::Forbidden("votes are closed until the poll is opened".into()));
+        return Err(VotingError::Forbidden(
+            "votes are closed until the poll is opened".into(),
+        ));
     }
     let _reg = db::ledger_registration(&state.pool, &payload.chain, &req.signed.address)
         .await?
         .ok_or_else(|| VotingError::Forbidden("register before voting".into()))?;
     let weight = db::snapshot_weight(&state.pool, id, &payload.chain, &req.signed.address).await?;
     if weight <= 0.into() {
-        return Err(VotingError::Forbidden("no snapshot weight at proposal freeze".into()));
+        return Err(VotingError::Forbidden(
+            "no snapshot weight at proposal freeze".into(),
+        ));
     }
     let sig_id = insert_purpose_signature(&state.pool, &payload.chain, &req.signed, "vote").await?;
     db::insert_vote(
@@ -704,7 +771,9 @@ async fn get_vote(
 ) -> VotingResult<Json<serde_json::Value>> {
     let chain = resolve_chain(&addr, q.chain.as_deref())?.to_string();
     match db::get_vote(&state.pool, id, &chain, &addr).await? {
-        Some((choice, weight)) => Ok(Json(serde_json::json!({ "choice": choice, "weight": weight }))),
+        Some((choice, weight)) => Ok(Json(
+            serde_json::json!({ "choice": choice, "weight": weight }),
+        )),
         None => Err(VotingError::NotFound("vote".into())),
     }
 }
@@ -729,12 +798,10 @@ async fn get_balance(
     };
     let (terra_h, bsc_b) = db::tip_heights(&state.pool).await?;
     let tip = if chain == "terra" { terra_h } else { bsc_b };
-    let as_of_height = resolve_balance_height(
-        q.height,
-        tip,
-        reg.as_ref().map(|r| r.registered_at_height),
-    );
+    let as_of_height =
+        resolve_balance_height(q.height, tip, reg.as_ref().map(|r| r.registered_at_height));
     let amount = db::balance_at(&state.pool, chain, &addr, as_of_height).await?;
+    // OV-B6: always emit registered/pending/as_of_height/initial_balance (issue #14).
     Ok(Json(serde_json::json!({
         "chain": chain,
         "address": normalize_address(&addr),
