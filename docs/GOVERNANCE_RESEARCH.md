@@ -306,6 +306,14 @@ If the founder is unavailable:
 | 15 | Copyright dumps | Verbatim whitepapers | Not pasted | — | — |
 | 16 | L9 buy-before-freeze | Documented | Counted | Disclose | Lockup = later issue |
 | 17 | Dump-after-freeze | Same | Weight unchanged | Disclose | — |
+| 19 | Stale registered weight | UNI temp-check miss (5.35M vs 10M); Arbitrum votable-supply quorum | Registration is the denom; silence inflates it | Copy: turnout of *rolls* | Roll TTL / missed-vote prune |
+| 20 | Only-cast / empty ballot | BonkDAO 2026-07 (1% supply, 7 wallets, ~$20M drain); Build Finance 2022 | Tally is cast-only; no quorum in API; **advisory** so no treasury handler | Do not relabel as “passed” | Floor on registered turnout; keep execution off this API |
+| 21 | Concave weight theater | Snapshot QV sybil warning; Circle arXiv:2605.18990 | 1:1 token weight | Same | Do **not** add a curve |
+| 22 | Wallet VP exemption | Curve/Convex wrap; special wallets | Blacklist exists; no boost | — | Veto *role*, not exempt wallets |
+| 23 | Operator-peek “secret ballot” | Snapshot Shutter vs MACI; GET `/votes/:addr` is public | Choices in Postgres plaintext | Hide *running* tally only | No MACI contracts |
+| 24 | Re-register swarm | EOS decay gamed by revote; cheap signatures | Legal + register friction | — | Cooldown after prune |
+| 25 | Live-tally herding | Aave ARFC 12730; Nouns last-minute swing | API returns `tally`; UI does not render it yet | Do not add a live bar without a hide-until-close plan | Shielded-until-close |
+| 26 | Permanent anonymity | Shutter “permanent” PoC; ACI delegate-accountability objection | Comments show `wallet_address` | Keep draft comments attributed | Never hide #11 reviewers |
 
 ---
 
@@ -322,6 +330,11 @@ Do **not**:
 - Let a committee recast holder outcomes.
 - Skip Legal clickwrap for a governance emergency.
 - Treat Snapshot oSnap as a required executor (deprecated; execution stays off this API).
+- Add a concave / quadratic / “Tier 9 dampener” vote-weight curve (wallet-split theater; dual-chain already two identities).
+- Set quorum on circulating supply (LP, bridge, and discount-trading wallets are not the electorate).
+- Treat “only cast votes count” as a pass rule with **no** registered-turnout floor.
+- Promise a true secret ballot (MACI / receipt-free). The operator holds plaintext choices; `GET /v1/proposals/:id/votes/:addr` is unauthenticated.
+- Use a 50% token position as a veto, or grant curve-exempt wallets. Assign a **veto role** (env), distinct from the #11 open-gate committee.
 
 ---
 
@@ -334,6 +347,9 @@ Do **not**:
 | Electorate complete only if both can register/vote | Yes | **Core** ([AGENTS.md](../AGENTS.md) rule 3) |
 | Official recommendation attribution | ADR-36 address or ops URL | EIP-191 address or same ops URL |
 | Template / review | Same schema | Same schema |
+| Quorum denom (if added later) | Registered Terra freeze-set | Registered BSC freeze-set; **not** summed |
+| Roll TTL / prune | Per `terra1` registration | Per `0x` registration; no cross-chain prune |
+| Veto role | May be a Terra addr | May be `0x`; not 50% of either supply |
 
 ---
 
@@ -343,7 +359,10 @@ Do **not**:
 2. **`feat(voting): proposal decision-class` (after #10)** — Optional enum `operational` vs `major_risk_fund` for list filters. Must not become a second electorate. Leadership still proposes majors.
 3. **`ops: committee/blacklist/Legal rotation runbook`** — Extend [OPS.md](OPS.md) for key-person: who rotates `VOTING_BLACKLIST_ADDRESSES`, future #11 allowlist, Legal admin. Not a voting feature.
 4. **`feat(voting): recommendation + spectrum fields`** — Only if #10’s freeform sections prove too weak: explicit `recommended_option` + `risk_bounds` JSON. Do not implement in #13.
-5. **Never-file from this note:** on-chain governor; identity merge; executable treasury from `operator-voting`; factory fee control.
+5. **Never-file from this note:** on-chain governor; identity merge; executable treasury from `operator-voting`; factory fee control; concave vote-weight curve; MACI / CosmWasm privacy voting; circulating-supply quorum.
+6. **`docs/copy` then later `feat(voting): quorum-on-registered`** — If polls ever get a “passed” label: quorum = fraction of the **frozen registered set**, not circulating supply. Abstain counts toward quorum (Snapshot basic; Cosmos). Silence does **not**. Pair with roll hygiene: Optimism-style **activity window** (6-month utilized VP) or Hive HF25-style prune, not Cosmos validator inheritance. Floor so only-cast cannot pass a 5-wallet ballot. Do not implement in #13.
+7. **`feat(frontend): hide running tally until close`** — Herding fix (Snapshot/Shutter analog) without claiming secret ballot. Restrict `GET .../votes/:addr` to the signer or delay it until close. Keep draft **comments attributed**. Operator still sees Postgres — disclose that. Do not publish a voter list plus exact per-choice totals and then claim whale privacy (B-Privacy).
+8. **`ops: veto role env`** — Named Guardian (Yearn yChad analog): nullify / refuse execution, cannot propose, cannot recast tally. Distinct from `VOTING_COMMITTEE_ADDRESSES` (#11 open-gate) and `VOTING_BLACKLIST_ADDRESSES`. Rotation in OPS. Because polls are advisory, this is an ops/copy rule until a later status exists.
 
 ---
 
@@ -359,6 +378,7 @@ Not CI. Illustrative:
 | Tranche+halt | Halt after t3 spends 7.5M of 10M. Halt is ops. |
 | Flash vs freeze | Live-balance governor: flash wins. Unregistered flash on CL8Y = 0. Registered buy-before-freeze = L9. |
 | 12223 LCD | Abstain largest; tax still passed on yes/non-abstain ≈ 52.6%. |
+| Stale turnout (`/tmp/gov-research-13b/`) | 40% of circulating unreachable; 40% of registered fails with a silent whale; only-cast 80% “passes” and a 5-of-100 attack also “passes.” Piecewise 10k vs 5k = 1.14× weight; split 2×5k restores 1:1. Founder 50k vs ten 5k wallets → 18% curve share. Prune missed>3 drops denom 39k→19k. Silent whale cannot Cosmos-veto. |
 
 ---
 
@@ -387,7 +407,102 @@ Folded from deeper primary-source passes after the first draft. Do not treat the
 
 ---
 
-## 15. Sources (fetched or confirmed 2026-08-30)
+## 15. Follow-up research: stale weight, turnout, secrecy, curves, veto (2026-08-30)
+
+Themes synthesized from a later private community discussion. Individual messages, handles, and quotes are **not** reproduced. Hybrid recommendation from §2 is unchanged: leadership proposes, holders ratify, polls stay advisory. This section answers “what else besides 1:1 weight vs only-cast vs a dampening curve?”
+
+### 15.1 The problem (stale registered weight)
+
+A large holder can register (and therefore sit in the freeze-set) and then never vote — fear of herding, indifference, or a discount-trading bot that registered once. If quorum (or “mandate”) is a fraction of that freeze-set, silence **raises** the bar and can stall every poll. If only ballots that were cast count, a small coordinated set can “pass” a harmful yes/no while everyone else stays home.
+
+Stage 1 today has **no quorum**. `GET /v1/proposals/:id` returns `tally` as a sum of **cast** weights (`operator-voting` `db::tally`). The UI does not yet render that tally. Relabeling a live tally as “passed” without a written rule would be process theater (Tribe/Fei lesson, §14).
+
+### 15.2 Option 1 — only cast votes count
+
+**What it is:** majority of `{for, against}` among ballots received. Snapshot *type* `basic` counts `abstain` toward quorum but not toward yes/no. Cosmos `x/gov` does the same for threshold, and uses **bonded/staked** supply as the quorum denominator (LCD 2026-08-30: quorum 0.40, threshold 0.50, `veto_threshold` 0.334).
+
+**Failure:** no floor. Sim `minority_only_cast`: 5 attackers vs 95 home = 100% yes and “passes.” Uniswap Snapshot `[Temp Check] - Four for V4` (fetched 2026-08-30): **5.35M / 10M quorum**, 118 votes, scores ≈ `[5.35M, 0, 1.8k]` — almost unanimous For, still **below quorum**. That is the opposite failure (unanimity without enough weight). Compound Governor Bravo `quorumVotes = 400000e18` is a **fixed for-vote floor**, not “whoever showed up.”
+
+**CL8Y:** do not adopt only-cast as a pass rule. Keep it as the *tally display* (already true). If a later issue adds “passed,” add a registered-turnout floor.
+
+### 15.3 Option 2 — concave / exponential weight curve
+
+**What it is:** 1:1 up to a cap (e.g. 5k), then diminishing extras (sketch: 10k → 1.14× the 5k weight). Snapshot [quadratic voting type](https://docs.snapshot.box/proposals/voting-types) documents the intent (dilute whales) and the **cons**: whales split wallets unless a Sybil-resistance validation exists. Circle Research [arXiv:2605.18990](https://arxiv.org/html/2605.18990) (AFT 2026): *no* positive concave wallet rule stays anti-plutocratic on a permissionless chain; Sybil-optimal power is asymptotically linear. Empirical QV amplification on ENS/Compound/Uniswap/Arbitrum/ZKsync: **1,172×–4,039×**.
+
+Sim `curve_sybil`: piecewise 10k in one wallet = 5700 weight; split 2×5k = 10000 (1.75×). `sqrt` 10k / 10k wallets restores full linear. Dual-chain identity (already two addresses) plus no proof-of-personhood makes this **worse** than a single-chain DAO.
+
+**Wallet exemptions** to preserve a ~50% token veto under a curve are special voting rights. That is a **role**, implemented as the most attackable form (magic wallets). Curve ve + Convex/Yearn wrappers are the historical “votes based on wallets become theater” pattern (already in §5.12 / attack #3).
+
+**CL8Y:** do **not** ship a curve. Keep 1:1 at freeze. Be honest that this is plutocracy.
+
+### 15.4 Another way (recommended combination)
+
+| Lever | Do | Do not |
+|-------|----|--------|
+| Weight | 1:1 registered balance at freeze | Concave curve, 1w1v theater, Terra+BSC merge |
+| Quorum denom | Frozen **registered** set (per chain) | Circulating supply (LP, bridge, CEX, discount bots) |
+| Silence | Not a vote. Abstain is explicit and counts toward quorum | Auto-against; only-cast pass with no floor |
+| Rolls | TTL (e.g. 90 days) **or** prune after N missed *open* polls | Permanent registration that freezes liveness |
+| Herding | Hide **running** for/against until close (Shutter analog) | Promise receipt-free privacy; hide #11 comments |
+| Veto | Named **role** (env), nullify/refuse execution, cannot propose | 50% token share; curve-exempt wallets; #11 recasting tally |
+| Bots / 30% | Assume most discount-traders **never register** (Legal + signature). Measure turnout of rolls | Treat 30% of circulating as the turnout story |
+
+**Why registration is the right denom (product, not just ops):** (1) LP and bridge wallets cannot vote; circulating quorum would bake them in and force the bar down or stall it. (2) The ledger already indexes **registered** wallets only (L2). Arbitrum’s 2025–26 [DVP quorum](https://forum.arbitrum.foundation/t/constitutional-aip-dvp-quorum/30053) is the public analog: votable *supply* drifted away from tokens **registered to vote**, constitutional proposals started failing, and the fix is quorum as a fraction of **delegated/registered** power with a baseline floor.
+
+**Roll hygiene:** EOS `stake2vote` decays un-revoted weight (~1 year half-life) rather than deleting voters — still requires a periodic action. A 90-day re-register or “missed > N open polls → drop from future freeze-sets” is the same idea. Attack: bots re-sign before the next freeze (signature is cheap). Mitigations already in-tree: Legal clickwrap, ≥ live balance to matter. Additive: cooldown after prune so a swarm cannot appear the same day.
+
+**Bots holding supply for fee tiers:** if they never register, they are **out of the electorate** — that is the design. If they register and go dormant, TTL/prune. Do not wait for a 30% circulating turnout that will never exist.
+
+### 15.5 Secret ballot vs shielded-until-close
+
+Three different products:
+
+1. **Hide running tally** (herding). Snapshot/Shutter: choices encrypted until close, then **fully revealed**. Aave [ARFC 12730](https://governance.aave.com/t/arfc-private-voting-for-aave-governance-2-month-trial/12730) trial May–Jul 2023: unique voters **32.6k → 14.2k**, total votes **879.9k → 119k**. ACI/delegates objected that public votes are how delegators audit them. Paladin: you cannot rally or detect collusion until it is too late (a16z-style last-minute swing would be invisible).
+2. **Permanent secret ballot** (never reveal who voted for what). Shutter [permanent shielded voting](https://blog.shutter.network/permanent-shielded-voting-is-coming-to-snapshot/) PoC (ElGamal + ZK) is **not** this stack. MACI ([maci.pse.dev](https://maci.pse.dev/blog/maci-1-0-technical-introduction)) is collusion-resistance via contracts + coordinator SNARKs — **forbidden** here (no new contracts).
+3. **Operator-honest hide.** `operator-voting` stores `choice` in Postgres. `GET /v1/proposals/:id/votes/:addr` returns choice **without** a signature (anyone who knows an address — including from public comments — can look it up). A UI that “doesn’t show who voted” is not a secret ballot.
+
+**CL8Y fit:** if herding/intimidation is the actual fear, hide the **running** tally and delay per-address choice until close (or authz that GET). Disclose that ops can still read the DB. Keep draft comments and committee analysis **attributed** (#11 accountability). Do not expect turnout to rise (Aave trial went the other way). Do not hide who opened the poll or who wrote independent analysis.
+
+### 15.6 Veto: role vs token share
+
+A silent ~50% holder **cannot** token-veto (sim `veto_mechanics`). Cosmos `NoWithVeto` is a share of **participating** power, not of supply — the vetoer must show up. Yearn [yChad Guardian](https://docs.yearn.fi/developers/security/multisig) (YIP-81): *nullify a proposal or governance decision but cannot make proposals*; signers rotate via YIPs. Optimism Foundation retains a **cancel** / manager role after Security Council admin transfer ([Onchain Controls MVP](https://gov.optimism.io/t/governor-upgrade-proposal-onchain-controls-mvp/10371)).
+
+**CL8Y:** assign `VOTING_VETO_ADDRESSES` (or equivalent) as a documented role. Distinct from:
+
+| Env | Right |
+|-----|--------|
+| `VOTING_COMMITTEE_ADDRESSES` | Open or refuse a *poll* (#11). Not the outcome. |
+| `VOTING_BLACKLIST_ADDRESSES` | Exclude an address from the electorate. |
+| Veto role (sketch) | Nullify / refuse **execution** of a ratified advisory mandate. Cannot propose. Cannot rewrite the tally. |
+
+Because votes are `advisory: true`, a veto is already possible as ops (don’t execute). Writing it as a role is honesty and rotation, not a new governor. Do not encode a 50% token veto; do not grant curve-exempt wallets.
+
+### 15.7 Stage 1 vs later
+
+Do **not** block #7–#9 or #10/#11 on quorum, TTL, shielded tally, or a veto env. Stage 1 stays impartial dual-chain advisory snapshots. Document the intended interpretation now so a later issue does not invent only-cast or a weight curve from one conversation.
+
+### 15.8 Second-pass fold-in (parallel reviews)
+
+Hybrid recommendation unchanged. New evidence after the first write of this section:
+
+| Finding | Why it matters for CL8Y | Source |
+|--------|---------------------------|--------|
+| BonkDAO 2026-07-06: 1% of supply (~$4.4M) bought quorum; **7 wallets**; ~$20M treasury moved; **0s hold-up** | “Only those who vote count” plus an executable treasury is an empty-room capture. CL8Y stage 1 has **no** handler — keep `advisory: true` and a registered-turnout **floor** if “passed” is ever labeled | [CoinDesk](https://www.coindesk.com/markets/2026/07/07/bonk-faces-usd20-million-treasury-drain-after-attacker-spends-usd4-million-to-pass-malicious-proposal) · [QuillAudits](https://www.quillaudits.com/blog/hack-analysis/bonk-dao-governance-takeover-exploit) |
+| Build Finance 2022-02: low threshold + unnoticed proposal → mint keys + ~$470k | Same family as Bonk: cheap quorum, no guardian | [The Block](https://www.theblock.co/post/134180/build-finance-dao-suffers-hostile-governance-takeover-loses-470000) |
+| Optimism Token House quorum = **30% of active votable OP** (delegated VP **used in the last 6 months**); abstain counts | Better roll-hygiene analog than EOS weekly recast. Do **not** copy Cosmos “inherit the validator’s vote” | [Operating Manual](https://github.com/ethereum-optimism/OPerating-manual/blob/main/manual.md) |
+| Hive HF25: witness/proposal votes expire after **1 year** with no governance action | Inactivity prune of the *roll*, not of the token | [HF25 announcement](https://hive.blog/hive/@hiveio/hive-hardfork-25-is-on-the-way-hive-to-reach-equilibrium-on-june-30th-2021) |
+| Falk et al.: ~**5% of total supply** cast (Aave 3.2%, UNI 4.6%, COMP 7.7%, Lido 5.6%). Feichtinger et al.: **~20–40% of delegated** VP (COMP 32%, UNI 21%, ENS 39%) | **30% of circulating is unattainable** for dual-use tokens. **30% of the registered freeze-set is ordinary** | [arXiv 2407.10945](https://arxiv.org/html/2407.10945) · [arXiv 2302.12125](https://ar5iv.labs.arxiv.org/html/2302.12125) |
+| Uniswap Franchiser **12.5M UNI** treasury stuffing then recall; Balancer cut quorum **50%** when Aura stopped voting | Circulating/assumed-bloc denominators force stuffing or panic cuts. Registration denom shrinks honestly if bots leave | [UF proposal 97](https://vote.uniswapfoundation.org/proposals/97) · [BIP-924](https://forum.balancer.fi/t/bip-924-exclude-aura-from-governance-and-reduce-quorum/7092) |
+| Snapshot Shutter: **who voted** is still visible; choice reveals at close. SSRN: overall turnout **falls**; top 5% **unaffected** | Hide-until-close is herding, not “whales will show up.” Permanent secrecy is the dictator-optics test; barely deployed | [ENS temp-check](https://discuss.ens.domains/t/temp-check-shielded-voting-for-ens-snapshot-proposals/22142) · [SSRN 4982940](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=4982940) |
+| B-Privacy: voter list + exact weighted totals often reconstruct a whale’s ballot | Do not publish turnout roll **and** exact for/against/abstain and then claim privacy | [arXiv 2509.17871](https://arxiv.org/abs/2509.17871) |
+| Compound Bravo quorum is **For-only**; OZ Governor counts **For+Abstain**. Snapshot X: Against does **not** help | If CL8Y adds quorum, pick explicitly: Snapshot-basic (abstain helps) vs Bravo (for-only) | Bravo `state()` · OZ `GovernorCountingSimple` |
+| Snapshot `anti-whale` strategy: inflection + static multiplier “to reduce infinite incentive for multiple wallet exploits” | Vendor documents the split; the patch is a fudge, not identity | [anti-whale.md](https://github.com/snapshot-labs/snapshot-docs/blob/master/user-guides/spaces/space-handbook/anti-whale.md) |
+| Compound Golden Boys / Humpy 2024: linear + 400k COMP made the capture **visible** | A curve would have rewarded splitting the same COMP. Keep 1:1 | [The Defiant](https://thedefiant.io/news/defi/compound-community-accuses-notorious-whale-of-engineering-governance-attack) |
+| Lido Easy Track: named starters, 72h, passes unless **0.5% LDO** objects | Optimistic **ops** invert turnout. Do not use for major fund/risk ratification | [Easy Track](https://docs.lido.fi/guides/easy-track-guide/) (already in §14) |
+
+---
+
+## 16. Sources (fetched or confirmed 2026-08-30)
 
 Primary / official (prefer these):
 
@@ -434,6 +549,31 @@ Primary / official (prefer these):
 - Uniswap UNI LM timebox: <https://blog.uniswap.org/uni>
 - Immunefi Beanstalk (same-tx): <https://immunefi.com/blog/bug-fix-reviews/hack-analysis-beanstalk-governance-attack-april-2022/>
 - SEC DAO report: <https://www.sec.gov/files/litigation/investreport/34-81207.pdf>
+- Snapshot shielded voting (Shutter): <https://docs.snapshot.box/user-guides/spaces/settings>
+- Snapshot voting types / QV sybil warning: <https://docs.snapshot.box/proposals/voting-types>
+- Snapshot GraphQL (2026-08-30, browser UA): `https://hub.snapshot.org/graphql` space `uniswapgovernance.eth` quorum 10_000_000, `privacy` empty; proposal `0x5ae3…54ee` Four for V4 scores_total 5_349_528 vs quorum 10_000_000
+- Compound `quorumVotes = 400000e18`: <https://github.com/compound-finance/compound-protocol/blob/master/contracts/Governance/GovernorBravoDelegate.sol>
+- Cosmos tally (quorum of bonded, veto of participating, abstain in quorum): <https://github.com/cosmos/cosmos-sdk/blob/main/x/gov/keeper/tally.go>
+- Arbitrum DVP quorum (registered/delegated denom): <https://forum.arbitrum.foundation/t/constitutional-aip-dvp-quorum/30053>
+- Arbitrum constitutional quorum 5%→4.5% interim: <https://forum.arbitrum.foundation/t/constitutional-aip-constitutional-quorum-threshold-reduction/29145>
+- Uniswap turnout decline / 40M on-chain quorum: <https://gov.uniswap.org/t/rfc-governance-logistics-improvements/25737>
+- Aave Shutter trial + results: <https://governance.aave.com/t/arfc-private-voting-for-aave-governance-2-month-trial/12730>
+- Circle Research concave=linear: <https://arxiv.org/html/2605.18990>
+- Yearn Guardian (nullify, cannot propose): <https://docs.yearn.fi/developers/security/multisig> · YIP-81: <https://docs.yearn.fi/contributing/governance/yips/yip-81>
+- Optimism Foundation cancel role: <https://gov.optimism.io/t/governor-upgrade-proposal-onchain-controls-mvp/10371>
+- MACI (contracts; not this repo): <https://maci.pse.dev/blog/maci-1-0-technical-introduction>
+- EOS vote decay: <https://github.com/EOSIO/eosio.contracts/blob/52fbd4ac7e6c38c558302c48d00469a4bed35f7c/contracts/eosio.system/include/eosio.system/eosio.system.hpp>
+- Shutter permanent shielded (PoC, not CL8Y): <https://blog.shutter.network/permanent-shielded-voting-is-coming-to-snapshot/>
+- BonkDAO 2026-07 empty-room quorum (secondary, cited): <https://www.coindesk.com/markets/2026/07/07/bonk-faces-usd20-million-treasury-drain-after-attacker-spends-usd4-million-to-pass-malicious-proposal>
+- Build Finance 2022 takeover: <https://www.theblock.co/post/134180/build-finance-dao-suffers-hostile-governance-takeover-loses-470000>
+- Optimism active-votable 6-month quorum: <https://github.com/ethereum-optimism/OPerating-manual/blob/main/manual.md>
+- Hive HF25 vote expiration: <https://hive.blog/hive/@hiveio/hive-hardfork-25-is-on-the-way-hive-to-reach-equilibrium-on-june-30th-2021>
+- Falk et al. % of total supply cast: <https://arxiv.org/html/2407.10945>
+- Feichtinger et al. % of delegated VP: <https://ar5iv.labs.arxiv.org/html/2302.12125>
+- Snapshot Shutter still shows who voted: <https://discuss.ens.domains/t/temp-check-shielded-voting-for-ens-snapshot-proposals/22142>
+- Guo et al. shutter turnout (SSRN): <https://papers.ssrn.com/sol3/papers.cfm?abstract_id=4982940>
+- B-Privacy tally leakage: <https://arxiv.org/abs/2509.17871>
+- Snapshot anti-whale strategy: <https://github.com/snapshot-labs/snapshot-docs/blob/master/user-guides/spaces/space-handbook/anti-whale.md>
 
 In-tree: [ARCHITECTURE.md](ARCHITECTURE.md), [OPERATOR_VOTING.md](OPERATOR_VOTING.md), [LEDGER_INVARIANTS.md](LEDGER_INVARIANTS.md), [OPS.md](OPS.md), [FRONTEND.md](FRONTEND.md), `ledger/migrations/20260825000002_voting.sql`.
 
