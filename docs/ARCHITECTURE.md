@@ -53,4 +53,4 @@ Today the CW20 and BEP-20 supplies are separately circulating (not lock-and-mint
 
 ## Related on-chain governance (not this product)
 
-DEX factory `governance` / wasm admin is the multisig `terra1zlmv2xydxcusurtr6rl78wsvytdc6mfex6hep7` in `cl8y-dex-terraclassic`. Offchain polls here do **not** migrate contracts or change factory fees. UI copy must not imply on-chain DAO finality.
+DEX factory `governance` / wasm admin is the multisig `terra1zlmv2xydxcusurtr6rl78wsvytdc6mfex6hep7` in `cl8y-dex-terraclassic`. Offchain polls here do **not** migrate contracts or change factory fees. UI copy must not imply on-chain DAO finality. Hybrid vote-scope (leadership proposes, holders ratify): [GOVERNANCE_RESEARCH.md](GOVERNANCE_RESEARCH.md) (issue [#13](https://gitlab.com/PlasticDigits/voting/-/issues/13)).

@@ -2,7 +2,7 @@
 
 Guidance for AI coding agents on **PlasticDigits/voting**.
 
-Read [`docs/HANDOFF.md`](docs/HANDOFF.md) before implementing. Voting is **not** implemented in `cl8y-dex-terraclassic`.
+Read [`docs/HANDOFF.md`](docs/HANDOFF.md) before implementing. Voting is **not** implemented in `cl8y-dex-terraclassic`. Do not invent a governance model: read [`docs/GOVERNANCE_RESEARCH.md`](docs/GOVERNANCE_RESEARCH.md) (issue [#13](https://gitlab.com/PlasticDigits/voting/-/issues/13)).
 
 ## What this repo is
 
