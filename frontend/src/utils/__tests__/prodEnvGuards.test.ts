@@ -48,4 +48,19 @@ describe('production env guards (O3 / O4)', () => {
     const connect = csp.split(';').find((d) => d.trim().startsWith('connect-src')) ?? ''
     expect(connect.split(/\s+/)).not.toContain('https:')
   })
+
+  it('Coolify static nginx snippet stamps CSP (no blanket https:) for the live 1.31.x path', () => {
+    const snippet = readFileSync(resolve(deployDocker, '../coolify-frontend.nginx.conf'), 'utf8')
+    expect(snippet).toContain('try_files $uri /index.html')
+    expect(snippet).toContain('X-Frame-Options DENY')
+    expect(snippet).toContain('Content-Security-Policy')
+    expect(snippet).toContain('https://operator.vote.cl8y.com')
+    expect(snippet).toContain('https://api.terms.cl8y.com')
+    expect(snippet).toContain('https://terms.cl8y.com')
+    expect(snippet).not.toMatch(/add_header Cache-Control/)
+    const csp = snippet.match(/Content-Security-Policy "([^"]+)"/)?.[1] ?? ''
+    const connect = csp.split(';').find((d) => d.trim().startsWith('connect-src')) ?? ''
+    expect(connect.split(/\s+/)).not.toContain('https:')
+    expect(connect).toContain("connect-src")
+  })
 })
