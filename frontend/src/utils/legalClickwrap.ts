@@ -14,6 +14,7 @@ import {
 export const DEFAULT_LEGAL_PROPERTY = 'vote.cl8y.com'
 export const DEFAULT_LEGAL_API_BASE_URL = 'https://api.terms.cl8y.com'
 export const DEFAULT_LEGAL_TERMS_BASE_URL = 'https://terms.cl8y.com'
+export const LEGAL_APP_NAME = 'CL8Y Voting'
 
 /** Origins the voting dApp may pass as portal `redirect_uri` (portal still enforces its allowlist). */
 export const LEGAL_REDIRECT_ALLOWLIST = ['https://vote.cl8y.com'] as const

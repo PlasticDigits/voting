@@ -252,6 +252,24 @@ body,
     color: var(--ink-dim);
   }
 
+  .app-connected-terms-evm-hint p {
+    margin: 0 0 0.5rem;
+  }
+
+  .app-connected-terms-evm-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    justify-content: center;
+  }
+
+  .app-connected-terms-evm-actions a {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    text-decoration: none;
+  }
+
   .app-connected-terms-gate .cl8y-clickwrap-gate h2 {
     margin: 0 0 0.75rem;
     font-size: 1.15rem;

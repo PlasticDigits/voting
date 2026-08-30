@@ -1,6 +1,6 @@
 # Ops runbook (issue #7)
 
-Cross-links: [HANDOFF.md](HANDOFF.md) · [ARCHITECTURE.md](ARCHITECTURE.md) · [OPERATOR_VOTING.md](OPERATOR_VOTING.md) · [FRONTEND.md](FRONTEND.md) · [LEDGER_INVARIANTS.md](LEDGER_INVARIANTS.md) · skill [AGENTS_OPS_STAGING.md](../skills/AGENTS_OPS_STAGING.md) · Legal [AGENTS_LEGAL_CLICKWRAP.md](../skills/AGENTS_LEGAL_CLICKWRAP.md) · wallets [AGENTS_WALLET_CONNECTORS.md](../skills/AGENTS_WALLET_CONNECTORS.md) · GitLab [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7) · [#8](https://gitlab.com/PlasticDigits/voting/-/issues/8) · [#9](https://gitlab.com/PlasticDigits/voting/-/issues/9) · [#12](https://gitlab.com/PlasticDigits/voting/-/issues/12) · [#14](https://gitlab.com/PlasticDigits/voting/-/issues/14)
+Cross-links: [HANDOFF.md](HANDOFF.md) · [ARCHITECTURE.md](ARCHITECTURE.md) · [OPERATOR_VOTING.md](OPERATOR_VOTING.md) · [FRONTEND.md](FRONTEND.md) · [LEDGER_INVARIANTS.md](LEDGER_INVARIANTS.md) · skill [AGENTS_OPS_STAGING.md](../skills/AGENTS_OPS_STAGING.md) · Legal [AGENTS_LEGAL_CLICKWRAP.md](../skills/AGENTS_LEGAL_CLICKWRAP.md) · wallets [AGENTS_WALLET_CONNECTORS.md](../skills/AGENTS_WALLET_CONNECTORS.md) · GitLab [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7) · [#8](https://gitlab.com/PlasticDigits/voting/-/issues/8) · [#9](https://gitlab.com/PlasticDigits/voting/-/issues/9) · [#12](https://gitlab.com/PlasticDigits/voting/-/issues/12) · [#14](https://gitlab.com/PlasticDigits/voting/-/issues/14) · [#16](https://gitlab.com/PlasticDigits/voting/-/issues/16)
 
 In-tree ledger / `operator-voting` / `/vote` landed in !1. This document is the remaining **ops + public-expose** checklist. Do not mark production voting done until every required item below is true on staging.
 
@@ -66,7 +66,7 @@ Playwright with `VITE_PLAYWRIGHT_E2E=true` is **not** a substitute. After Legal 
 | Wallet | Chain | Path |
 |--------|-------|------|
 | Keplr | Terra Classic | Legal → register → propose if ≥1000 CW20 → vote |
-| MetaMask | BSC 56 | Legal → register → vote (propose if ≥1000 BEP-20) |
+| MetaMask | BSC 56 | Legal → register → vote (propose if ≥1000 BEP-20). Unsigned Chrome/Safari must see Open in MetaMask / Copy link before Accept ([#16](https://gitlab.com/PlasticDigits/voting/-/issues/16)). Completing portal sign from that path still depends on [cl8y-ecosystem-legal#15](https://gitlab.com/PlasticDigits/cl8y-ecosystem-legal/-/issues/15). |
 | Cosmos WalletConnect | Terra mobile | Galaxy Station / Keplr / Station / Cosmostation / LuncDash: Open/Copy sheet or desktop QR — not hung Connecting... ([#12](https://gitlab.com/PlasticDigits/voting/-/issues/12), WC-M1–M12) |
 | BSC WalletConnect | BSC 56 | wagmi QR/modal → `0x…` on chain 56. Cancel must clear EVM connecting. |
 

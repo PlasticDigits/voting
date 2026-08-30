@@ -1,6 +1,6 @@
 # Voting dApp
 
-Cross-links: [OPERATOR_VOTING.md](OPERATOR_VOTING.md) · [OPS.md](OPS.md) · skills [AGENTS_LEGAL_CLICKWRAP.md](../skills/AGENTS_LEGAL_CLICKWRAP.md) · [AGENTS_WALLET_CONNECTORS.md](../skills/AGENTS_WALLET_CONNECTORS.md) · [AGENTS_OPS_STAGING.md](../skills/AGENTS_OPS_STAGING.md) · [AGENTS_DRAFT_REVIEW.md](../skills/AGENTS_DRAFT_REVIEW.md) · issues [#3](https://gitlab.com/PlasticDigits/voting/-/issues/3) · [#5](https://gitlab.com/PlasticDigits/voting/-/issues/5) · [#6](https://gitlab.com/PlasticDigits/voting/-/issues/6) · [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7) · [#8](https://gitlab.com/PlasticDigits/voting/-/issues/8) · [#9](https://gitlab.com/PlasticDigits/voting/-/issues/9) · [#10](https://gitlab.com/PlasticDigits/voting/-/issues/10) · [#11](https://gitlab.com/PlasticDigits/voting/-/issues/11)
+Cross-links: [OPERATOR_VOTING.md](OPERATOR_VOTING.md) · [OPS.md](OPS.md) · skills [AGENTS_LEGAL_CLICKWRAP.md](../skills/AGENTS_LEGAL_CLICKWRAP.md) · [AGENTS_WALLET_CONNECTORS.md](../skills/AGENTS_WALLET_CONNECTORS.md) · [AGENTS_OPS_STAGING.md](../skills/AGENTS_OPS_STAGING.md) · [AGENTS_DRAFT_REVIEW.md](../skills/AGENTS_DRAFT_REVIEW.md) · issues [#3](https://gitlab.com/PlasticDigits/voting/-/issues/3) · [#5](https://gitlab.com/PlasticDigits/voting/-/issues/5) · [#6](https://gitlab.com/PlasticDigits/voting/-/issues/6) · [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7) · [#8](https://gitlab.com/PlasticDigits/voting/-/issues/8) · [#9](https://gitlab.com/PlasticDigits/voting/-/issues/9) · [#10](https://gitlab.com/PlasticDigits/voting/-/issues/10) · [#11](https://gitlab.com/PlasticDigits/voting/-/issues/11) · [#16](https://gitlab.com/PlasticDigits/voting/-/issues/16)
 
 Package: `frontend/`. Canonical routes on the dedicated host: `/`, `/new`, `/:id`. DEX-era `/vote`, `/vote/new`, `/vote/:id` stay as aliases.
 
@@ -19,7 +19,21 @@ Nginx: [`../deploy/docker/frontend.nginx.conf`](../deploy/docker/frontend.nginx.
 
 `ConnectedTermsGate` uses `@plasticdigits/cl8y-clickwrap`. Property default `vote.cl8y.com` (`VITE_LEGAL_PROPERTY`). Connected Terra → `network="TerraClassic"`. Connected EVM → `network="EVM"`. Disconnected browse is open. Fail closed after connect. `redirect_uri` is **path-preserving** (`window.location.href`, origin allowlist `https://vote.cl8y.com`). `VITE_PLAYWRIGHT_E2E=true` may skip the gate in Playwright `webServer` only — **unset in production**. `vite.config.ts` and the Coolify image refuse any non-empty hatch, mnemonic, or `VITE_*` BSC RPC, and refuse a missing `VITE_WC_PROJECT_ID` ([`../frontend/src/utils/prodEnvGuards.ts`](../frontend/src/utils/prodEnvGuards.ts), [#12](https://gitlab.com/PlasticDigits/voting/-/issues/12)). Production nginx CSP (`connect-src` / `frame-src`, no blanket `https:` or `frame-src *`) is stamped from [`../deploy/docker/frontend.security-headers.conf`](../deploy/docker/frontend.security-headers.conf) (Dockerfile) and inlined in [`../deploy/coolify-frontend.nginx.conf`](../deploy/coolify-frontend.nginx.conf) (static paste; live `operator.vote.cl8y.com`). Re-paste that snippet after this merge so live HTML also sends WC `frame-src` and AppKit `https://api.web3modal.org` on `connect-src`.
 
-Legal portal sign URLs are **terms only**, not voting auth.
+Legal portal sign URLs are **terms only**, not voting auth. Vendor fallback `buildSignUrl` / `TermsGate` pass `account` (and `property`) so Accept stays continuous if the published SDK is missing.
+
+### EVM in-app hint (issue #16 / L-EVM1–L-EVM5)
+
+A voting WalletConnect or Chrome/Safari session does **not** follow the user to `terms.cl8y.com`. Unsigned EVM users without `window.ethereum` (or connected via WalletConnect) get the same class of next step as Terra Keplr: Open in MetaMask (documented `https://link.metamask.io/dapp/…`) plus Copy link. Idle copy tells them to paste in Binance Web3. There is no first-party documented Binance dapp URL; do not invent `bnc://`. Desktop injected MetaMask hides the hint — Accept still full-navigates to the portal.
+
+| ID | Rule |
+|----|------|
+| **L-EVM1** | Unsigned EVM with no inject, or any EVM WalletConnect session, shows the in-app/copy hint. Terra `LegalKeplrInAppHint` stays Terra-only (no MetaMask/Binance CTAs on Terra). |
+| **L-EVM2** | Accept and copy/open URLs include `property` (`vote.cl8y.com` / `VITE_LEGAL_PROPERTY`), sanitized `redirect_uri`, `app_name=CL8Y Voting`, and the **connected** `account=0x…`. Never read `account` from the page query to overwrite the store. |
+| **L-EVM3** | Hint hrefs are Legal terms origin + `/sign/evm` only, optionally wrapped in `https://link.metamask.io/dapp/`. Do not open arbitrary `https://` from wallet payloads. `account` is never a redirect target. |
+| **L-EVM4** | WalletConnect success must **not** skip TermsGate ([#12](https://gitlab.com/PlasticDigits/voting/-/issues/12)). Status error / unknown stays fail-closed (no propose/vote). |
+| **L-EVM5** | Do not reimplement portal EIP-191 in this dApp ([#5](https://gitlab.com/PlasticDigits/voting/-/issues/5)). Completing `signed_latest` for MetaMask iOS / Binance Web3 in system browsers still depends on [cl8y-ecosystem-legal#15](https://gitlab.com/PlasticDigits/cl8y-ecosystem-legal/-/issues/15). |
+
+Code: [`../frontend/src/utils/legalEvmInAppHint.ts`](../frontend/src/utils/legalEvmInAppHint.ts) · [`../frontend/src/components/legal/LegalKeplrInAppHint.tsx`](../frontend/src/components/legal/LegalKeplrInAppHint.tsx) · skill [`../skills/AGENTS_LEGAL_CLICKWRAP.md`](../skills/AGENTS_LEGAL_CLICKWRAP.md).
 
 Ops (Legal repo): property `vote.cl8y.com` is registered ([cl8y-ecosystem-legal#12](https://gitlab.com/PlasticDigits/cl8y-ecosystem-legal/-/issues/12)). Keep origin on Legal `CORS_ORIGINS` and portal `VITE_REDIRECT_URI_ALLOWLIST`. Full checklist: [OPS.md](OPS.md) §2 and [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7).
 
@@ -83,4 +97,4 @@ cd frontend && npm test && npm run test:e2e
 sh deploy/docker/test-frontend-spa-fallback.sh
 ```
 
-Playwright uses 5 workers and the Legal skip hatch on its `webServer` only. E2E covers canonical `/` and `/vote*` aliases (hard navigation), pending→registered, timeout+Retry, and remount-while-pending. `VITE_REGISTER_POLL_TIMEOUT_MS` is Playwright-only (production default 120s; `prodEnvGuards` refuses it on Coolify builds).
+Playwright uses 5 workers and the Legal skip hatch on its `webServer` only. E2E covers canonical `/` and `/vote*` aliases (hard navigation), pending→registered, timeout+Retry, and remount-while-pending. `VITE_REGISTER_POLL_TIMEOUT_MS` is Playwright-only (production default 120s; `prodEnvGuards` refuses it on Coolify builds). EVM Legal hint / `account` on Accept is unit-tested (`ConnectedTermsGate`, `legalEvmInAppHint`); Playwright hatch skips the gate so it is not live #16 QA.

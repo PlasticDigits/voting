@@ -16,6 +16,8 @@ Use `@plasticdigits/cl8y-clickwrap` (`TermsGate` / `createClient`). **Do not** r
 
 - [`frontend/src/utils/legalClickwrap.ts`](../frontend/src/utils/legalClickwrap.ts) — property `vote.cl8y.com`, path-preserving redirect sanitize
 - [`frontend/src/components/legal/ConnectedTermsGate.tsx`](../frontend/src/components/legal/ConnectedTermsGate.tsx) — TerraClassic **or** EVM
+- [`frontend/src/components/legal/LegalKeplrInAppHint.tsx`](../frontend/src/components/legal/LegalKeplrInAppHint.tsx) — Terra Keplr hint **and** EVM MetaMask/copy hint ([#16](https://gitlab.com/PlasticDigits/voting/-/issues/16))
+- [`frontend/src/utils/legalEvmInAppHint.ts`](../frontend/src/utils/legalEvmInAppHint.ts) — L-EVM1–L-EVM5
 - [`frontend/src/routes.ts`](../frontend/src/routes.ts) — `/` + `/vote*` aliases (Legal return / #8)
 - [`deploy/docker/frontend.nginx.conf`](../deploy/docker/frontend.nginx.conf) — SPA `try_files` (O8)
 - [`docs/FRONTEND.md`](../docs/FRONTEND.md)
@@ -42,6 +44,7 @@ Use `@plasticdigits/cl8y-clickwrap` (`TermsGate` / `createClient`). **Do not** r
 7. **Secrets.** No Legal `ADMIN_TOKEN` in this frontend.
 8. **E2E hatch.** `VITE_PLAYWRIGHT_E2E=true` may skip the gate in Playwright `webServer` only. Production / Coolify unset — [`../frontend/src/utils/prodEnvGuards.ts`](../frontend/src/utils/prodEnvGuards.ts) and the frontend Dockerfile fail the build if it is set.
 9. **Copy.** Legal is terms evidence, not a substitute for “votes are offchain / advisory” disclosure.
+10. **EVM in-app hint is required** ([#16](https://gitlab.com/PlasticDigits/voting/-/issues/16), L-EVM1–L-EVM5). Unsigned EVM without `window.ethereum`, or any WalletConnect EVM session, must get Open in MetaMask (`https://link.metamask.io/dapp/…` wrapping the Legal `/sign/evm` URL) plus Copy link — not only Accept. Terra Keplr copy stays Terra-only. Do not invent a Binance `bnc://` scheme; tell users to paste the copied Legal link in Binance Web3. Pass the connected `0x…` as `account` on Accept (vendor fallback included). Do **not** reimplement portal EIP-191 in voting. Completing terms in system Safari/Chrome still depends on [cl8y-ecosystem-legal#15](https://gitlab.com/PlasticDigits/cl8y-ecosystem-legal/-/issues/15).
 
 ## Ops (Legal repo — often a separate change)
 
@@ -59,4 +62,5 @@ DEX documents this for `dex.cl8y.com` in `AGENTS_FRONTEND_CLICKWRAP.md`. Repeat 
 
 1. Do not treat a localStorage NFA/risk flag as Legal proof.
 2. Do not use Legal sign URLs as voting `signArbitrary` / `personal_sign`.
-3. After WalletConnect on mobile Chrome, if Accept still needs `window.keplr`, say so (DEX #554 WC-M12). Same class of hint for EVM in-app browsers. WC success must **not** skip TermsGate ([#12](https://gitlab.com/PlasticDigits/voting/-/issues/12)).
+3. After WalletConnect on mobile Chrome, if Accept still needs `window.keplr`, show the Terra Keplr in-app hint (DEX #554 WC-M12). **EVM in-app hint is required the same way** ([#16](https://gitlab.com/PlasticDigits/voting/-/issues/16)): no inject or WalletConnect → Open in MetaMask + copy Legal `/sign/evm` link. WC success must **not** skip TermsGate ([#12](https://gitlab.com/PlasticDigits/voting/-/issues/12)).
+4. Do not skip TermsGate after injected or WalletConnect connect. `account` on the Accept URL is the connected store address only — never a redirect, never read from the page query.

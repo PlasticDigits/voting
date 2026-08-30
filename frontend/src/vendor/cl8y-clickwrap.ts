@@ -149,9 +149,19 @@ export function sanitizeRedirectUri(uri: string, options: RedirectSanitizeOption
   }
 }
 
-export function buildSignUrl(baseUrl: string, opts: { redirectUri?: string; appName?: string } = {}): string {
+export type SignUrlOptions = {
+  redirectUri?: string
+  appName?: string
+  /** Connected wallet for portal continuity. Never a redirect target. */
+  account?: string
+  property?: string
+}
+
+export function buildSignUrl(baseUrl: string, opts: SignUrlOptions = {}): string {
   const url = new URL(baseUrl)
+  if (opts.property) url.searchParams.set('property', opts.property)
   if (opts.redirectUri) url.searchParams.set('redirect_uri', opts.redirectUri)
   if (opts.appName) url.searchParams.set('app_name', opts.appName)
+  if (opts.account?.trim()) url.searchParams.set('account', opts.account.trim())
   return url.toString()
 }

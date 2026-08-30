@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   DEFAULT_LEGAL_PROPERTY,
+  LEGAL_APP_NAME,
   LEGAL_REDIRECT_ALLOWLIST,
   getLegalProperty,
   isLegalRedirectUriAllowed,
@@ -22,6 +23,7 @@ describe('legalClickwrap', () => {
   it('defaults property to vote.cl8y.com (no property confusion)', () => {
     expect(getLegalProperty()).toBe(DEFAULT_LEGAL_PROPERTY)
     expect(DEFAULT_LEGAL_PROPERTY).toBe('vote.cl8y.com')
+    expect(LEGAL_APP_NAME).toBe('CL8Y Voting')
   })
 
   it('allowlists vote.cl8y.com redirect origins and rejects attacker origins', () => {
