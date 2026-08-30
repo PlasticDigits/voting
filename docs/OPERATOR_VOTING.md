@@ -84,7 +84,7 @@ Proposal bodies are stored after [ammonia](https://docs.rs/ammonia) allowlist (`
 
 ## POST rate limits (O-RL)
 
-`governor` keyed by IP (equivalent to `tower-governor`). Required before public expose ([#7](https://gitlab.com/PlasticDigits/voting/-/issues/7)). Code: [`../operator-voting/src/rate_limit.rs`](../operator-voting/src/rate_limit.rs).
+`governor` keyed by IP (equivalent to `tower-governor`). Required before public expose ([#7](https://gitlab.com/PlasticDigits/voting/-/issues/7)). Code: [`../operator-voting/src/rate_limit.rs`](../operator-voting/src/rate_limit.rs). Staging smoke must be a **parallel** burst — sequential curls refill GCRA (see [OPS.md](OPS.md) §4). Live API: `https://operator.vote.cl8y.com`.
 
 | ID | Rule |
 |----|------|

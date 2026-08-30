@@ -10,12 +10,12 @@ In-tree ledger / `operator-voting` / `/vote` landed in !1. This document is the 
 |----|------|
 | **O1** | Three Coolify services: `voting-ledger`, `operator-voting`, dApp. Ledger writer migrates; `operator-voting` uses the restricted role from [`../deploy/grants.sql`](../deploy/grants.sql) (L10). |
 | **O2** | `APPLY_MIGRATIONS` is **false** for `operator-voting` in prod. The image pins it; `RUN_MODE=prod` **refuses to start** if it is true. Never give that process `INSERT` on ledger ingest tables. Apply [`../deploy/grants.sql`](../deploy/grants.sql) as the DB owner — privilege tests run that file, not a lookalike. |
-| **O3** | Production / Coolify frontend builds **unset** `VITE_PLAYWRIGHT_E2E` and `VITE_DEV_MNEMONIC`, and **require** `VITE_WC_PROJECT_ID` ([#12](https://gitlab.com/PlasticDigits/voting/-/issues/12)). `vite.config.ts` (`prodEnvGuards`) and [`../deploy/docker/frontend.Dockerfile`](../deploy/docker/frontend.Dockerfile) fail the image if the hatch is on or the WC id is missing. The image stamps an explicit CSP (`connect-src` / `frame-src`, no blanket `https:` or `frame-src *`) from [`../deploy/docker/frontend.security-headers.conf`](../deploy/docker/frontend.security-headers.conf). |
+| **O3** | Production / Coolify frontend builds **unset** `VITE_PLAYWRIGHT_E2E` and `VITE_DEV_MNEMONIC`, and **require** `VITE_WC_PROJECT_ID` ([#12](https://gitlab.com/PlasticDigits/voting/-/issues/12)). `vite.config.ts` (`prodEnvGuards`) and [`../deploy/docker/frontend.Dockerfile`](../deploy/docker/frontend.Dockerfile) fail the image if the hatch is on or the WC id is missing. CSP (`connect-src` / `frame-src`, no blanket `https:` or `frame-src *`) is stamped by the image from [`../deploy/docker/frontend.security-headers.conf`](../deploy/docker/frontend.security-headers.conf) **and** by the Coolify static paste [`../deploy/coolify-frontend.nginx.conf`](../deploy/coolify-frontend.nginx.conf). Live `vote.cl8y.com` on Coolify’s stock nginx (1.31.x) does **not** inherit the Dockerfile snippet — re-paste that file after pulling (include WC `frame-src`), then `curl -sI https://vote.cl8y.com/vote` must show `X-Frame-Options: DENY` and a `Content-Security-Policy` without `connect-src https:`. |
 | **O4** | No `VITE_*` BSC JSON-RPC URL. Indexer / ledger owns `eth_call` / `eth_getLogs`. |
-| **O5** | Connected `/vote` UI stays behind [cl8y-ecosystem-legal](https://gitlab.com/PlasticDigits/cl8y-ecosystem-legal). Property is dedicated (`vote.cl8y.com` proposed — confirm before admin write). |
+| **O5** | Connected `/vote` UI stays behind [cl8y-ecosystem-legal](https://gitlab.com/PlasticDigits/cl8y-ecosystem-legal). Property is `vote.cl8y.com` (registered; Legal #12). |
 | **O6** | `operator-voting` POST endpoints are IP/QPS limited (**O-RL1–O-RL5** in [OPERATOR_VOTING.md](OPERATOR_VOTING.md)) before public expose. Body cap (64 KiB) is not a substitute. |
 | **O7** | Identity v1 = one address, one voter. Live QA must exercise **Keplr Terra** and **MetaMask BSC 56** separately. |
-| **O8** | SPA documents: `GET /`, `/vote`, `/new`, `/vote/new`, `/vote/:id`, `/:id` return **200** `text/html`. Missing `/assets/*` stay **404**. Coolify must use [`../deploy/docker/frontend.nginx.conf`](../deploy/docker/frontend.nginx.conf) (`try_files $uri /index.html`) or an equivalent edge snippet. HEALTHCHECK probes `/vote` and `/new`, not only `/`. Do not close [#8](https://gitlab.com/PlasticDigits/voting/-/issues/8) while live `/vote` 404s. |
+| **O8** | SPA documents: `GET /`, `/vote`, `/new`, `/vote/new`, `/vote/:id`, `/:id` return **200** `text/html`. Missing `/assets/*` stay **404**. Coolify must use [`../deploy/docker/frontend.nginx.conf`](../deploy/docker/frontend.nginx.conf) (`try_files $uri /index.html`) or [`../deploy/coolify-frontend.nginx.conf`](../deploy/coolify-frontend.nginx.conf). HEALTHCHECK probes `/vote` and `/new`, not only `/`. [#8](https://gitlab.com/PlasticDigits/voting/-/issues/8) is closed on live 200; reopen it if `/vote` 404s again. |
 
 ## 1. Coolify / staging
 
@@ -43,7 +43,7 @@ Boot order:
    curl -sI https://vote.cl8y.com/assets/missing.js
    ```
 
-   `/` and `/vote` and `/new` must be 200 HTML. `/assets/missing.js` must be 404. Live `nginx/1.31.x` without this fallback was the [#8](https://gitlab.com/PlasticDigits/voting/-/issues/8) Legal-return 404.
+   `/` and `/vote` and `/new` must be 200 HTML. `/assets/missing.js` must be 404. [#8](https://gitlab.com/PlasticDigits/voting/-/issues/8) closed after live `/vote` became 200; keep proving it after nginx edits. Live edge is `https://vote.cl8y.com` (dApp) and `https://operator.vote.cl8y.com` (API). Ledger stays private. After pasting the Coolify snippet, SPA HTML must also send O3 headers (`X-Frame-Options: DENY`, explicit CSP).
 
 `GET /health` on ledger and API must be 200 before opening DNS. Ledger `/health` keeps `ok: true` as **liveness** (do not bounce the poller on boot). After a holder registers, inspect `caught_up`, `terra_height`, and `terra_behind_registration` / `bsc_behind_registration`. A cursor of `0` while `voting_registrations` exists is **not** caught up ([#9](https://gitlab.com/PlasticDigits/voting/-/issues/9)). Default GET `/v1/balances` still clamps to `registered_at_height` (OV-B1); ingest catching up is still required for post-register transfers.
 
@@ -84,6 +84,29 @@ Wrong-chain MetaMask (not 56) and missing `signArbitrary` must show the existing
 
 `RUN_MODE=prod` refuses to start if the quota is `0` **or** `APPLY_MIGRATIONS` is true. GET `/health` is unlimited. Quota is **per replica** (O-RL5). A 429 includes `Retry-After`.
 
+Staging 429 smoke must be a **parallel** burst. GCRA refills ~1 token/s at the prod default (60/min, burst 20), so 25 sequential curls over 20s never trip the limiter. Example that does:
+
+```bash
+python3 - <<'PY'
+import json, urllib.request, urllib.error, concurrent.futures
+url='https://operator.vote.cl8y.com/v1/register'
+data=json.dumps({"chain":"terra"}).encode()
+def one(_):
+    req=urllib.request.Request(url, data=data, method='POST', headers={
+        'Content-Type':'application/json','Origin':'https://vote.cl8y.com'})
+    try:
+        urllib.request.urlopen(req, timeout=15)
+        return 200
+    except urllib.error.HTTPError as e:
+        return e.code
+with concurrent.futures.ThreadPoolExecutor(max_workers=40) as ex:
+    codes=list(ex.map(one, range(80)))
+print(sorted(set(codes)), '429 count', codes.count(429))
+PY
+```
+
+Expect some `422` (invalid body), many `429` with `Retry-After`, and `GET /health` still 200. A few proxy `502`s under burst are not a fail by themselves.
+
 ## 5. LocalTerra / LCD equality (optional)
 
 LocalTerra on this workstation is typically `http://127.0.0.1:1317`. Hardening loop:
@@ -104,8 +127,8 @@ Postgres integration tests take `pg_advisory_lock(739001)` ([`../ledger/src/test
 
 These cannot be completed from a repo-only agent:
 
-- Coolify project create / DNS / TLS / secret install
-- Legal admin property + CORS + portal allowlist write
-- Keplr / MetaMask / Galaxy Station / BSC WalletConnect on a real staging origin (do not close [#12](https://gitlab.com/PlasticDigits/voting/-/issues/12) on Playwright hatch E2E)
+- Coolify project create / DNS / TLS / secret install (dApp + `operator-voting` are up; ledger writer is private)
+- Re-paste [`../deploy/coolify-frontend.nginx.conf`](../deploy/coolify-frontend.nginx.conf) so live `vote.cl8y.com` (nginx 1.31.x) sends O3 CSP / `X-Frame-Options` (include WC `frame-src`) — in-tree paste is not a Coolify save
+- Legal admin property + CORS + portal allowlist write (done on [cl8y-ecosystem-legal#12](https://gitlab.com/PlasticDigits/cl8y-ecosystem-legal/-/issues/12))
+- Keplr / MetaMask / Galaxy Station / BSC WalletConnect on a real staging origin — still blocked on [#9](https://gitlab.com/PlasticDigits/voting/-/issues/9) (registered balance 0). Do not close [#12](https://gitlab.com/PlasticDigits/voting/-/issues/12) on Playwright hatch E2E.
 - Coolify frontend build-arg `VITE_WC_PROJECT_ID` set; WalletConnect Cloud project includes `https://vote.cl8y.com`
-- Switching the live `vote.cl8y.com` edge to `frontend.nginx.conf` (or equivalent `try_files`) so `/vote` is 200 — in-tree O8 is not a DNS change
