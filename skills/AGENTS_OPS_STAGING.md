@@ -28,7 +28,7 @@ This skill is for **3rd-party agents** continuing Coolify, Legal admin, or live 
 | Prod refuses zero POST quota **and** `APPLY_MIGRATIONS=true` | [`operator-voting/src/config.rs`](../operator-voting/src/config.rs) |
 | Ledger writer owns migrations | Image pins `APPLY_MIGRATIONS=false`; prod config refuses true |
 | Legal hatch + O4 BSC RPC + WC project id blocked/required on prod build | [`frontend/src/utils/prodEnvGuards.ts`](../frontend/src/utils/prodEnvGuards.ts) + frontend Dockerfile (`test -n "$VITE_WC_PROJECT_ID"`) |
-| Production CSP (`connect-src` / `frame-src`, no blanket `https:`) | [`deploy/docker/frontend.security-headers.conf`](../deploy/docker/frontend.security-headers.conf) |
+| Production CSP (`connect-src` / `frame-src`, no blanket `https:`; include `https://api.web3modal.org`) | [`deploy/docker/frontend.security-headers.conf`](../deploy/docker/frontend.security-headers.conf) |
 | Cosmes WC pairing patch + hook before `createRoot` (#12) | [`frontend/patches/`](../frontend/patches/) · [`frontend/src/main.tsx`](../frontend/src/main.tsx) · [`AGENTS_WALLET_CONNECTORS.md`](AGENTS_WALLET_CONNECTORS.md) |
 | SPA `try_files` + HEALTHCHECK `/vote` (O8 / #8) | [`deploy/docker/frontend.nginx.conf`](../deploy/docker/frontend.nginx.conf) · [`deploy/docker/frontend.healthcheck.sh`](../deploy/docker/frontend.healthcheck.sh) · CI `test:frontend-spa-fallback` |
 | Flattened dApp routes + `/vote*` aliases | [`frontend/src/routes.ts`](../frontend/src/routes.ts) · [`docs/FRONTEND.md`](../docs/FRONTEND.md) |

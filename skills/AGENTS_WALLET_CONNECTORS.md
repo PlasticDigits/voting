@@ -89,7 +89,7 @@ Invariants and file map: [`docs/FRONTEND.md`](../docs/FRONTEND.md) § WalletConn
 | Copy the DEX cosmes `QRCodeModal` patch via `frontend/patches/` + `postinstall` `patch-package` | Add Reown AppKit / `@walletconnect/modal` as a new Terra pairing UI |
 | Call `installWalletConnectPairingHook()` in `main.tsx` **before** `createRoot` | Install the hook in a `useEffect` after first paint |
 | Fail production builds without `VITE_WC_PROJECT_ID` (`prodEnvGuards` + Dockerfile `test -n`) | Commit the project id; log the full id in retail UI |
-| CSP: add WC/Reown/verify/LuncDash hosts + `frame-src` for the EVM QR iframe | `connect-src https:` or `frame-src *` |
+| CSP: add WC/Reown/verify/LuncDash hosts + `https://api.web3modal.org` (`*.web3modal.com` does not match `.org`) + `wss://relay.walletconnect.org` + `frame-src` for the EVM QR iframe | `connect-src https:` or `frame-src *` |
 | Cancel aborts Terra **and** wagmi WC; late session ignored (WC-M9) | Leave Cancel wired to Terra-only `cancelConnection` |
 | Close Connect when EVM WalletConnect is tapped so the QR is visible | Sit Connecting... on top of the Reown modal |
 | Android Galaxy Open = `intent://…scheme=galaxystation` | Leave `https://station.hexxagon.io/…#Intent` as the href |

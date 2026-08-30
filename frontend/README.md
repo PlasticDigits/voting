@@ -39,7 +39,7 @@ The Coolify image stamps [`../deploy/docker/frontend.security-headers.conf`](../
 - Legal API (`https://api.terms.cl8y.com` or your `VITE_LEGAL_API_BASE_URL`)
 - Legal portal (`https://terms.cl8y.com` or your `VITE_LEGAL_TERMS_BASE_URL`)
 - operator-voting (`VITE_OPERATOR_VOTING_URL`)
-- WalletConnect / wallet vendor endpoints as required by the ported DEX/Bridge stacks
+- WalletConnect / wallet vendor endpoints as required by the ported DEX/Bridge stacks (include `https://api.web3modal.org` — `*.web3modal.com` does not match `.org`)
 - Terra LCD/RPC used for **connect / suggest-chain only** (not CL8Y balance)
 
 ## Legal

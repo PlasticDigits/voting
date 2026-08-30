@@ -5,6 +5,34 @@ import { assertProductionVotingEnv, productionEnvViolations } from '@/utils/prod
 
 const deployDocker = resolve(__dirname, '../../../../deploy/docker')
 
+function cspDirective(csp: string, name: string): string {
+  return csp.split(';').find((d) => d.trim().startsWith(name)) ?? ''
+}
+
+/** AppKit 1.7.8 hosts that `*.web3modal.com` / `wss://*.walletconnect.org` miss. */
+const APPKIT_CONNECT_HOSTS = [
+  'https://api.web3modal.org',
+  'https://*.web3modal.org',
+  'wss://relay.walletconnect.org',
+  'https://relay.walletconnect.org',
+  'https://rpc.walletconnect.org',
+] as const
+
+function expectAppKitCsp(csp: string) {
+  const connect = cspDirective(csp, 'connect-src')
+  expect(connect.split(/\s+/)).not.toContain('https:')
+  for (const host of APPKIT_CONNECT_HOSTS) {
+    expect(connect).toContain(host)
+  }
+  const frame = cspDirective(csp, 'frame-src')
+  expect(frame).toContain('https://verify.walletconnect.com')
+  expect(frame).toContain('https://secure.walletconnect.com')
+  expect(frame.split(/\s+/)).not.toContain('*')
+  const style = cspDirective(csp, 'style-src')
+  expect(style).toContain('https://fonts.googleapis.com')
+  expect(csp).toContain("frame-ancestors 'none'")
+}
+
 describe('production env guards (O3 / O4)', () => {
   it('allows a clean Coolify-style env', () => {
     expect(
@@ -62,14 +90,9 @@ describe('production env guards (O3 / O4)', () => {
     expect(headers).toContain('__OPERATOR_ORIGIN__')
     expect(headers).toContain('__LEGAL_API_ORIGIN__')
     const csp = headers.match(/Content-Security-Policy "([^"]+)"/)?.[1] ?? ''
-    const connect = csp.split(';').find((d) => d.trim().startsWith('connect-src')) ?? ''
-    expect(connect.split(/\s+/)).not.toContain('https:')
-    const frame = csp.split(';').find((d) => d.trim().startsWith('frame-src')) ?? ''
-    expect(frame).toContain('https://verify.walletconnect.com')
-    expect(frame.split(/\s+/)).not.toContain('*')
-    expect(csp).toContain("frame-ancestors 'none'")
+    expectAppKitCsp(csp)
     expect(headers).toContain('https://walletconnect.luncdash.com')
-    const img = csp.split(';').find((d) => d.trim().startsWith('img-src')) ?? ''
+    const img = cspDirective(csp, 'img-src')
     expect(img).toContain('https://*.walletconnect.com')
   })
 
@@ -83,11 +106,7 @@ describe('production env guards (O3 / O4)', () => {
     expect(snippet).toContain('https://terms.cl8y.com')
     expect(snippet).not.toMatch(/add_header Cache-Control/)
     const csp = snippet.match(/Content-Security-Policy "([^"]+)"/)?.[1] ?? ''
-    const connect = csp.split(';').find((d) => d.trim().startsWith('connect-src')) ?? ''
-    expect(connect.split(/\s+/)).not.toContain('https:')
-    expect(connect).toContain("connect-src")
-    const frame = csp.split(';').find((d) => d.trim().startsWith('frame-src')) ?? ''
-    expect(frame).toContain('https://verify.walletconnect.com')
-    expect(frame.split(/\s+/)).not.toContain('*')
+    expect(cspDirective(csp, 'connect-src')).toContain('connect-src')
+    expectAppKitCsp(csp)
   })
 })
