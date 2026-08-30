@@ -200,4 +200,31 @@ mod tests {
             "203.0.113.10".parse::<IpAddr>().unwrap()
         );
     }
+
+    /// Production `api::router` does `.with_state(AppState).layer(from_fn_with_state(limits))`.
+    /// A limiter that only works on a router with no inner state would miss live POSTs.
+    #[tokio::test]
+    async fn layer_after_with_state_still_limits_posts() {
+        #[derive(Clone)]
+        struct Inner;
+        let state = RateLimitState::new(2, 2, true);
+        let router = Router::new()
+            .route("/health", get(|| async { "ok" }))
+            .route("/v1/register", post(|| async { "ok" }))
+            .with_state(Inner)
+            .layer(axum::middleware::from_fn_with_state(
+                state,
+                enforce_post_rate_limit,
+            ));
+        assert_eq!(post_from(router.clone(), "203.0.113.9").await, StatusCode::OK);
+        assert_eq!(post_from(router.clone(), "203.0.113.9").await, StatusCode::OK);
+        let limited = post_response(router.clone(), "203.0.113.9").await;
+        assert_eq!(limited.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert!(limited.headers().get(axum::http::header::RETRY_AFTER).is_some());
+        let health = router
+            .oneshot(Request::get("/health").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(health.status(), StatusCode::OK);
+    }
 }
