@@ -40,7 +40,7 @@ deploy/              # grants.sql, Coolify env, Dockerfiles (issue #7)
 docs/OPS.md          # Coolify / Legal / live QA / rate limits
 ```
 
-Three deployables (ledger worker, API, dApp) and **two** DB roles. Coolify images: [`../deploy/docker/`](../deploy/docker/). Public-expose checklist: [OPS.md](OPS.md) (issue [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7)). SPA documents for Legal return: [FRONTEND.md](FRONTEND.md) (issue [#8](https://gitlab.com/PlasticDigits/voting/-/issues/8), invariant O8). Default GET `/v1/balances` clamp: [OPERATOR_VOTING.md](OPERATOR_VOTING.md) OV-B1 (issue [#9](https://gitlab.com/PlasticDigits/voting/-/issues/9)).
+Three deployables (ledger worker, API, dApp) and **two** DB roles. Coolify images: [`../deploy/docker/`](../deploy/docker/). Public-expose checklist: [OPS.md](OPS.md) (issue [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7)). SPA documents for Legal return: [FRONTEND.md](FRONTEND.md) (issue [#8](https://gitlab.com/PlasticDigits/voting/-/issues/8), invariant O8). Default GET `/v1/balances` clamp: [OPERATOR_VOTING.md](OPERATOR_VOTING.md) OV-B1 (issue [#9](https://gitlab.com/PlasticDigits/voting/-/issues/9)). WalletConnect pairing (cosmes patch, project id, CSP frames): [FRONTEND.md](FRONTEND.md) (issue [#12](https://gitlab.com/PlasticDigits/voting/-/issues/12)). WalletConnect pairing (Galaxy / iPhone / desktop Chrome): [FRONTEND.md](FRONTEND.md) WC-M1–M12 (issue [#12](https://gitlab.com/PlasticDigits/voting/-/issues/12)).
 
 ## Snapshot
 
