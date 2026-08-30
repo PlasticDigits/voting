@@ -1,6 +1,6 @@
 # operator-voting
 
-Cross-links: [LEDGER_INVARIANTS.md](LEDGER_INVARIANTS.md) · [FRONTEND.md](FRONTEND.md) · [OPS.md](OPS.md) · issues [#2](https://gitlab.com/PlasticDigits/voting/-/issues/2) · [#4](https://gitlab.com/PlasticDigits/voting/-/issues/4) · [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7) · [#9](https://gitlab.com/PlasticDigits/voting/-/issues/9) · skill [AGENTS_OPS_STAGING.md](../skills/AGENTS_OPS_STAGING.md)
+Cross-links: [LEDGER_INVARIANTS.md](LEDGER_INVARIANTS.md) · [FRONTEND.md](FRONTEND.md) · [OPS.md](OPS.md) · issues [#2](https://gitlab.com/PlasticDigits/voting/-/issues/2) · [#4](https://gitlab.com/PlasticDigits/voting/-/issues/4) · [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7) · [#9](https://gitlab.com/PlasticDigits/voting/-/issues/9) · [#10](https://gitlab.com/PlasticDigits/voting/-/issues/10) · [#11](https://gitlab.com/PlasticDigits/voting/-/issues/11) · skills [AGENTS_OPS_STAGING.md](../skills/AGENTS_OPS_STAGING.md) · [AGENTS_DRAFT_REVIEW.md](../skills/AGENTS_DRAFT_REVIEW.md)
 
 Standalone Axum service. **Not** merged into the DEX indexer API. Uses a **restricted** `DATABASE_URL` in production.
 
@@ -12,10 +12,14 @@ Standalone Axum service. **Not** merged into the DEX indexer API. Uses a **restr
 | `GET` | `/openapi.json` | Stub OpenAPI |
 | `POST` | `/v1/register` | ADR-36 or EIP-191; enqueue ledger intent |
 | `GET` | `/v1/registration/:addr` | Terra and/or BSC status |
-| `POST` | `/v1/proposals` | ≥1000 CL8Y on **that** address’s chain; dual snapshot |
-| `GET` | `/v1/proposals` | List + tallies |
-| `GET` | `/v1/proposals/:id` | Detail; `advisory: true` |
-| `POST` | `/v1/proposals/:id/votes` | One vote per `(proposal, chain, wallet)` |
+| `POST` | `/v1/proposals` | Create a **draft** (`purpose=draft`). ≥1000 CL8Y on **that** address’s chain. No snapshot freeze. |
+| `GET` | `/v1/proposals` | List + tallies. Optional `?status=draft\|open`. Includes `summary`. |
+| `GET` | `/v1/proposals/:id` | Detail; sections, comments, analysis; `advisory: true` |
+| `PUT` | `/v1/proposals/:id/sections` | Proposer amends while `draft`. `409` on stale `prev_body_hash`. |
+| `POST` | `/v1/proposals/:id/comments` | Registered wallet; not 1000 CL8Y. Draft **and** open. |
+| `POST` | `/v1/proposals/:id/analysis` | Committee only; not the proposer. Draft only. |
+| `POST` | `/v1/proposals/:id/open` | Committee `purpose=open_vote`. Freeze from indexer tips. Client heights ignored. |
+| `POST` | `/v1/proposals/:id/votes` | One vote per `(proposal, chain, wallet)`. **Forbidden unless `status=open`.** |
 | `GET` | `/v1/proposals/:id/votes/:addr` | Own vote |
 | `GET` | `/v1/balances/:addr` | Thin restricted-view read. Default height is **OV-B1** (below). |
 
@@ -37,16 +41,56 @@ Canonical JSON (`app` = `cl8y-voting`):
 
 - Terra: Keplr `signArbitrary` (ADR-36 amino wrap). Simulated Wallet may sign raw secp256k1; the verifier accepts ADR-36 first, then raw fallback.
 - EVM: EIP-191 `personal_sign`. Recovered `0x` must match (case-insensitive).
-- Purpose / chain / proposal id / app name are domain-separated. A register blob cannot vote. ADR-36 posted as EVM (and the reverse) is rejected.
+- Purpose / chain / proposal id / app name are domain-separated. A register blob cannot vote. A `propose` blob cannot create a draft or open a poll. `draft` / `amend` / `comment` / `analyze` / `open_vote` / `vote` are distinct. ADR-36 posted as EVM (and the reverse) is rejected.
 - TTL default 10 minutes (`issued_at` / `expires_at`).
 
-## Snapshot
+## Snapshot (OV-S, issue #11)
 
-Proposal create records `{ terra_height, bsc_block }` from `indexer_state` (wall-clock aligned tips). Vote weight is the **frozen snapshot row**, not live tip. Selling after create does not change weight.
+Freeze happens at **vote-open**, not draft create.
 
-Threshold: `MIN_PROPOSAL_CL8Y` (default 1000 human units) → `1000 * 10^18` raw, evaluated on the registering address’s chain only.
+| ID | Rule |
+|----|------|
+| **OV-S1** | `POST /v1/proposals` inserts `status=draft` with `terra_height` / `bsc_block` **null**. `proposal_snapshots` is empty until open. |
+| **OV-S2** | `POST /v1/proposals/:id/open` writes freeze heights from current `indexer_state` tips (`last_indexed_height`, `last_indexed_bsc_block`). JSON `terra_height` / `bsc_block` on the request are ignored. |
+| **OV-S3** | Vote weight is the frozen `proposal_snapshots` row at those open heights. Selling after open does not change weight. |
+| **OV-S4** | A wallet that registers **during draft** and holds CL8Y is in the electorate if `voting_registrations` exists before freeze (ledger L6 still applies at the freeze heights). Register **after** open is not in that snapshot. |
+| **OV-S5** | `POST .../votes` on `status≠open` is `403`. Replay of a `vote` payload against a still-draft id fails. Open twice is `409`. |
+| **OV-S6** | Draft ≥1000 CL8Y uses the live OV-B1 height (`max(tip, registered_at_height)`). That check is not a freeze. |
 
-The proposer’s freeze height on **that** chain is `max(indexer tip, registered_at_height)`. A Terra registered-at height is never applied to the BSC freeze clock (and the reverse).
+Threshold: `MIN_PROPOSAL_CL8Y` (default 1000 human units) → `1000 * 10^18` raw, evaluated on the registering address’s chain only, **to start a draft**. Opening a poll is committee-only and is **not** a 1000 CL8Y check.
+
+Do not freeze twice. Do not take freeze heights from the client.
+
+## Template (issue #10)
+
+New drafts persist `body_sections` JSONB. Required keys: `problem`, `solution`, `pros_cons`, `summary`, `success_criteria` (≥40 visible characters after strip-tags + whitespace collapse). `context` is optional. `summary` ≤ 500 visible characters. Combined sanitized HTML ≤ 64 KiB.
+
+`body_hash` is SHA-256 of compact UTF-8 JSON with **sorted keys** (`context`, `problem`, `pros_cons`, `solution`, `success_criteria`, `summary`) and ammonia-sanitized values. Code: [`../operator-voting/src/sections.rs`](../operator-voting/src/sections.rs) · TS [`../frontend/src/utils/proposalSections.ts`](../frontend/src/utils/proposalSections.ts).
+
+Legacy rows without sections still render `body_html`.
+
+## Draft collaboration (issue #11)
+
+Status machine: `draft` → `open` (committee `open_vote`). v1 has no `withdrawn` / `rejected`.
+
+| Action | Who | Notes |
+|--------|------|-------|
+| Draft | registered, ≥1000 CL8Y | `purpose=draft` |
+| Amend sections | proposer only, while draft | `purpose=amend`; `prev_body_hash` must match; last signed with matching prev wins; stale prev → `409` |
+| Comment | any registered wallet (not 1000) | Draft **and** open. Cap **20 comments per address per proposal** (`MAX_COMMENTS_PER_WALLET_PER_PROPOSAL`). Empty after sanitize → `400`. Max 8 KiB. |
+| Analysis | committee allowlist, **not** the proposer | `purpose=analyze`. Independent record; cannot be a proposer section. Immutable after open. |
+| Open | `VOTING_COMMITTEE_ADDRESSES` | `purpose=open_vote`; must sign current section hash. Analysis is optional (UI shows “no independent analysis attached”). |
+| Vote | registered at freeze with weight | `status=open` only |
+
+Identity v1: comments, amends, and committee actions are per address. Do not merge `terra1…` and `0x…`.
+
+AI review is **not** implemented. Operators skip it. Committee signature is the only open-vote authority. `source=ai` is reserved in the table CHECK for a later env-gated job.
+
+## Committee
+
+`VOTING_COMMITTEE_ADDRESSES` — comma-separated Terra bech32 and/or `0x`, same parser as the blacklist. Invalid entries fail startup. Empty allowlist → nobody can open or attach analysis (fail closed). Opening does not require 1000 CL8Y on the committee wallet.
+
+## Blacklist
 
 ## Balance read (OV-B1, issue #9)
 
@@ -68,7 +112,7 @@ Rules:
 | **OV-B2** | Explicit `?height=` is used as-is. Below `registered_at_height` the SQL function still returns 0 (L6). Future heights cannot mint checkpoints the indexer never wrote. |
 | **OV-B3** | Unregistered / pending wallets still return HTTP 200 with `registered: false` and `balance: "0"`. The UI must not present that 0 as a live chain holding. |
 | **OV-B4** | `?chain=` that contradicts the address prefix (`terra1…` vs `0x…`) is `400`. No cross-chain sum. |
-| **OV-B5** | Propose/vote ignore client-supplied balances. Weight is `public.voting_*_balance_at` / frozen `proposal_snapshots` only. |
+| **OV-B5** | Draft/open/vote ignore client-supplied balances and freeze heights. Weight is `public.voting_*_balance_at` / frozen `proposal_snapshots` only. |
 
 `GET /v1/registration/:addr` returns `pending: { terra, bsc }` while an intent is in flight. It 404s only when there is neither a ledger row nor a pending intent.
 
@@ -76,11 +120,11 @@ Code: [`../operator-voting/src/balance_query.rs`](../operator-voting/src/balance
 
 ## Blacklist
 
-`VOTING_BLACKLIST_ADDRESSES` — comma-separated Terra bech32 and/or `0x`. Invalid entries fail startup. Compare after lowercase / EIP-55 normalize. Blacklisted addresses cannot register-propose-vote (propose and vote denied; register also denied).
+`VOTING_BLACKLIST_ADDRESSES` — comma-separated Terra bech32 and/or `0x`. Invalid entries fail startup. Compare after lowercase / EIP-55 normalize. Blacklisted addresses cannot register, draft, comment, amend, open, or vote.
 
 ## HTML
 
-Proposal bodies are stored after [ammonia](https://docs.rs/ammonia) allowlist (`p`, headings, lists, `a[href]`, …). Scripts and event handlers are stripped. Body cap 64 KiB.
+Proposal bodies **and comments / analysis** are stored after [ammonia](https://docs.rs/ammonia) allowlist (`p`, headings, lists, `a[href]`, …). Scripts and event handlers are stripped. Body cap 64 KiB; comments 8 KiB.
 
 ## POST rate limits (O-RL)
 

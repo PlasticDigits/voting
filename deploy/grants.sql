@@ -36,6 +36,8 @@ GRANT EXECUTE ON FUNCTION public.voting_bsc_cl8y_balance_at(TEXT, BIGINT) TO ope
 GRANT ALL ON ALL TABLES IN SCHEMA voting TO operator_voting;
 GRANT ALL ON ALL SEQUENCES IN SCHEMA voting TO operator_voting;
 ALTER DEFAULT PRIVILEGES IN SCHEMA voting GRANT ALL ON TABLES TO operator_voting;
+-- New voting.* tables (comments, analysis, …) are covered by ALL + default privileges.
+-- Restricted role still cannot write ledger ingest (below).
 
 REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON
     voting_registrations, cl8y_balances, cl8y_bsc_balances,

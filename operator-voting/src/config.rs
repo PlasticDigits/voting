@@ -1,4 +1,4 @@
-use crate::blacklist::{parse_blacklist, Blacklist};
+use crate::blacklist::{parse_blacklist, parse_committee, Blacklist};
 use crate::error::{VotingError, VotingResult};
 use num_bigint::BigInt;
 
@@ -6,12 +6,17 @@ pub const DEFAULT_MIN_PROPOSAL_CL8Y: u64 = 1000;
 pub const CL8Y_DECIMALS: u32 = 18;
 pub const APP_NAME: &str = "cl8y-voting";
 pub const MAX_BODY_BYTES: usize = 64 * 1024;
+pub const MAX_COMMENT_BYTES: usize = 8 * 1024;
+/// Per-address cap on one proposal. Counts toward spam control; O-RL1 still applies.
+pub const MAX_COMMENTS_PER_WALLET_PER_PROPOSAL: i64 = 20;
 pub const SIGNATURE_TTL_SECS: i64 = 10 * 60;
 
 #[derive(Debug, Clone)]
 pub struct VotingConfig {
     pub database_url: String,
     pub blacklist: Blacklist,
+    /// Allowlist for `open_vote` and independent analysis. Empty → nobody can open.
+    pub committee: Blacklist,
     pub min_proposal_raw: BigInt,
     pub cors_origins: Vec<String>,
     pub api_bind: String,
@@ -32,6 +37,7 @@ impl VotingConfig {
         dotenvy::dotenv().ok();
         let database_url = require("DATABASE_URL")?;
         let blacklist = parse_blacklist(&std::env::var("VOTING_BLACKLIST_ADDRESSES").unwrap_or_default())?;
+        let committee = parse_committee(&std::env::var("VOTING_COMMITTEE_ADDRESSES").unwrap_or_default())?;
         let min_human: u64 = std::env::var("MIN_PROPOSAL_CL8Y")
             .ok()
             .and_then(|s| s.parse().ok())
@@ -69,6 +75,7 @@ impl VotingConfig {
         Ok(Self {
             database_url,
             blacklist,
+            committee,
             min_proposal_raw,
             cors_origins,
             api_bind: std::env::var("API_BIND").unwrap_or_else(|_| "0.0.0.0:3002".into()),
@@ -86,6 +93,7 @@ impl VotingConfig {
         Self {
             database_url: database_url.into(),
             blacklist: parse_blacklist(blacklist).expect("test blacklist"),
+            committee: parse_committee("").expect("empty committee"),
             min_proposal_raw: BigInt::from(1000u64) * BigInt::from(10u64).pow(CL8Y_DECIMALS),
             cors_origins: vec!["http://127.0.0.1:5173".into()],
             api_bind: "127.0.0.1:0".into(),

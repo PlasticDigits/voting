@@ -27,7 +27,7 @@ dApp UI can stub the API with MSW in parallel, but production “done” require
 - 18-decimal raw amounts
 - Propose threshold ≥1000 CL8Y on **that** address’s chain
 - Blacklist: Terra bech32 **and** normalized `0x` (case-insensitive)
-- Snapshot weight, not tip, after create
+- Snapshot weight, not tip, after **votes open** (not draft create)
 - Flash-in before snapshot is counted by design (document; not a bug)
 - Default GET `/v1/balances` for a registered wallet uses `max(tip, registered_at_height)` (OV-B1, [#9](https://gitlab.com/PlasticDigits/voting/-/issues/9)). Do **not** “fix” a 0 badge with browser LCD/`eth_call`. Unregistered 0 is not a live holding.
 
@@ -41,6 +41,7 @@ dApp UI can stub the API with MSW in parallel, but production “done” require
 | #7 ops | [`docs/OPS.md`](../docs/OPS.md) · [`deploy/docker/`](../deploy/docker/) · [`deploy/grants.sql`](../deploy/grants.sql) · [`operator-voting/src/rate_limit.rs`](../operator-voting/src/rate_limit.rs) · [`frontend/src/utils/prodEnvGuards.ts`](../frontend/src/utils/prodEnvGuards.ts) · [`AGENTS_OPS_STAGING.md`](AGENTS_OPS_STAGING.md) |
 | #8 Legal `/vote` 404 | [`frontend/src/routes.ts`](../frontend/src/routes.ts) · [`deploy/docker/frontend.nginx.conf`](../deploy/docker/frontend.nginx.conf) · [`docs/FRONTEND.md`](../docs/FRONTEND.md) · O8 in [`docs/OPS.md`](../docs/OPS.md) · [`AGENTS_LEGAL_CLICKWRAP.md`](AGENTS_LEGAL_CLICKWRAP.md) |
 | #9 zero badge | [`operator-voting/src/balance_query.rs`](../operator-voting/src/balance_query.rs) (OV-B1) · [`frontend/src/hooks/useVotingSnapshot.ts`](../frontend/src/hooks/useVotingSnapshot.ts) · ledger `/health.caught_up` |
+| #10 template + #11 draft/open | [`operator-voting/src/sections.rs`](../operator-voting/src/sections.rs) · [`operator-voting/src/api.rs`](../operator-voting/src/api.rs) · [`AGENTS_DRAFT_REVIEW.md`](AGENTS_DRAFT_REVIEW.md) |
 
 ## Files in this repo to read first
 
@@ -54,3 +55,4 @@ dApp UI can stub the API with MSW in parallel, but production “done” require
 - [`AGENTS_WALLET_CONNECTORS.md`](AGENTS_WALLET_CONNECTORS.md)
 - [`AGENTS_LEGAL_CLICKWRAP.md`](AGENTS_LEGAL_CLICKWRAP.md)
 - [`AGENTS_OPS_STAGING.md`](AGENTS_OPS_STAGING.md) — Coolify, Legal admin, live QA, POST limits (#7)
+- [`AGENTS_DRAFT_REVIEW.md`](AGENTS_DRAFT_REVIEW.md) — template, drafts, committee open, freeze-at-open (#10 / #11)

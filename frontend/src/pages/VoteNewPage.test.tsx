@@ -32,12 +32,13 @@ vi.mock('@/services/operatorVoting', () => ({
   createProposal: vi.fn(),
 }))
 
-vi.mock('@tiptap/react', () => ({
-  useEditor: () => ({ getHTML: () => '<p>hello</p>' }),
-  EditorContent: () => <div data-testid="proposal-body" />,
-}))
+const SECTION = 'This draft section has forty visible characters.'
 
-vi.mock('@tiptap/starter-kit', () => ({ default: {} }))
+function fillRequiredSections() {
+  for (const key of ['problem', 'solution', 'pros_cons', 'summary', 'success_criteria']) {
+    fireEvent.change(screen.getByTestId(`section-${key}`), { target: { value: SECTION } })
+  }
+}
 
 describe('propose gate', () => {
   it('disables submit below 1000 CL8Y', async () => {
@@ -54,7 +55,7 @@ describe('propose gate', () => {
     expect(screen.getByTestId('propose-balance')).toHaveTextContent('need 1000')
   })
 
-  it('enables submit at the 1000 CL8Y boundary once titled', async () => {
+  it('enables submit at the 1000 CL8Y boundary once titled and templated', async () => {
     snapshot.status = 'registered'
     snapshot.balance = MIN_PROPOSAL_RAW.toString()
     snapshot.error = null
@@ -65,6 +66,8 @@ describe('propose gate', () => {
     )
     const input = await screen.findByTestId('proposal-title')
     fireEvent.change(input, { target: { value: 'Boundary' } })
+    expect(screen.getByTestId('submit-proposal')).toBeDisabled()
+    fillRequiredSections()
     await waitFor(() => {
       expect(screen.getByTestId('submit-proposal')).toBeEnabled()
     })

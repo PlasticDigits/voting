@@ -1,9 +1,9 @@
 # Agent handoff
 
-**Last updated:** 2026-08-29  
+**Last updated:** 2026-08-30  
 **Repo:** [PlasticDigits/voting](https://gitlab.com/PlasticDigits/voting)  
 **Local:** `~/repos/voting`  
-**Implementation branch:** `feat/voting-bundle` (merged). Ops follow-up: [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7) · [`OPS.md`](OPS.md). Legal `/vote` 404: [#8](https://gitlab.com/PlasticDigits/voting/-/issues/8) · [`FRONTEND.md`](FRONTEND.md).
+**Implementation branch:** `feat/voting-bundle` (merged). Ops follow-up: [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7) · [`OPS.md`](OPS.md). Legal `/vote` 404: [#8](https://gitlab.com/PlasticDigits/voting/-/issues/8) · [`FRONTEND.md`](FRONTEND.md). Draft/review + template: [#10](https://gitlab.com/PlasticDigits/voting/-/issues/10) · [#11](https://gitlab.com/PlasticDigits/voting/-/issues/11) · [`OPERATOR_VOTING.md`](OPERATOR_VOTING.md) · [`../skills/AGENTS_DRAFT_REVIEW.md`](../skills/AGENTS_DRAFT_REVIEW.md).
 
 ## Current state
 
@@ -15,9 +15,9 @@ In-tree packages:
 | `operator-voting/` | ADR-36 + EIP-191 API |
 | `frontend/` | dApp (`/`, `/new`, `/:id`; `/vote*` aliases), Legal gate, DEX Terra + Bridge EVM wallets |
 
-GitLab issues **#1–#6** are implemented in this tree. [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7) tracks remaining ops. [#8](https://gitlab.com/PlasticDigits/voting/-/issues/8) is the Legal-return / deep-link 404 (`GET /vote` must be 200 HTML). [#9](https://gitlab.com/PlasticDigits/voting/-/issues/9) (registered holders shown as 0) is in-tree: default GET `/v1/balances` clamps to `registered_at_height` (OV-B1), pending register UX, BSC analogue. Still human/ops to **close** #8/#9: live Legal Accept, edge `try_files`, LCD equality on `vote.cl8y.com` (OPS.md §5) and BSC O7. In-tree for #7: POST IP/QPS limits, Coolify Dockerfiles, prod refuses migrate + zero quota, `deploy/grants.sql` (USAGE, `current_database()`), Legal-hatch/O4 build guards, nginx CSP. In-tree for #8: flattened routes + `/vote*` aliases, nginx `try_files`, HEALTHCHECK on `/vote`, CI `test:frontend-spa-fallback`. Still human/ops: Coolify project, **switch live edge to `frontend.nginx.conf`**, Legal admin property/CORS/allowlist, live Keplr+MetaMask QA. Runbook: [`OPS.md`](OPS.md) (O8). Skills: [`../skills/AGENTS_OPS_STAGING.md`](../skills/AGENTS_OPS_STAGING.md) · [`../skills/AGENTS_LEGAL_CLICKWRAP.md`](../skills/AGENTS_LEGAL_CLICKWRAP.md).
+GitLab issues **#1–#6** are implemented in this tree. [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7) tracks remaining ops. [#8](https://gitlab.com/PlasticDigits/voting/-/issues/8) is the Legal-return / deep-link 404 (`GET /vote` must be 200 HTML). [#9](https://gitlab.com/PlasticDigits/voting/-/issues/9) (registered holders shown as 0) is in-tree: default GET `/v1/balances` clamps to `registered_at_height` (OV-B1), pending register UX, BSC analogue. [#10](https://gitlab.com/PlasticDigits/voting/-/issues/10) / [#11](https://gitlab.com/PlasticDigits/voting/-/issues/11) (template + draft → committee open → freeze) are in-tree; still ops: set `VOTING_COMMITTEE_ADDRESSES`, live Legal Accept, both-chain draft/comment/open/vote. Skills: [`../skills/AGENTS_OPS_STAGING.md`](../skills/AGENTS_OPS_STAGING.md) · [`../skills/AGENTS_LEGAL_CLICKWRAP.md`](../skills/AGENTS_LEGAL_CLICKWRAP.md) · [`../skills/AGENTS_DRAFT_REVIEW.md`](../skills/AGENTS_DRAFT_REVIEW.md).
 
-Issue mapping: [`ISSUE_MIGRATION.md`](ISSUE_MIGRATION.md). Invariants: [`LEDGER_INVARIANTS.md`](LEDGER_INVARIANTS.md), [`OPERATOR_VOTING.md`](OPERATOR_VOTING.md), [`FRONTEND.md`](FRONTEND.md), [`OPS.md`](OPS.md). #7 in-tree extras: prod refuses `APPLY_MIGRATIONS=true`, privilege tests apply [`../deploy/grants.sql`](../deploy/grants.sql), frontend CSP snippet, `prodEnvGuards` (O3/O4), CI `test:rust-integration`. #8 in-tree extras: [`../frontend/src/routes.ts`](../frontend/src/routes.ts), [`../deploy/docker/frontend.nginx.conf`](../deploy/docker/frontend.nginx.conf), CI `test:frontend-spa-fallback`. #9 in-tree: [`../operator-voting/src/balance_query.rs`](../operator-voting/src/balance_query.rs), pending poll in the dApp, ledger `/health.caught_up`.
+Issue mapping: [`ISSUE_MIGRATION.md`](ISSUE_MIGRATION.md). Invariants: [`LEDGER_INVARIANTS.md`](LEDGER_INVARIANTS.md), [`OPERATOR_VOTING.md`](OPERATOR_VOTING.md), [`FRONTEND.md`](FRONTEND.md), [`OPS.md`](OPS.md). #7 in-tree extras: prod refuses `APPLY_MIGRATIONS=true`, privilege tests apply [`../deploy/grants.sql`](../deploy/grants.sql), frontend CSP snippet, `prodEnvGuards` (O3/O4), CI `test:rust-integration`. #8 in-tree extras: [`../frontend/src/routes.ts`](../frontend/src/routes.ts), [`../deploy/docker/frontend.nginx.conf`](../deploy/docker/frontend.nginx.conf), CI `test:frontend-spa-fallback`. #9 in-tree: [`../operator-voting/src/balance_query.rs`](../operator-voting/src/balance_query.rs), pending poll in the dApp, ledger `/health.caught_up`. #10/#11 in-tree: [`../operator-voting/src/sections.rs`](../operator-voting/src/sections.rs), draft/comment/analysis/open APIs, freeze-at-open, dApp template compose.
 
 ## Why a new repo
 
@@ -29,10 +29,10 @@ Voting is a separate product surface (dual-chain electorate, its own Postgres ro
    Postgres registration + CL8Y CW20 transfer ledger + BEP-20 Transfer log ledger for **registered** wallets. Live LCD `Balance` / `balanceOf` at register time. No archive queries. No backfill before registration.
 
 2. **`operator-voting` (control plane)** — #2 + EIP-191 from #4  
-   Restricted DB role. ADR-36 **and** EIP-191. Proposals, votes, `VOTING_BLACKLIST_ADDRESSES`, snapshot freeze `{ terra_height, bsc_block }`. ≥1000 CL8Y to propose (per registering address’s chain).
+   Restricted DB role. ADR-36 **and** EIP-191. Drafts, comments, committee `open_vote`, proposals, votes, `VOTING_BLACKLIST_ADDRESSES` / `VOTING_COMMITTEE_ADDRESSES`. Snapshot freeze `{ terra_height, bsc_block }` at **open**, not draft create. ≥1000 CL8Y to start a draft (per registering address’s chain).
 
 3. **Voting dApp** — #3 with #5 + #6 + #8  
-   `/` register / WYSIWYG propose / vote (`/vote*` aliases). **Blocked behind CL8Y Legal.** Terra connect from DEX; EVM connect from Bridge. SPA documents must be 200 HTML on hard navigation (Legal return).
+   `/` register / templated draft / vote (`/vote*` aliases). Vote CTAs only when `open`. **Blocked behind CL8Y Legal.** Terra connect from DEX; EVM connect from Bridge. SPA documents must be 200 HTML on hard navigation (Legal return).
 
 Do not mark production voting “done” while BSC holders cannot register and vote on staging with real wallets.
 

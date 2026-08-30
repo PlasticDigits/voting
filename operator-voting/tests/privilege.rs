@@ -106,6 +106,33 @@ async fn restricted_role_from_grants_sql_cannot_write_ledger() {
     .await;
     assert!(sig_ok.is_ok(), "restricted role must write voting.signatures: {sig_ok:?}");
 
+    let draft_ok = sqlx::query(
+        r#"
+        INSERT INTO voting.proposals (id, chain, proposer, title, body_html, body_canonical, status)
+        VALUES (gen_random_uuid(), 'terra', 'terra1test', 't', '<p>b</p>', '{}', 'draft')
+        "#,
+    )
+    .execute(&restricted)
+    .await;
+    assert!(draft_ok.is_ok(), "restricted role must write voting.proposals: {draft_ok:?}");
+
+    let comment_ok = sqlx::query(
+        r#"
+        WITH s AS (
+            INSERT INTO voting.signatures (id, chain, wallet_address, signature, payload_hash, purpose)
+            VALUES (gen_random_uuid(), 'terra', 'terra1test', 'sig2', 'hash2', 'comment')
+            RETURNING id
+        ), p AS (
+            SELECT id FROM voting.proposals WHERE proposer = 'terra1test' LIMIT 1
+        )
+        INSERT INTO voting.proposal_comments (id, proposal_id, chain, wallet_address, body_html, signature_id)
+        SELECT gen_random_uuid(), p.id, 'terra', 'terra1test', '<p>ok</p>', s.id FROM s, p
+        "#,
+    )
+    .execute(&restricted)
+    .await;
+    assert!(comment_ok.is_ok(), "restricted role must write voting.proposal_comments: {comment_ok:?}");
+
     let create = sqlx::query("CREATE TABLE voting.should_not_exist (id int)")
         .execute(&restricted)
         .await;

@@ -9,7 +9,15 @@ import {
 } from './constants'
 
 export type VotingChain = 'terra' | 'bsc'
-export type VotingPurpose = 'register' | 'propose' | 'vote'
+export type VotingPurpose =
+  | 'register'
+  | 'propose'
+  | 'draft'
+  | 'amend'
+  | 'comment'
+  | 'analyze'
+  | 'open_vote'
+  | 'vote'
 export type VoteChoice = 'for' | 'against' | 'abstain'
 
 export type SignedPayload = {
@@ -20,10 +28,9 @@ export type SignedPayload = {
   address: string
   issued_at: number
   expires_at: number
-  title?: string
-  body_hash?: string
   proposal_id?: string
   choice?: VoteChoice
+  prev_body_hash?: string
 }
 
 export function votingChainId(chain: VotingChain): string {
@@ -46,6 +53,7 @@ export function buildSignedPayload(input: {
   body_hash?: string
   proposal_id?: string
   choice?: VoteChoice
+  prev_body_hash?: string
 }): SignedPayload {
   const issued_at = input.now ?? Math.floor(Date.now() / 1000)
   const payload: SignedPayload = {
@@ -61,6 +69,7 @@ export function buildSignedPayload(input: {
   if (input.body_hash !== undefined) payload.body_hash = input.body_hash
   if (input.proposal_id !== undefined) payload.proposal_id = input.proposal_id
   if (input.choice !== undefined) payload.choice = input.choice
+  if (input.prev_body_hash !== undefined) payload.prev_body_hash = input.prev_body_hash
   return payload
 }
 
@@ -79,6 +88,7 @@ export function canonicalizePayload(payload: SignedPayload): string {
   if (payload.body_hash !== undefined) ordered.body_hash = payload.body_hash
   if (payload.proposal_id !== undefined) ordered.proposal_id = payload.proposal_id
   if (payload.choice !== undefined) ordered.choice = payload.choice
+  if (payload.prev_body_hash !== undefined) ordered.prev_body_hash = payload.prev_body_hash
   return JSON.stringify(ordered)
 }
 

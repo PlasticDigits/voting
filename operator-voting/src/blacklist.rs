@@ -27,6 +27,15 @@ pub fn normalize_address(raw: &str) -> String {
 }
 
 pub fn parse_blacklist(raw: &str) -> VotingResult<Blacklist> {
+    parse_address_list(raw, "blacklist")
+}
+
+/// Same parser as the blacklist. Invalid entries fail startup (committee allowlist, #11).
+pub fn parse_committee(raw: &str) -> VotingResult<Blacklist> {
+    parse_address_list(raw, "committee")
+}
+
+pub fn parse_address_list(raw: &str, label: &str) -> VotingResult<Blacklist> {
     let mut addrs = HashSet::new();
     for part in raw.split(',') {
         let item = part.trim();
@@ -37,7 +46,7 @@ pub fn parse_blacklist(raw: &str) -> VotingResult<Blacklist> {
             let hex = &item[2..];
             if hex.len() != 40 || !hex.chars().all(|c| c.is_ascii_hexdigit()) {
                 return Err(VotingError::InvalidConfig(format!(
-                    "invalid EVM blacklist address: {item}"
+                    "invalid EVM {label} address: {item}"
                 )));
             }
             addrs.insert(normalize_address(item));
@@ -45,7 +54,7 @@ pub fn parse_blacklist(raw: &str) -> VotingResult<Blacklist> {
             addrs.insert(normalize_address(item));
         } else {
             return Err(VotingError::InvalidConfig(format!(
-                "invalid blacklist address: {item}"
+                "invalid {label} address: {item}"
             )));
         }
     }
@@ -73,5 +82,13 @@ mod tests {
     fn invalid_fails_startup() {
         assert!(parse_blacklist("0xabc").is_err());
         assert!(parse_blacklist("not-an-address").is_err());
+        assert!(parse_committee("0xabc").is_err());
+        assert!(parse_committee("not-an-address").is_err());
+    }
+
+    #[test]
+    fn empty_committee_is_ok() {
+        let c = parse_committee("").unwrap();
+        assert!(c.is_empty());
     }
 }

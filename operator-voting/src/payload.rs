@@ -23,6 +23,9 @@ pub struct SignedPayload {
     pub proposal_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub choice: Option<String>,
+    /// Current canonical hash the signer last saw (amend optimistic lock).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prev_body_hash: Option<String>,
 }
 
 impl SignedPayload {
@@ -105,6 +108,7 @@ mod tests {
             body_hash: None,
             proposal_id: None,
             choice: None,
+            prev_body_hash: None,
         }
     }
 

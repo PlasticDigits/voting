@@ -3,8 +3,9 @@ name: voting-ops-staging
 description: >-
   Coolify/staging deploy, Legal property/CORS/allowlist, live Keplr+MetaMask QA,
   operator-voting POST rate limits, SPA document fallback for /vote (issue #8),
-  registered-holder balance reads (issue #9 OV-B1), and optional LocalTerra LCD equality.
-  Use when verifying or implementing GitLab voting issues #7, #8, or #9 or public expose.
+  registered-holder balance reads (issue #9 OV-B1), draft/review freeze-at-open (#10/#11),
+  and optional LocalTerra LCD equality.
+  Use when verifying or implementing GitLab voting issues #7, #8, #9, #10, or #11 or public expose.
 ---
 
 # Ops / staging (voting issue #7)
@@ -30,6 +31,7 @@ This skill is for **3rd-party agents** continuing Coolify, Legal admin, or live 
 | Flattened dApp routes + `/vote*` aliases | [`frontend/src/routes.ts`](../frontend/src/routes.ts) · [`docs/FRONTEND.md`](../docs/FRONTEND.md) |
 | Runbook + invariants O1–O8 | [`docs/OPS.md`](../docs/OPS.md) |
 | Default GET balance clamp (OV-B1, #9) | [`operator-voting/src/balance_query.rs`](../operator-voting/src/balance_query.rs) · ledger `/health.caught_up` |
+| Committee allowlist + freeze-at-open (#11) | `VOTING_COMMITTEE_ADDRESSES` · [`AGENTS_DRAFT_REVIEW.md`](AGENTS_DRAFT_REVIEW.md) · [OPERATOR_VOTING.md](../docs/OPERATOR_VOTING.md) OV-S |
 
 ## Do
 

@@ -24,6 +24,8 @@ DEX tracking stub (closed): [#637](https://gitlab.com/PlasticDigits/cl8y-dex-ter
 | [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7) | Ops: Coolify, Legal property, live wallet QA, POST rate limits |
 | [#8](https://gitlab.com/PlasticDigits/voting/-/issues/8) | Legal accept and deep links 404 on `/vote` |
 | [#9](https://gitlab.com/PlasticDigits/voting/-/issues/9) | Registered holders shown as 0 after live snapshot |
+| [#10](https://gitlab.com/PlasticDigits/voting/-/issues/10) | Structured proposal template |
+| [#11](https://gitlab.com/PlasticDigits/voting/-/issues/11) | Draft collaboration / committee open-vote |
 
 ## Suggested order
 
