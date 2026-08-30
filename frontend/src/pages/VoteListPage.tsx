@@ -7,6 +7,7 @@ import { listProposals, type ProposalListItem } from '@/services/operatorVoting'
 import { signVotingRequest } from '@/services/votingSign'
 import { formatCl8y } from '@/utils/format'
 import { formatLastPoll } from '@/utils/ledgerDisplay'
+import { visibleText } from '@/utils/proposalSections'
 
 export default function VoteListPage() {
   const { address, chain, label } = useConnectedIdentity()
@@ -128,6 +129,11 @@ export default function VoteListPage() {
                   <span>
                     {p.chain} · {p.status}
                   </span>
+                  {p.summary ? (
+                    <em className="proposal-summary" data-testid="proposal-summary">
+                      {visibleText(p.summary)}
+                    </em>
+                  ) : null}
                 </Link>
               </li>
             ))}

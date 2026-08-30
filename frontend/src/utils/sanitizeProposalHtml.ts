@@ -1,10 +1,11 @@
 /**
  * Client-side strip aligned with operator-voting's ammonia allowlist.
  *
- * The client hashes the HTML it submits. The API hashes that submitted body
- * (not the ammonia output) and stores ammonia-sanitized HTML. This strip is
- * belt-and-suspenders so TipTap does not emit scripts. Prefer simple markup.
+ * Propose signs SHA-256 of the canonical section JSON after this strip
+ * (and empty-normalization) per section. The API ammonia-cleans again and
+ * must produce the same canonical string. Prefer `plainToSectionHtml`.
  */
+const UNWRAP_FORBIDDEN = new Set(['SCRIPT', 'STYLE', 'IFRAME', 'OBJECT', 'EMBED', 'LINK', 'META'])
 const ALLOWED = new Set([
   'P',
   'BR',
@@ -50,6 +51,10 @@ export function sanitizeProposalHtml(raw: string): string {
       const el = child as Element
       if (!ALLOWED.has(el.tagName)) {
         const parent = el.parentNode
+        if (UNWRAP_FORBIDDEN.has(el.tagName)) {
+          parent?.removeChild(el)
+          continue
+        }
         while (el.firstChild) parent?.insertBefore(el.firstChild, el)
         parent?.removeChild(el)
         continue

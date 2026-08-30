@@ -32,6 +32,9 @@ impl SignedPayload {
     }
 }
 
+/// SHA-256 hex of the canonical propose body.
+/// For templated proposals (issue #10) this is the compact JSON of sanitized
+/// `body_sections` (sorted keys). See `proposal_sections::prepare_sections`.
 pub fn body_hash(canonical_body: &str) -> String {
     hex::encode(Sha256::digest(canonical_body.as_bytes()))
 }
@@ -79,7 +82,9 @@ pub fn parse_and_validate(
         return Err(VotingError::Unauthorized("signature expired".into()));
     }
     if payload.issued_at > now + 60 {
-        return Err(VotingError::Unauthorized("signature issued in the future".into()));
+        return Err(VotingError::Unauthorized(
+            "signature issued in the future".into(),
+        ));
     }
     if payload.expires_at - payload.issued_at > SIGNATURE_TTL_SECS + 30 {
         return Err(VotingError::Unauthorized("signature ttl too long".into()));
@@ -118,7 +123,8 @@ mod tests {
     #[test]
     fn rejects_address_mismatch() {
         let raw = serde_json::to_string(&base()).unwrap();
-        let err = parse_and_validate(&raw, "register", "terra1other", "columbus-5", "56").unwrap_err();
+        let err =
+            parse_and_validate(&raw, "register", "terra1other", "columbus-5", "56").unwrap_err();
         assert!(matches!(err, VotingError::Unauthorized(_)));
     }
 

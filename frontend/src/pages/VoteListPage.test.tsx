@@ -32,7 +32,20 @@ vi.mock('@/hooks/useVotingSnapshot', () => ({
 }))
 
 vi.mock('@/services/operatorVoting', () => ({
-  listProposals: async () => [],
+  listProposals: async () => [
+    {
+      id: '11111111-1111-1111-1111-111111111111',
+      chain: 'terra',
+      proposer: 'terra1x',
+      title: 'Listed',
+      terra_height: 1,
+      bsc_block: 1,
+      created_at: new Date().toISOString(),
+      status: 'open',
+      tally: [],
+      summary: '<p>Scan this TL;DR</p><script>alert(1)</script>',
+    },
+  ],
 }))
 
 describe('list page snapshot copy', () => {
@@ -105,5 +118,18 @@ describe('list page snapshot copy', () => {
     )
     expect(await screen.findByTestId('registration-status')).toHaveTextContent('Registered')
     expect(screen.getByTestId('connected-chain')).toHaveTextContent('3540 CL8Y')
+  })
+
+  it('shows TL;DR as text and does not execute summary HTML', async () => {
+    snapshot.status = 'registered'
+    snapshot.balance = '3540000000000000000000'
+    render(
+      <MemoryRouter>
+        <VoteListPage />
+      </MemoryRouter>
+    )
+    const summary = await screen.findByTestId('proposal-summary')
+    expect(summary).toHaveTextContent('Scan this TL;DR')
+    expect(summary.innerHTML).not.toMatch(/script/i)
   })
 })

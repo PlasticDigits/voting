@@ -9,7 +9,9 @@ pub async fn migrate(pool: &PgPool) -> VotingResult<()> {
     // One sqlx migrator owns the database (ledger crate). Avoid checksum clashes.
     // Production: only the ledger writer runs this. operator-voting sets
     // APPLY_MIGRATIONS=false (the default when RUN_MODE=prod). See docs/OPS.md.
-    voting_ledger::db::migrate(pool).await.map_err(|e| VotingError::InvalidConfig(e.to_string()))
+    voting_ledger::db::migrate(pool)
+        .await
+        .map_err(|e| VotingError::InvalidConfig(e.to_string()))
 }
 
 pub async fn connect(url: &str) -> VotingResult<PgPool> {
@@ -45,7 +47,12 @@ pub async fn ledger_registration(
     Ok(row)
 }
 
-pub async fn balance_at(pool: &PgPool, chain: &str, wallet: &str, height: i64) -> VotingResult<BigInt> {
+pub async fn balance_at(
+    pool: &PgPool,
+    chain: &str,
+    wallet: &str,
+    height: i64,
+) -> VotingResult<BigInt> {
     let wallet = normalize_address(wallet);
     let sql = match chain {
         "terra" => "SELECT public.voting_cl8y_balance_at($1, $2)::text",
@@ -62,18 +69,16 @@ pub async fn balance_at(pool: &PgPool, chain: &str, wallet: &str, height: i64) -
 }
 
 pub async fn tip_heights(pool: &PgPool) -> VotingResult<(i64, i64)> {
-    let terra: String = sqlx::query_scalar(
-        "SELECT value FROM indexer_state WHERE key = 'last_indexed_height'",
-    )
-    .fetch_optional(pool)
-    .await?
-    .unwrap_or_else(|| "0".into());
-    let bsc: String = sqlx::query_scalar(
-        "SELECT value FROM indexer_state WHERE key = 'last_indexed_bsc_block'",
-    )
-    .fetch_optional(pool)
-    .await?
-    .unwrap_or_else(|| "0".into());
+    let terra: String =
+        sqlx::query_scalar("SELECT value FROM indexer_state WHERE key = 'last_indexed_height'")
+            .fetch_optional(pool)
+            .await?
+            .unwrap_or_else(|| "0".into());
+    let bsc: String =
+        sqlx::query_scalar("SELECT value FROM indexer_state WHERE key = 'last_indexed_bsc_block'")
+            .fetch_optional(pool)
+            .await?
+            .unwrap_or_else(|| "0".into());
     Ok((terra.parse().unwrap_or(0), bsc.parse().unwrap_or(0)))
 }
 
@@ -154,6 +159,20 @@ pub struct ProposalRow {
     pub bsc_block: i64,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub status: String,
+    pub body_sections: Option<sqlx::types::Json<serde_json::Value>>,
+}
+
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct ProposalListRow {
+    pub id: Uuid,
+    pub chain: String,
+    pub proposer: String,
+    pub title: String,
+    pub terra_height: i64,
+    pub bsc_block: i64,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub status: String,
+    pub body_sections: Option<sqlx::types::Json<serde_json::Value>>,
 }
 
 pub async fn insert_proposal(
@@ -163,6 +182,7 @@ pub async fn insert_proposal(
     title: &str,
     body_html: &str,
     body_canonical: &str,
+    body_sections: &serde_json::Value,
     terra_height: i64,
     bsc_block: i64,
 ) -> VotingResult<Uuid> {
@@ -170,8 +190,8 @@ pub async fn insert_proposal(
     sqlx::query(
         r#"
         INSERT INTO voting.proposals
-            (id, chain, proposer, title, body_html, body_canonical, terra_height, bsc_block)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            (id, chain, proposer, title, body_html, body_canonical, body_sections, terra_height, bsc_block)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         "#,
     )
     .bind(id)
@@ -180,6 +200,7 @@ pub async fn insert_proposal(
     .bind(title)
     .bind(body_html)
     .bind(body_canonical)
+    .bind(sqlx::types::Json(body_sections))
     .bind(terra_height)
     .bind(bsc_block)
     .execute(pool)
@@ -214,10 +235,10 @@ async fn freeze_snapshot(
     Ok(())
 }
 
-pub async fn list_proposals(pool: &PgPool) -> VotingResult<Vec<ProposalRow>> {
-    Ok(sqlx::query_as::<_, ProposalRow>(
+pub async fn list_proposals(pool: &PgPool) -> VotingResult<Vec<ProposalListRow>> {
+    Ok(sqlx::query_as::<_, ProposalListRow>(
         r#"
-        SELECT id, chain, proposer, title, body_html, terra_height, bsc_block, created_at, status
+        SELECT id, chain, proposer, title, terra_height, bsc_block, created_at, status, body_sections
         FROM voting.proposals
         ORDER BY created_at DESC
         "#,
@@ -229,7 +250,7 @@ pub async fn list_proposals(pool: &PgPool) -> VotingResult<Vec<ProposalRow>> {
 pub async fn get_proposal(pool: &PgPool, id: Uuid) -> VotingResult<Option<ProposalRow>> {
     Ok(sqlx::query_as::<_, ProposalRow>(
         r#"
-        SELECT id, chain, proposer, title, body_html, terra_height, bsc_block, created_at, status
+        SELECT id, chain, proposer, title, body_html, terra_height, bsc_block, created_at, status, body_sections
         FROM voting.proposals WHERE id = $1
         "#,
     )

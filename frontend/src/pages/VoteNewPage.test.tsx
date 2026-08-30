@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import VoteNewPage from '@/pages/VoteNewPage'
 import { MIN_PROPOSAL_RAW } from '@/utils/constants'
+import { MIN_SECTION_VISIBLE_CHARS } from '@/utils/proposalSections'
 
 const identity = {
   address: 'terra1proposerxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
@@ -36,12 +37,17 @@ vi.mock('@/services/operatorVoting', () => ({
   createProposal: vi.fn(),
 }))
 
-vi.mock('@tiptap/react', () => ({
-  useEditor: () => ({ getHTML: () => '<p>hello</p>' }),
-  EditorContent: () => <div data-testid="proposal-body" />,
-}))
+const FILL = 'x'.repeat(MIN_SECTION_VISIBLE_CHARS)
 
-vi.mock('@tiptap/starter-kit', () => ({ default: {} }))
+function fillRequiredSections() {
+  fireEvent.change(screen.getByTestId('proposal-section-problem'), { target: { value: FILL } })
+  fireEvent.change(screen.getByTestId('proposal-section-solution'), { target: { value: FILL } })
+  fireEvent.change(screen.getByTestId('proposal-section-pros_cons'), { target: { value: FILL } })
+  fireEvent.change(screen.getByTestId('proposal-section-summary'), { target: { value: FILL } })
+  fireEvent.change(screen.getByTestId('proposal-section-success_criteria'), {
+    target: { value: FILL },
+  })
+}
 
 describe('propose gate', () => {
   it('disables submit below 1000 CL8Y', async () => {
@@ -55,11 +61,13 @@ describe('propose gate', () => {
       </MemoryRouter>
     )
     const button = await screen.findByTestId('submit-proposal')
+    fireEvent.change(screen.getByTestId('proposal-title'), { target: { value: 'Title' } })
+    fillRequiredSections()
     expect(button).toBeDisabled()
     expect(screen.getByTestId('propose-balance')).toHaveTextContent('need 1000')
   })
 
-  it('enables submit at the 1000 CL8Y boundary once titled', async () => {
+  it('keeps submit disabled at 1000 CL8Y until required sections meet the API minima', async () => {
     snapshot.status = 'registered'
     snapshot.balance = MIN_PROPOSAL_RAW.toString()
     snapshot.error = null
@@ -70,9 +78,43 @@ describe('propose gate', () => {
     )
     const input = await screen.findByTestId('proposal-title')
     fireEvent.change(input, { target: { value: 'Boundary' } })
+    expect(screen.getByTestId('submit-proposal')).toBeDisabled()
+    fillRequiredSections()
     await waitFor(() => {
       expect(screen.getByTestId('submit-proposal')).toBeEnabled()
     })
+  })
+
+  it('does not block on empty optional context', async () => {
+    snapshot.status = 'registered'
+    snapshot.balance = MIN_PROPOSAL_RAW.toString()
+    snapshot.error = null
+    render(
+      <MemoryRouter>
+        <VoteNewPage />
+      </MemoryRouter>
+    )
+    fireEvent.change(await screen.findByTestId('proposal-title'), { target: { value: 'Ctx' } })
+    fillRequiredSections()
+    expect(screen.getByTestId('proposal-section-context')).toHaveValue('')
+    await waitFor(() => {
+      expect(screen.getByTestId('submit-proposal')).toBeEnabled()
+    })
+  })
+
+  it('shows labeled template fields', async () => {
+    snapshot.status = 'registered'
+    snapshot.balance = MIN_PROPOSAL_RAW.toString()
+    snapshot.error = null
+    render(
+      <MemoryRouter>
+        <VoteNewPage />
+      </MemoryRouter>
+    )
+    expect(await screen.findByText('The idea or problem to be solved')).toBeInTheDocument()
+    expect(screen.getByText('Pros and cons / trade-offs')).toBeInTheDocument()
+    expect(screen.getByText(/Goalposts for spend and outcome justification/)).toBeInTheDocument()
+    expect(screen.queryByText(/hang the proposer/i)).toBeNull()
   })
 
   it('does not treat an unregistered ledger 0 as a live balance', async () => {

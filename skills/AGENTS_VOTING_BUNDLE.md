@@ -42,8 +42,11 @@ dApp UI can stub the API with MSW in parallel, but production “done” require
 | #7 ops | [`docs/OPS.md`](../docs/OPS.md) · [`deploy/docker/`](../deploy/docker/) · [`deploy/grants.sql`](../deploy/grants.sql) · [`operator-voting/src/rate_limit.rs`](../operator-voting/src/rate_limit.rs) · [`frontend/src/utils/prodEnvGuards.ts`](../frontend/src/utils/prodEnvGuards.ts) · [`AGENTS_OPS_STAGING.md`](AGENTS_OPS_STAGING.md) |
 | #8 Legal `/vote` 404 | [`frontend/src/routes.ts`](../frontend/src/routes.ts) · [`deploy/docker/frontend.nginx.conf`](../deploy/docker/frontend.nginx.conf) · [`docs/FRONTEND.md`](../docs/FRONTEND.md) · O8 in [`docs/OPS.md`](../docs/OPS.md) · [`AGENTS_LEGAL_CLICKWRAP.md`](AGENTS_LEGAL_CLICKWRAP.md) |
 | #9 zero badge | [`operator-voting/src/balance_query.rs`](../operator-voting/src/balance_query.rs) (OV-B1) · [`frontend/src/hooks/useVotingSnapshot.ts`](../frontend/src/hooks/useVotingSnapshot.ts) · ledger `/health.caught_up` |
+| #10 proposal template | [`operator-voting/src/proposal_sections.rs`](../operator-voting/src/proposal_sections.rs) (OV-S1–S8) · [`frontend/src/utils/proposalSections.ts`](../frontend/src/utils/proposalSections.ts) · [`ledger/migrations/20260830000001_proposal_sections.sql`](../ledger/migrations/20260830000001_proposal_sections.sql) |
 | #12 WalletConnect hang | [`frontend/patches/`](../frontend/patches/) · [`frontend/src/main.tsx`](../frontend/src/main.tsx) · [`frontend/src/utils/prodEnvGuards.ts`](../frontend/src/utils/prodEnvGuards.ts) · [`AGENTS_WALLET_CONNECTORS.md`](AGENTS_WALLET_CONNECTORS.md) · [`docs/FRONTEND.md`](../docs/FRONTEND.md) |
 | #14 stuck pending | [`frontend/src/hooks/useVotingSnapshot.ts`](../frontend/src/hooks/useVotingSnapshot.ts) · [`ledger/src/ingest.rs`](../ledger/src/ingest.rs) · L12 · OV-B6 · `/health.intents_ok` |
+
+Do **not** restore a single freeform `body_html` create path. New `POST /v1/proposals` requires `body_sections`. Hash is canonical JSON of sanitized sections (sorted keys), not concatenated UI strings. TS and Rust golden vector: SHA-256 `85b0e3985805be8d192178665cf0b745ddcb14cb5ccfc37d2b49c137fe0f5ed1` in [`docs/OPERATOR_VOTING.md`](../docs/OPERATOR_VOTING.md). Draft → comments → freeze-at-open is [#11](https://gitlab.com/PlasticDigits/voting/-/issues/11); do not add comments, committee, or AI fields here.
 
 ## Files in this repo to read first
 
@@ -57,3 +60,4 @@ dApp UI can stub the API with MSW in parallel, but production “done” require
 - [`AGENTS_WALLET_CONNECTORS.md`](AGENTS_WALLET_CONNECTORS.md)
 - [`AGENTS_LEGAL_CLICKWRAP.md`](AGENTS_LEGAL_CLICKWRAP.md)
 - [`AGENTS_OPS_STAGING.md`](AGENTS_OPS_STAGING.md) — Coolify, Legal admin, live QA, POST limits (#7)
+- [`AGENTS_PROPOSAL_TEMPLATE.md`](AGENTS_PROPOSAL_TEMPLATE.md) — structured sections / `body_hash` (#10)

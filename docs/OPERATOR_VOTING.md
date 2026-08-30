@@ -1,6 +1,6 @@
 # operator-voting
 
-Cross-links: [LEDGER_INVARIANTS.md](LEDGER_INVARIANTS.md) · [FRONTEND.md](FRONTEND.md) · [OPS.md](OPS.md) · issues [#2](https://gitlab.com/PlasticDigits/voting/-/issues/2) · [#4](https://gitlab.com/PlasticDigits/voting/-/issues/4) · [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7) · [#9](https://gitlab.com/PlasticDigits/voting/-/issues/9) · [#14](https://gitlab.com/PlasticDigits/voting/-/issues/14) · skill [AGENTS_OPS_STAGING.md](../skills/AGENTS_OPS_STAGING.md)
+Cross-links: [LEDGER_INVARIANTS.md](LEDGER_INVARIANTS.md) · [FRONTEND.md](FRONTEND.md) · [OPS.md](OPS.md) · issues [#2](https://gitlab.com/PlasticDigits/voting/-/issues/2) · [#4](https://gitlab.com/PlasticDigits/voting/-/issues/4) · [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7) · [#9](https://gitlab.com/PlasticDigits/voting/-/issues/9) · [#10](https://gitlab.com/PlasticDigits/voting/-/issues/10) · [#14](https://gitlab.com/PlasticDigits/voting/-/issues/14) · skill [AGENTS_OPS_STAGING.md](../skills/AGENTS_OPS_STAGING.md) · [AGENTS_VOTING_BUNDLE.md](../skills/AGENTS_VOTING_BUNDLE.md)
 
 Standalone Axum service. **Not** merged into the DEX indexer API. Uses a **restricted** `DATABASE_URL` in production.
 
@@ -12,9 +12,9 @@ Standalone Axum service. **Not** merged into the DEX indexer API. Uses a **restr
 | `GET` | `/openapi.json` | Stub OpenAPI |
 | `POST` | `/v1/register` | ADR-36 or EIP-191; enqueue ledger intent |
 | `GET` | `/v1/registration/:addr` | Terra and/or BSC status |
-| `POST` | `/v1/proposals` | ≥1000 CL8Y on **that** address’s chain; dual snapshot |
-| `GET` | `/v1/proposals` | List + tallies |
-| `GET` | `/v1/proposals/:id` | Detail; `advisory: true` |
+| `POST` | `/v1/proposals` | ≥1000 CL8Y on **that** address’s chain; dual snapshot; **`body_sections` required** ([#10](https://gitlab.com/PlasticDigits/voting/-/issues/10), OV-S) |
+| `GET` | `/v1/proposals` | List + tallies + `summary` TL;DR when sections exist |
+| `GET` | `/v1/proposals/:id` | Detail; `advisory: true`; `body_sections` or legacy `body_html` |
 | `POST` | `/v1/proposals/:id/votes` | One vote per `(proposal, chain, wallet)` |
 | `GET` | `/v1/proposals/:id/votes/:addr` | Own vote |
 | `GET` | `/v1/balances/:addr` | Thin restricted-view read. Default height is **OV-B1** (below). |
@@ -81,7 +81,45 @@ Code: [`../operator-voting/src/balance_query.rs`](../operator-voting/src/balance
 
 ## HTML
 
-Proposal bodies are stored after [ammonia](https://docs.rs/ammonia) allowlist (`p`, headings, lists, `a[href]`, …). Scripts and event handlers are stripped. Body cap 64 KiB.
+Proposal **sections** are stored after [ammonia](https://docs.rs/ammonia) allowlist (`p`, headings, lists, `a[href]`, …). Scripts and event handlers are stripped. Combined sanitized payload cap 64 KiB (`MAX_BODY_BYTES`). New creates must send `body_sections`; freeform `body_html` on POST is `400`.
+
+## Structured sections (OV-S, issue #10)
+
+New proposals are a fixed section object, not a single WYSIWYG blob. Votes stay offchain / advisory. Draft/review/committee is **not** this issue ([#13](https://gitlab.com/PlasticDigits/voting/-/issues/13)).
+
+| Key | UI label | Required? |
+|-----|----------|-----------|
+| `problem` | The idea or problem to be solved | Yes |
+| `context` | Supporting context, real-world issues, and alternatives | No (empty allowed) |
+| `solution` | Proposed solution and supporting evidence | Yes |
+| `pros_cons` | Pros and cons / trade-offs | Yes |
+| `summary` | Summary (TL;DR) | Yes |
+| `success_criteria` | Success criteria / goalposts | Yes |
+
+Do **not** add a proposer-owned “independent analysis” field.
+
+| ID | Rule |
+|----|------|
+| **OV-S1** | Server is source of truth. Missing, whitespace-only, or HTML-empty required sections → `400`. Count after strip-tags, entity decode, zero-width drop, Unicode whitespace collapse. Minima: 40 visible characters; `summary` also ≤ 500. |
+| **OV-S2** | Persist `body_sections JSONB` (nullable for legacy). New creates always write the six string keys. `body_html` is a server-rendered concatenation in display order (TL;DR first). `body_canonical` is the hashed JSON string. |
+| **OV-S3** | `body_hash` is SHA-256 (hex) of **canonical JSON**: UTF-8, compact (no extra whitespace), **sorted keys** `context`, `problem`, `pros_cons`, `solution`, `success_criteria`, `summary`. Each value is ammonia-cleaned HTML; empty-visible values become `""`. Hashing raw unsanitized HTML or freeform `body_html` → `401`. |
+| **OV-S4** | Display order is `summary`, `problem`, `context`, `solution`, `pros_cons`, `success_criteria`. Hash order is sorted keys (OV-S3). Do not confuse them. |
+| **OV-S5** | `GET /v1/proposals` includes `summary` (sanitized HTML or `null` for legacy). List cards must render it as **text**, not `innerHTML`. |
+| **OV-S6** | Legacy rows with `body_sections IS NULL` still `GET` via `body_html`. Never mark that HTML as trusted; re-sanitize on read in the dApp. |
+| **OV-S7** | Terra and BSC use the same template. Do not merge identities. 1000 CL8Y, blacklist, ammonia allowlist, POST QPS unchanged. No second snapshot freeze. |
+| **OV-S8** | Success-criteria copy is goalposts for spend/outcome justification, not slashing or punishment. |
+
+Serializer (TypeScript and Rust must match):
+
+```json
+{"context":"","problem":"<p>Holders often vote without enough information about impact and risks.</p>","pros_cons":"<p>Pros: proposals are comparable. Cons: writing takes more care.</p>","solution":"<p>Require labeled sections with server-enforced minimums.</p>","success_criteria":"<p>Voters can scan TL;DR, trade-offs, and goalposts before they sign.</p>","summary":"<p>Standard sections so every proposal is scannable before a vote.</p>"}
+```
+
+SHA-256 hex: `85b0e3985805be8d192178665cf0b745ddcb14cb5ccfc37d2b49c137fe0f5ed1`
+
+Code: [`../operator-voting/src/proposal_sections.rs`](../operator-voting/src/proposal_sections.rs) · [`../frontend/src/utils/proposalSections.ts`](../frontend/src/utils/proposalSections.ts). Migration: [`../ledger/migrations/20260830000001_proposal_sections.sql`](../ledger/migrations/20260830000001_proposal_sections.sql). No new tables — `deploy/grants.sql` unchanged. Skill: [`../skills/AGENTS_PROPOSAL_TEMPLATE.md`](../skills/AGENTS_PROPOSAL_TEMPLATE.md).
+
+## POST rate limits (O-RL)
 
 ## POST rate limits (O-RL)
 

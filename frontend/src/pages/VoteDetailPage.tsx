@@ -5,6 +5,9 @@ import { castVote, getProposal, type ProposalDetail } from '@/services/operatorV
 import { signVotingRequest } from '@/services/votingSign'
 import type { VoteChoice } from '@/utils/votingPayload'
 import { ROUTES } from '@/routes'
+import { isSectionRecord } from '@/utils/proposalSections'
+import { sanitizeProposalHtml } from '@/utils/sanitizeProposalHtml'
+import { ProposalSectionView } from '@/components/proposal/ProposalSectionFields'
 
 export default function VoteDetailPage() {
   const { id = '' } = useParams()
@@ -53,6 +56,9 @@ export default function VoteDetailPage() {
     return <p className="panel">Loading…</p>
   }
 
+  const sections = proposal && isSectionRecord(proposal.body_sections) ? proposal.body_sections : null
+  const legacyHtml = proposal && !sections ? sanitizeProposalHtml(proposal.body_html ?? '') : ''
+
   return (
     <div className="page-stack">
       <section className="panel">
@@ -61,9 +67,10 @@ export default function VoteDetailPage() {
           <>
             <h1>{proposal.title}</h1>
             <p className="lede">
-              Offchain / advisory. Snapshot freeze Terra height {proposal.terra_height}, BSC block {proposal.bsc_block}.
+              Offchain / advisory. Snapshot freeze Terra height {proposal.terra_height}, BSC block{' '}
+              {proposal.bsc_block}.
             </p>
-            <article className="proposal-body" dangerouslySetInnerHTML={{ __html: proposal.body_html }} />
+            <ProposalSectionView sections={sections} fallbackHtml={legacyHtml} />
             <div className="cta-row" data-testid="vote-actions">
               {(['for', 'against', 'abstain'] as VoteChoice[]).map((choice) => (
                 <button

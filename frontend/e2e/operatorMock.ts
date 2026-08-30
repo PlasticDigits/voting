@@ -19,6 +19,8 @@ export async function mockOperatorVoting(page: Page, opts: MockOperatorOpts = {}
     proposer: string
     title: string
     body_html: string
+    body_sections: Record<string, string> | null
+    summary: string | null
     terra_height: number
     bsc_block: number
     created_at: string
@@ -31,17 +33,25 @@ export async function mockOperatorVoting(page: Page, opts: MockOperatorOpts = {}
   await page.route('**/v1/proposals', async (route) => {
     if (route.request().method() === 'GET') {
       await route.fulfill({
-        json: proposals.map(({ body_html: _b, ...rest }) => rest),
+        json: proposals.map(({ body_html: _b, body_sections: _s, ...rest }) => rest),
       })
       return
     }
-    const body = route.request().postDataJSON() as { title: string; body_html: string; address: string }
+    const body = route.request().postDataJSON() as {
+      title: string
+      body_html?: string
+      body_sections?: Record<string, string>
+      address: string
+    }
+    const sections = body.body_sections ?? null
     proposals.push({
       id: E2E_PROPOSAL_ID,
       chain: 'terra',
       proposer: body.address,
       title: body.title,
-      body_html: body.body_html,
+      body_html: body.body_html ?? '',
+      body_sections: sections,
+      summary: sections?.summary ?? null,
       terra_height: 1,
       bsc_block: 1,
       created_at: new Date().toISOString(),
