@@ -1,12 +1,14 @@
 # Ledger invariants
 
-Cross-links: [ARCHITECTURE.md](ARCHITECTURE.md) · [OPERATOR_VOTING.md](OPERATOR_VOTING.md) · [OPS.md](OPS.md) · issues [#1](https://gitlab.com/PlasticDigits/voting/-/issues/1) · [#4](https://gitlab.com/PlasticDigits/voting/-/issues/4) · [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7) · [#9](https://gitlab.com/PlasticDigits/voting/-/issues/9) · skills [AGENTS_VOTING_BUNDLE.md](../skills/AGENTS_VOTING_BUNDLE.md) · [AGENTS_OPS_STAGING.md](../skills/AGENTS_OPS_STAGING.md)
+Cross-links: [ARCHITECTURE.md](ARCHITECTURE.md) · [OPERATOR_VOTING.md](OPERATOR_VOTING.md) · [OPS.md](OPS.md) · issues [#1](https://gitlab.com/PlasticDigits/voting/-/issues/1) · [#4](https://gitlab.com/PlasticDigits/voting/-/issues/4) · [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7) · [#9](https://gitlab.com/PlasticDigits/voting/-/issues/9) · [#14](https://gitlab.com/PlasticDigits/voting/-/issues/14) · skills [AGENTS_VOTING_BUNDLE.md](../skills/AGENTS_VOTING_BUNDLE.md) · [AGENTS_OPS_STAGING.md](../skills/AGENTS_OPS_STAGING.md)
 
 This crate is `voting-ledger` (`ledger/`). It is **not** the DEX indexer. Do not implement these tables in `cl8y-dex-terraclassic`.
 
 ## L1 — No archive node
 
 Registration stores the **live** CW20 `Balance` / BEP-20 `balanceOf` at the current LCD height / `eth_blockNumber`. There is no `x-cosmos-block-height` header and no historical `eth_getLogs` backfill.
+
+Terra and BSC ingest are **chunked** (`INGEST_CHUNK` = 2000 heights/blocks per poll). A `last_indexed_*` of `0` jumps to tip. A **stale non-zero** cursor whose remaining gap exceeds `INGEST_STALE_GAP` (10_000) also jumps to tip — the poller must not walk millions of historical heights before the next registration-intent pass ([#14](https://gitlab.com/PlasticDigits/voting/-/issues/14)). Skipped heights are not backfilled.
 
 ## L2 — Registered-set only
 
@@ -48,7 +50,11 @@ Balance functions are `SECURITY DEFINER` in schema **`public`**. Always call / `
 
 ## L11 — Registration handoff
 
-`operator-voting` inserts `voting.registration_intents`. The ledger poller queries live balances and writes `voting_registrations` (idempotent: no double initial credit). LCD/`balanceOf` failure retries; it does **not** write `initial_balance = 0` as a fake success. A pending intent is not a registration: GET `/v1/registration/:addr` returns `pending` until the ledger row exists ([#9](https://gitlab.com/PlasticDigits/voting/-/issues/9)).
+`operator-voting` inserts `voting.registration_intents`. A **separate** ledger task (not the ingest loop) queries live balances and writes `voting_registrations` (idempotent: no double initial credit). LCD/`balanceOf` failure retries; it does **not** write `initial_balance = 0` as a fake success. A pending intent is not a registration: GET `/v1/registration/:addr` returns `pending` until the ledger row exists ([#9](https://gitlab.com/PlasticDigits/voting/-/issues/9), [#14](https://gitlab.com/PlasticDigits/voting/-/issues/14)). `ON CONFLICT (chain, wallet_address) DO NOTHING` — UI retry re-polls the same row; it does not insert a second intent. The writer role must `SELECT`/`UPDATE` `voting.registration_intents` (table owner after migrate).
+
+## L12 — Intent query failures are visible
+
+`pending_intents` / `mark_intent_processed` must **not** treat permission, missing-table, or other SQL errors as an empty queue. Fail the intent poll, log, and set `/health.intents_ok` to `false`. LCD live-balance retries do not flip `intents_ok` (those leave `processed_at` NULL and try again). Code: [`../ledger/src/db.rs`](../ledger/src/db.rs), [`../ledger/src/main.rs`](../ledger/src/main.rs).
 
 ## Env
 
@@ -60,4 +66,5 @@ Balance functions are `SECURITY DEFINER` in schema **`public`**. Always call / `
 | `TERRA_LCD_URL` / `LCD_URLS` | Live LCD (comma-separated) |
 | `BSC_RPC_URLS` | Live BSC (comma-separated; never log) |
 | `RUN_MODE` | `prod` fail-closed |
+| `POLL_INTERVAL_MS` | Intent + ingest loop sleep (default `4000`) |
 | `API_BIND` | Health listener (default `0.0.0.0:3001`) |

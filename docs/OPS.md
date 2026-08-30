@@ -1,6 +1,6 @@
 # Ops runbook (issue #7)
 
-Cross-links: [HANDOFF.md](HANDOFF.md) · [ARCHITECTURE.md](ARCHITECTURE.md) · [OPERATOR_VOTING.md](OPERATOR_VOTING.md) · [FRONTEND.md](FRONTEND.md) · [LEDGER_INVARIANTS.md](LEDGER_INVARIANTS.md) · skill [AGENTS_OPS_STAGING.md](../skills/AGENTS_OPS_STAGING.md) · Legal [AGENTS_LEGAL_CLICKWRAP.md](../skills/AGENTS_LEGAL_CLICKWRAP.md) · wallets [AGENTS_WALLET_CONNECTORS.md](../skills/AGENTS_WALLET_CONNECTORS.md) · GitLab [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7) · [#8](https://gitlab.com/PlasticDigits/voting/-/issues/8) · [#9](https://gitlab.com/PlasticDigits/voting/-/issues/9)
+Cross-links: [HANDOFF.md](HANDOFF.md) · [ARCHITECTURE.md](ARCHITECTURE.md) · [OPERATOR_VOTING.md](OPERATOR_VOTING.md) · [FRONTEND.md](FRONTEND.md) · [LEDGER_INVARIANTS.md](LEDGER_INVARIANTS.md) · skill [AGENTS_OPS_STAGING.md](../skills/AGENTS_OPS_STAGING.md) · Legal [AGENTS_LEGAL_CLICKWRAP.md](../skills/AGENTS_LEGAL_CLICKWRAP.md) · wallets [AGENTS_WALLET_CONNECTORS.md](../skills/AGENTS_WALLET_CONNECTORS.md) · GitLab [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7) · [#8](https://gitlab.com/PlasticDigits/voting/-/issues/8) · [#9](https://gitlab.com/PlasticDigits/voting/-/issues/9) · [#14](https://gitlab.com/PlasticDigits/voting/-/issues/14)
 
 In-tree ledger / `operator-voting` / `/vote` landed in !1. This document is the remaining **ops + public-expose** checklist. Do not mark production voting done until every required item below is true on staging.
 
@@ -45,7 +45,7 @@ Boot order:
 
    `/` and `/vote` and `/new` must be 200 HTML. `/assets/missing.js` must be 404. Live `nginx/1.31.x` without this fallback was the [#8](https://gitlab.com/PlasticDigits/voting/-/issues/8) Legal-return 404.
 
-`GET /health` on ledger and API must be 200 before opening DNS. Ledger `/health` keeps `ok: true` as **liveness** (do not bounce the poller on boot). After a holder registers, inspect `caught_up`, `terra_height`, and `terra_behind_registration` / `bsc_behind_registration`. A cursor of `0` while `voting_registrations` exists is **not** caught up ([#9](https://gitlab.com/PlasticDigits/voting/-/issues/9)). Default GET `/v1/balances` still clamps to `registered_at_height` (OV-B1); ingest catching up is still required for post-register transfers.
+`GET /health` on ledger and API must be 200 before opening DNS. A **proxy 503** (`no available server`) is not a healthy poller — nothing is calling `process_pending_intents`, so Register stays pending ([#14](https://gitlab.com/PlasticDigits/voting/-/issues/14)). Confirm the Coolify service name if `ledger.vote.cl8y.com` is not the writer. Ledger `/health` keeps `ok: true` as **liveness** (do not bounce the poller on boot). After a holder registers, inspect `caught_up`, `terra_height`, `terra_behind_registration` / `bsc_behind_registration`, and `intents_ok` (false means `voting.registration_intents` SELECT/UPDATE failed — L12 — not an LCD retry). A cursor of `0` while `voting_registrations` exists is **not** caught up ([#9](https://gitlab.com/PlasticDigits/voting/-/issues/9)). Default GET `/v1/balances` still clamps to `registered_at_height` (OV-B1); ingest catching up is still required for post-register transfers. Live GET `/v1/balances` must include `registered` / `pending` / `as_of_height` (OV-B6); redeploy `operator-voting` from `main` if those keys are missing.
 
 ## 2. Legal ops (sibling repo)
 
@@ -94,6 +94,8 @@ LocalTerra on this workstation is typically `http://127.0.0.1:1317`. Hardening l
 5. Confirm ledger `GET /health` `terra_height` advances after register (`caught_up: true`).
 
 Do not close [#9](https://gitlab.com/PlasticDigits/voting/-/issues/9) / [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7) on a screenshot of “Registered” if `GET /v1/balances` is still `"0"` while LCD is not.
+
+Do not close [#14](https://gitlab.com/PlasticDigits/voting/-/issues/14) on a screenshot of Registering… or of the pending banner. #9 is LCD equality **after registered**; #14 is **never leaving pending**. Writer `/health` must not be 503; intents with a working LCD/`balanceOf` complete without manual DB edits.
 
 Integration coverage without LocalTerra: [`../ledger/tests/ledger_integration.rs`](../ledger/tests/ledger_integration.rs) (`register_transfer_balance_at_and_no_backfill`) and [`../operator-voting/tests/api_flow.rs`](../operator-voting/tests/api_flow.rs) (`default_balance_clamps_when_tip_lags_register`). Live LCD equality remains an ops check.
 

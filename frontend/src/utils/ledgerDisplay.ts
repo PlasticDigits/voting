@@ -12,5 +12,11 @@ export function snapshotBalanceRaw(bal: BalanceResponse | null | undefined): str
 }
 
 export function isLedgerPending(bal: BalanceResponse | null | undefined): boolean {
-  return Boolean(bal && !bal.registered && bal.pending)
+  return Boolean(bal && bal.registered !== true && bal.pending === true)
+}
+
+export function formatLastPoll(at: number, now = Date.now()): string {
+  const s = Math.max(0, Math.round((now - at) / 1000))
+  if (s < 2) return 'just now'
+  return `${s}s ago`
 }

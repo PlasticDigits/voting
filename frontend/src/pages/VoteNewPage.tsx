@@ -87,6 +87,17 @@ export default function VoteNewPage() {
             Registration snapshot pending. Propose stays disabled until the ledger row exists.
           </p>
         )}
+        {snapshot.canRetry && (
+          <button
+            type="button"
+            className="btn-primary"
+            data-testid="register-retry"
+            disabled={snapshot.polling}
+            onClick={() => void snapshot.retryPending()}
+          >
+            Retry snapshot
+          </button>
+        )}
         <label className="field">
           <span>Title</span>
           <input

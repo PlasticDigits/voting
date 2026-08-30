@@ -49,7 +49,8 @@ pub async fn register_wallet(
         ));
     }
 
-    let inserted = db::insert_registration(pool, chain, wallet, height, &amount, signature_id).await?;
+    let inserted =
+        db::insert_registration(pool, chain, wallet, height, &amount, signature_id).await?;
     let stored = db::get_registration(pool, chain, wallet)
         .await?
         .ok_or_else(|| LedgerError::NotFound("registration vanished after insert".into()))?;
@@ -83,6 +84,7 @@ pub async fn process_pending_intents(
                 out.push(outcome);
             }
             Err(e) => {
+                // Leave processed_at NULL so the next intent pass retries (L11).
                 tracing::error!(error = %e, wallet, "registration live-balance failed; will retry");
             }
         }

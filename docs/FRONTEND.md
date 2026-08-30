@@ -1,6 +1,6 @@
 # Voting dApp
 
-Cross-links: [OPERATOR_VOTING.md](OPERATOR_VOTING.md) · [OPS.md](OPS.md) · skills [AGENTS_LEGAL_CLICKWRAP.md](../skills/AGENTS_LEGAL_CLICKWRAP.md) · [AGENTS_WALLET_CONNECTORS.md](../skills/AGENTS_WALLET_CONNECTORS.md) · [AGENTS_OPS_STAGING.md](../skills/AGENTS_OPS_STAGING.md) · issues [#3](https://gitlab.com/PlasticDigits/voting/-/issues/3) · [#5](https://gitlab.com/PlasticDigits/voting/-/issues/5) · [#6](https://gitlab.com/PlasticDigits/voting/-/issues/6) · [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7) · [#8](https://gitlab.com/PlasticDigits/voting/-/issues/8) · [#9](https://gitlab.com/PlasticDigits/voting/-/issues/9)
+Cross-links: [OPERATOR_VOTING.md](OPERATOR_VOTING.md) · [OPS.md](OPS.md) · skills [AGENTS_LEGAL_CLICKWRAP.md](../skills/AGENTS_LEGAL_CLICKWRAP.md) · [AGENTS_WALLET_CONNECTORS.md](../skills/AGENTS_WALLET_CONNECTORS.md) · [AGENTS_OPS_STAGING.md](../skills/AGENTS_OPS_STAGING.md) · issues [#3](https://gitlab.com/PlasticDigits/voting/-/issues/3) · [#5](https://gitlab.com/PlasticDigits/voting/-/issues/5) · [#6](https://gitlab.com/PlasticDigits/voting/-/issues/6) · [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7) · [#8](https://gitlab.com/PlasticDigits/voting/-/issues/8) · [#9](https://gitlab.com/PlasticDigits/voting/-/issues/9) · [#14](https://gitlab.com/PlasticDigits/voting/-/issues/14)
 
 Package: `frontend/`. Canonical routes on the dedicated host: `/`, `/new`, `/:id`. DEX-era `/vote`, `/vote/new`, `/vote/:id` stay as aliases.
 
@@ -36,11 +36,13 @@ One connected address at a time. No seed prompts. No `VITE_*` BSC RPC for balanc
 
 Votes are **offchain / advisory**. Register on the chain you hold **before** a proposal you care about is created. Identity v1 = one address, one voter.
 
-The dApp never reads CW20 `Balance` or BEP-20 `balanceOf` in the browser. The badge is `GET /v1/balances` ([OPERATOR_VOTING.md](OPERATOR_VOTING.md) OV-B1–B5, issue [#9](https://gitlab.com/PlasticDigits/voting/-/issues/9)):
+The dApp never reads CW20 `Balance` or BEP-20 `balanceOf` in the browser. The badge is `GET /v1/balances` ([OPERATOR_VOTING.md](OPERATOR_VOTING.md) OV-B1–B6, issues [#9](https://gitlab.com/PlasticDigits/voting/-/issues/9) · [#14](https://gitlab.com/PlasticDigits/voting/-/issues/14)):
 
 - Unregistered: “Register to snapshot this address’s CL8Y” — do **not** show `0 CL8Y` as if the chain were queried.
-- Pending intent: “Registering…” until `voting_registrations` exists. POST `/v1/register` `ok` is not Registered.
+- Pending intent: “Registering…” while `GET /v1/registration` (and balances `pending`) show an in-flight intent. POST `/v1/register` `ok` is not Registered. Poll with backoff (1s→8s, default **120s** window — ledger poll 4s + LCD 20s/URL). Reload while pending **resumes** that wait.
+- If the snapshot does not land: keep the pending error **and** a **Retry snapshot** control that re-polls the existing intent (no second seed prompt). Do not leave Registering… as a dead pill.
 - Registered: format the server `balance` (18-decimal). A true ledger zero is allowed; an API error is not shown as 0 and propose stays fail-closed.
+- Missing `registered` / `pending` on GET balances (pre-OV-B6 image) is unknown — never a live 0.
 - Terra and BSC labels stay distinct. Never sum two addresses.
 
 ## Tests
@@ -50,4 +52,4 @@ cd frontend && npm test && npm run test:e2e
 sh deploy/docker/test-frontend-spa-fallback.sh
 ```
 
-Playwright uses 5 workers and the Legal skip hatch on its `webServer` only. E2E covers canonical `/` and `/vote*` aliases (hard navigation).
+Playwright uses 5 workers and the Legal skip hatch on its `webServer` only. E2E covers canonical `/` and `/vote*` aliases (hard navigation), pending→registered, timeout+Retry, and remount-while-pending. `VITE_REGISTER_POLL_TIMEOUT_MS` is Playwright-only (production default 120s; `prodEnvGuards` refuses it on Coolify builds).

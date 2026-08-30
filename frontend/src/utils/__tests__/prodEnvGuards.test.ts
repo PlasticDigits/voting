@@ -32,6 +32,9 @@ describe('production env guards (O3 / O4)', () => {
       0,
     )
     expect(() => assertProductionVotingEnv({ VITE_BSC_RPC: 'https://x' })).toThrow(/O4/)
+    expect(productionEnvViolations({ VITE_REGISTER_POLL_TIMEOUT_MS: '4000' }).length).toBeGreaterThan(
+      0,
+    )
   })
 
   it('Coolify frontend image fail-closes hatch/RPC and ships explicit CSP', () => {

@@ -17,6 +17,11 @@ export function productionEnvViolations(
   if (env.VITE_DEV_MNEMONIC?.trim()) {
     violations.push('VITE_DEV_MNEMONIC must be unset for production builds (O3).')
   }
+  if (env.VITE_REGISTER_POLL_TIMEOUT_MS?.trim()) {
+    violations.push(
+      'VITE_REGISTER_POLL_TIMEOUT_MS must be unset for production builds (Playwright-only; default 120s).',
+    )
+  }
 
   for (const [key, value] of Object.entries(env)) {
     if (!value?.trim() || !key.startsWith('VITE_')) continue

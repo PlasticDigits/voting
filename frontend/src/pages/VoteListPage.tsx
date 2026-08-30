@@ -6,6 +6,7 @@ import { ROUTES } from '@/routes'
 import { listProposals, type ProposalListItem } from '@/services/operatorVoting'
 import { signVotingRequest } from '@/services/votingSign'
 import { formatCl8y } from '@/utils/format'
+import { formatLastPoll } from '@/utils/ledgerDisplay'
 
 export default function VoteListPage() {
   const { address, chain, label } = useConnectedIdentity()
@@ -66,6 +67,15 @@ export default function VoteListPage() {
                 <span className="pill" data-testid="registration-status">
                   Registered
                 </span>
+              ) : snapshot.canRetry && !busy ? (
+                <button
+                  type="button"
+                  className="btn-primary"
+                  data-testid="register-retry"
+                  onClick={() => void snapshot.retryPending()}
+                >
+                  Retry snapshot
+                </button>
               ) : snapshot.status === 'pending' || busy ? (
                 <span className="pill" data-testid="registration-pending">
                   Registering…
@@ -89,6 +99,11 @@ export default function VoteListPage() {
               <p className="lede" data-testid="register-hint">
                 Register to snapshot this address’s CL8Y. The ledger is 0 until that live snapshot exists — this is
                 not a wallet balance read.
+              </p>
+            )}
+            {snapshot.status === 'pending' && snapshot.lastPollAt != null && (
+              <p className="lede" data-testid="register-last-poll">
+                Last ledger check {formatLastPoll(snapshot.lastPollAt)}.
               </p>
             )}
           </>

@@ -2,7 +2,9 @@
 //!
 //! Issue [#9](https://gitlab.com/PlasticDigits/voting/-/issues/9): a process that is
 //! up (`ok`) is not the same as a cursor that can serve a just-registered wallet.
-//! HTTP 200 stays liveness so Coolify does not bounce the poller on boot.
+//! Issue [#14](https://gitlab.com/PlasticDigits/voting/-/issues/14): `intents_ok` is
+//! the last `voting.registration_intents` query result (L12). HTTP 200 stays
+//! liveness so Coolify does not bounce the poller on boot.
 
 /// True when at least one active registration's live snapshot height is still
 /// ahead of `last_indexed_*`. GET `/v1/balances` clamps independently (OV-B1).

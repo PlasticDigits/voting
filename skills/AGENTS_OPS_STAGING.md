@@ -3,15 +3,17 @@ name: voting-ops-staging
 description: >-
   Coolify/staging deploy, Legal property/CORS/allowlist, live Keplr+MetaMask QA,
   operator-voting POST rate limits, SPA document fallback for /vote (issue #8),
-  registered-holder balance reads (issue #9 OV-B1), and optional LocalTerra LCD equality.
-  Use when verifying or implementing GitLab voting issues #7, #8, or #9 or public expose.
+  registered-holder balance reads (issue #9 OV-B1), registration pending never
+  becoming a snapshot (issue #14), and optional LocalTerra LCD equality.
+  Use when verifying or implementing GitLab voting issues #7, #8, #9, or #14
+  or public expose.
 ---
 
 # Ops / staging (voting issue #7)
 
 Read [`docs/OPS.md`](../docs/OPS.md) first. In-tree #1–#6 are not enough for production. [#8](https://gitlab.com/PlasticDigits/voting/-/issues/8) is a production-blocking Legal-return 404 when the edge does not SPA-fallback `/vote`.
 
-This skill is for **3rd-party agents** continuing Coolify, Legal admin, or live wallet QA. Do not invent a fourth deploy path. If a registered holder shows **0 CL8Y** after Register, read [OPERATOR_VOTING.md](../docs/OPERATOR_VOTING.md) OV-B1 and issue [#9](https://gitlab.com/PlasticDigits/voting/-/issues/9) before touching LCD in the browser.
+This skill is for **3rd-party agents** continuing Coolify, Legal admin, or live wallet QA. Do not invent a fourth deploy path. If a registered holder shows **0 CL8Y** after Register, read [OPERATOR_VOTING.md](../docs/OPERATOR_VOTING.md) OV-B1 and issue [#9](https://gitlab.com/PlasticDigits/voting/-/issues/9) before touching LCD in the browser. If Register stays **Registering…** with no amount, that is [#14](https://gitlab.com/PlasticDigits/voting/-/issues/14) (pending never becomes a snapshot) — do not close #9 instead.
 
 ## What is already in-tree
 
@@ -30,6 +32,7 @@ This skill is for **3rd-party agents** continuing Coolify, Legal admin, or live 
 | Flattened dApp routes + `/vote*` aliases | [`frontend/src/routes.ts`](../frontend/src/routes.ts) · [`docs/FRONTEND.md`](../docs/FRONTEND.md) |
 | Runbook + invariants O1–O8 | [`docs/OPS.md`](../docs/OPS.md) |
 | Default GET balance clamp (OV-B1, #9) | [`operator-voting/src/balance_query.rs`](../operator-voting/src/balance_query.rs) · ledger `/health.caught_up` |
+| Pending → snapshot (#14) | Intent loop uncoupled from ingest · `/health.intents_ok` · dApp Retry + remount poll · OV-B6 keys |
 
 ## Do
 
@@ -39,6 +42,7 @@ This skill is for **3rd-party agents** continuing Coolify, Legal admin, or live 
 3. Live-QA Keplr Terra **and** MetaMask BSC 56 after Legal accept. Wallet skill: [`AGENTS_WALLET_CONNECTORS.md`](AGENTS_WALLET_CONNECTORS.md).
 4. Keep POST rate limits on before public DNS.
 5. Prove SPA fallback (O8 / #8): Coolify dApp service uses `frontend.Dockerfile` / `frontend.nginx.conf`, or stamp `try_files $uri /index.html` on the live nginx. `curl -sI https://vote.cl8y.com/vote` and `/new` must be 200 HTML before Legal Accept QA.
+6. For [#14](https://gitlab.com/PlasticDigits/voting/-/issues/14): `GET` writer `/health` must be 200 (not proxy 503). `terra_height` should advance; `intents_ok` must stay true. Redeploy `operator-voting` so GET `/v1/balances` includes `registered` / `pending` / `as_of_height`. Inspect writer logs for `registration live-balance failed; will retry` and `pending_intents query failed`. Confirm `TERRA_LCD_URL` and pinned hpax3.
 
 ## Do not
 
@@ -53,6 +57,7 @@ This skill is for **3rd-party agents** continuing Coolify, Legal admin, or live 
 - Close #8 while `curl -sI https://vote.cl8y.com/vote` is 404. Flattening `/` is not a substitute for edge `try_files` on `/new` and `/vote/:id`.
 - Use `error_page 404 = /index.html` to hide missing SPA fallback (caches 404).
 - Close #9 until a registered Terra (and BSC) holder with ≥1000 pinned CL8Y sees a non-zero `GET /v1/balances` that matches LCD/`balanceOf` and the UI badge. “Registered” plus balance `"0"` is not done.
+- Close #14 while Registering… is a trap, writer `/health` is 503, `intents_ok` is false, or live GET `/v1/balances` omits `registered`/`pending`/`as_of_height`. Retry must re-poll; do not require a new seed.
 - Query CW20 `Balance` or `eth_call` from the voting frontend (`VITE_*` LCD/RPC).
 
 ## Verification (in-tree)
