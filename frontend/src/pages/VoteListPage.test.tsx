@@ -15,7 +15,11 @@ const snapshot = {
   asOfHeight: null as number | null,
   error: null as string | null,
   loading: false,
+  polling: false,
+  lastPollAt: null as number | null,
+  canRetry: false,
   refresh: async () => undefined,
+  retryPending: async () => undefined,
   completeRegister: async () => undefined,
 }
 
@@ -35,6 +39,9 @@ describe('list page snapshot copy', () => {
   it('does not render 0 CL8Y for an unregistered connection', async () => {
     snapshot.status = 'unregistered'
     snapshot.balance = null
+    snapshot.canRetry = false
+    snapshot.polling = false
+    snapshot.error = null
     render(
       <MemoryRouter>
         <VoteListPage />
@@ -50,6 +57,9 @@ describe('list page snapshot copy', () => {
   it('shows pending instead of Registered+0', async () => {
     snapshot.status = 'pending'
     snapshot.balance = null
+    snapshot.canRetry = false
+    snapshot.polling = true
+    snapshot.error = null
     render(
       <MemoryRouter>
         <VoteListPage />
@@ -57,12 +67,37 @@ describe('list page snapshot copy', () => {
     )
     expect(await screen.findByTestId('registration-pending')).toHaveTextContent('Registering')
     expect(screen.queryByTestId('registration-status')).toBeNull()
+    expect(screen.queryByTestId('register-retry')).toBeNull()
+    expect(screen.getByTestId('connected-chain')).not.toHaveTextContent('CL8Y')
+  })
+
+  it('shows Retry after a pending timeout instead of trapping Registering…', async () => {
+    snapshot.status = 'pending'
+    snapshot.balance = null
+    snapshot.canRetry = true
+    snapshot.polling = false
+    snapshot.error = 'Registration snapshot is still pending. Wait for the ledger, then retry.'
+    snapshot.lastPollAt = Date.now() - 5_000
+    render(
+      <MemoryRouter>
+        <VoteListPage />
+      </MemoryRouter>
+    )
+    expect(await screen.findByTestId('register-retry')).toBeEnabled()
+    expect(screen.queryByTestId('registration-pending')).toBeNull()
+    expect(screen.queryByTestId('register-cta')).toBeNull()
+    expect(screen.getByRole('alert')).toHaveTextContent('still pending')
+    expect(screen.getByTestId('register-last-poll')).toHaveTextContent('ago')
     expect(screen.getByTestId('connected-chain')).not.toHaveTextContent('CL8Y')
   })
 
   it('shows the server snapshot after registration', async () => {
     snapshot.status = 'registered'
     snapshot.balance = '3540000000000000000000'
+    snapshot.canRetry = false
+    snapshot.polling = false
+    snapshot.error = null
+    snapshot.lastPollAt = null
     render(
       <MemoryRouter>
         <VoteListPage />

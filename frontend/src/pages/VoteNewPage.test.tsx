@@ -16,7 +16,11 @@ const snapshot = {
   asOfHeight: 1,
   error: null as string | null,
   loading: false,
+  polling: false,
+  lastPollAt: null as number | null,
+  canRetry: false,
   refresh: async () => undefined,
+  retryPending: async () => undefined,
   completeRegister: async () => undefined,
 }
 
@@ -44,6 +48,7 @@ describe('propose gate', () => {
     snapshot.status = 'registered'
     snapshot.balance = (MIN_PROPOSAL_RAW - 1n).toString()
     snapshot.error = null
+    snapshot.canRetry = false
     render(
       <MemoryRouter>
         <VoteNewPage />
@@ -94,6 +99,21 @@ describe('propose gate', () => {
       </MemoryRouter>
     )
     expect(screen.getByRole('alert')).toHaveTextContent('operator down')
+    expect(await screen.findByTestId('submit-proposal')).toBeDisabled()
+    expect(screen.queryByTestId('propose-balance')).toBeNull()
+  })
+
+  it('keeps propose disabled while the ledger snapshot is pending', async () => {
+    snapshot.status = 'pending'
+    snapshot.balance = null
+    snapshot.error = null
+    snapshot.canRetry = false
+    render(
+      <MemoryRouter>
+        <VoteNewPage />
+      </MemoryRouter>
+    )
+    expect(screen.getByTestId('propose-pending')).toBeInTheDocument()
     expect(await screen.findByTestId('submit-proposal')).toBeDisabled()
     expect(screen.queryByTestId('propose-balance')).toBeNull()
   })

@@ -1,6 +1,6 @@
 # operator-voting
 
-Cross-links: [LEDGER_INVARIANTS.md](LEDGER_INVARIANTS.md) · [FRONTEND.md](FRONTEND.md) · [OPS.md](OPS.md) · issues [#2](https://gitlab.com/PlasticDigits/voting/-/issues/2) · [#4](https://gitlab.com/PlasticDigits/voting/-/issues/4) · [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7) · [#9](https://gitlab.com/PlasticDigits/voting/-/issues/9) · skill [AGENTS_OPS_STAGING.md](../skills/AGENTS_OPS_STAGING.md)
+Cross-links: [LEDGER_INVARIANTS.md](LEDGER_INVARIANTS.md) · [FRONTEND.md](FRONTEND.md) · [OPS.md](OPS.md) · issues [#2](https://gitlab.com/PlasticDigits/voting/-/issues/2) · [#4](https://gitlab.com/PlasticDigits/voting/-/issues/4) · [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7) · [#9](https://gitlab.com/PlasticDigits/voting/-/issues/9) · [#14](https://gitlab.com/PlasticDigits/voting/-/issues/14) · skill [AGENTS_OPS_STAGING.md](../skills/AGENTS_OPS_STAGING.md)
 
 Standalone Axum service. **Not** merged into the DEX indexer API. Uses a **restricted** `DATABASE_URL` in production.
 
@@ -69,6 +69,7 @@ Rules:
 | **OV-B3** | Unregistered / pending wallets still return HTTP 200 with `registered: false` and `balance: "0"`. The UI must not present that 0 as a live chain holding. |
 | **OV-B4** | `?chain=` that contradicts the address prefix (`terra1…` vs `0x…`) is `400`. No cross-chain sum. |
 | **OV-B5** | Propose/vote ignore client-supplied balances. Weight is `public.voting_*_balance_at` / frozen `proposal_snapshots` only. |
+| **OV-B6** | Every GET `/v1/balances` JSON includes `registered`, `pending`, `as_of_height`, and `initial_balance` (null if unregistered). Clients treat **missing** keys as unknown — never as a live 0 ([#14](https://gitlab.com/PlasticDigits/voting/-/issues/14)). Redeploy `operator-voting` from `main` if live JSON omits them. |
 
 `GET /v1/registration/:addr` returns `pending: { terra, bsc }` while an intent is in flight. It 404s only when there is neither a ledger row nor a pending intent.
 

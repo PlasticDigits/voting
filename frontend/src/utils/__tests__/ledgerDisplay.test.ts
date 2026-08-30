@@ -48,4 +48,15 @@ describe('ledger display', () => {
       })
     ).toBe('1000000000000000000000')
   })
+
+  it('treats a missing registered flag as unknown, not a live 0 (OV-B6)', () => {
+    expect(
+      snapshotBalanceRaw({
+        chain: 'terra',
+        address: 'terra1x',
+        height: 30162104,
+        balance: '0',
+      })
+    ).toBeNull()
+  })
 })

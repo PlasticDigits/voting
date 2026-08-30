@@ -6,11 +6,12 @@ export const E2E_PROPOSAL_ID = '11111111-1111-1111-1111-111111111111'
 
 export type MockOperatorOpts = {
   registerPendingTicks?: number
+  alreadyPending?: boolean
 }
 
 export async function mockOperatorVoting(page: Page, opts: MockOperatorOpts = {}) {
   let ledgerReady = false
-  let registerPosted = false
+  let registerPosted = Boolean(opts.alreadyPending)
   let pendingTicks = opts.registerPendingTicks ?? 0
   const proposals: Array<{
     id: string
@@ -80,12 +81,14 @@ export async function mockOperatorVoting(page: Page, opts: MockOperatorOpts = {}
     }
     if (!ledgerReady && pendingTicks > 0) {
       pendingTicks -= 1
-      if (pendingTicks <= 0) ledgerReady = true
-      await route.fulfill({
-        status: 200,
-        json: { terra: null, bsc: null, pending: { terra: true, bsc: false } },
-      })
-      return
+      if (pendingTicks > 0) {
+        await route.fulfill({
+          status: 200,
+          json: { terra: null, bsc: null, pending: { terra: true, bsc: false } },
+        })
+        return
+      }
+      ledgerReady = true
     }
     if (!ledgerReady) {
       await route.fulfill({ status: 404, json: { error: 'not registered' } })

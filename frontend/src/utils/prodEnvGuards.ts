@@ -17,6 +17,11 @@ export function productionEnvViolations(
   if (env.VITE_DEV_MNEMONIC?.trim()) {
     violations.push('VITE_DEV_MNEMONIC must be unset for production builds (O3).')
   }
+  if (env.VITE_REGISTER_POLL_TIMEOUT_MS?.trim()) {
+    violations.push(
+      'VITE_REGISTER_POLL_TIMEOUT_MS must be unset for production builds (Playwright-only; default 120s).',
+    )
+  }
   if (!env.VITE_WC_PROJECT_ID?.trim()) {
     violations.push(
       'VITE_WC_PROJECT_ID is required for production builds (issue #12 / DEX #378 / M-10).',
