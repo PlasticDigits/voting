@@ -1,6 +1,6 @@
 # operator-voting
 
-Cross-links: [LEDGER_INVARIANTS.md](LEDGER_INVARIANTS.md) · [FRONTEND.md](FRONTEND.md) · [OPS.md](OPS.md) · issues [#2](https://gitlab.com/PlasticDigits/voting/-/issues/2) · [#4](https://gitlab.com/PlasticDigits/voting/-/issues/4) · [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7) · [#9](https://gitlab.com/PlasticDigits/voting/-/issues/9) · [#10](https://gitlab.com/PlasticDigits/voting/-/issues/10) · [#14](https://gitlab.com/PlasticDigits/voting/-/issues/14) · skill [AGENTS_OPS_STAGING.md](../skills/AGENTS_OPS_STAGING.md) · [AGENTS_VOTING_BUNDLE.md](../skills/AGENTS_VOTING_BUNDLE.md)
+Cross-links: [LEDGER_INVARIANTS.md](LEDGER_INVARIANTS.md) · [FRONTEND.md](FRONTEND.md) · [OPS.md](OPS.md) · issues [#2](https://gitlab.com/PlasticDigits/voting/-/issues/2) · [#4](https://gitlab.com/PlasticDigits/voting/-/issues/4) · [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7) · [#9](https://gitlab.com/PlasticDigits/voting/-/issues/9) · [#10](https://gitlab.com/PlasticDigits/voting/-/issues/10) · [#11](https://gitlab.com/PlasticDigits/voting/-/issues/11) · [#12](https://gitlab.com/PlasticDigits/voting/-/issues/12) · [#13](https://gitlab.com/PlasticDigits/voting/-/issues/13) · [#14](https://gitlab.com/PlasticDigits/voting/-/issues/14) · skills [AGENTS_OPS_STAGING.md](../skills/AGENTS_OPS_STAGING.md) · [AGENTS_DRAFT_REVIEW.md](../skills/AGENTS_DRAFT_REVIEW.md) · [AGENTS_PROPOSAL_TEMPLATE.md](../skills/AGENTS_PROPOSAL_TEMPLATE.md)
 
 Standalone Axum service. **Not** merged into the DEX indexer API. Uses a **restricted** `DATABASE_URL` in production.
 
@@ -12,10 +12,14 @@ Standalone Axum service. **Not** merged into the DEX indexer API. Uses a **restr
 | `GET` | `/openapi.json` | Stub OpenAPI |
 | `POST` | `/v1/register` | ADR-36 or EIP-191; enqueue ledger intent |
 | `GET` | `/v1/registration/:addr` | Terra and/or BSC status |
-| `POST` | `/v1/proposals` | ≥1000 CL8Y on **that** address’s chain; dual snapshot; **`body_sections` required** ([#10](https://gitlab.com/PlasticDigits/voting/-/issues/10), OV-S) |
-| `GET` | `/v1/proposals` | List + tallies + `summary` TL;DR when sections exist |
-| `GET` | `/v1/proposals/:id` | Detail; `advisory: true`; `body_sections` or legacy `body_html` |
-| `POST` | `/v1/proposals/:id/votes` | One vote per `(proposal, chain, wallet)` |
+| `POST` | `/v1/proposals` | Create a **draft** (`purpose=draft`). ≥1000 CL8Y on that address’s chain; `body_sections` required; no freeze. |
+| `GET` | `/v1/proposals` | List + tallies + `summary`; optional `?status=draft\|open` |
+| `GET` | `/v1/proposals/:id` | Detail; sections, comments, analysis; `advisory: true` |
+| `PUT` | `/v1/proposals/:id/sections` | Proposer-only draft amend; stale `prev_body_hash` → `409` |
+| `POST` | `/v1/proposals/:id/comments` | Signed comment by a registered wallet |
+| `POST` | `/v1/proposals/:id/analysis` | Committee independent analysis while draft |
+| `POST` | `/v1/proposals/:id/open` | Committee `open_vote`; freezes from indexer tips |
+| `POST` | `/v1/proposals/:id/votes` | One vote per `(proposal, chain, wallet)`; `status=open` only |
 | `GET` | `/v1/proposals/:id/votes/:addr` | Own vote |
 | `GET` | `/v1/balances/:addr` | Thin restricted-view read. Default height is **OV-B1** (below). |
 
@@ -37,16 +41,54 @@ Canonical JSON (`app` = `cl8y-voting`):
 
 - Terra: Keplr `signArbitrary` (ADR-36 amino wrap). Simulated Wallet may sign raw secp256k1; the verifier accepts ADR-36 first, then raw fallback.
 - EVM: EIP-191 `personal_sign`. Recovered `0x` must match (case-insensitive).
-- Purpose / chain / proposal id / app name are domain-separated. A register blob cannot vote. ADR-36 posted as EVM (and the reverse) is rejected.
+- Purpose / chain / proposal id / app name are domain-separated. A register blob cannot vote. A `propose` blob cannot create a draft or open a poll. `draft` / `amend` / `comment` / `analyze` / `open_vote` / `vote` are distinct. ADR-36 posted as EVM (and the reverse) is rejected.
 - TTL default 10 minutes (`issued_at` / `expires_at`).
 
-## Snapshot
+## Snapshot (OV-D, issue #11)
 
-Proposal create records `{ terra_height, bsc_block }` from `indexer_state` (wall-clock aligned tips). Vote weight is the **frozen snapshot row**, not live tip. Selling after create does not change weight.
+Freeze happens at **vote-open**, not draft create.
 
-Threshold: `MIN_PROPOSAL_CL8Y` (default 1000 human units) → `1000 * 10^18` raw, evaluated on the registering address’s chain only.
+| ID | Rule |
+|----|------|
+| **OV-D1** | `POST /v1/proposals` inserts `status=draft` with `terra_height` / `bsc_block` **null**. `proposal_snapshots` is empty until open. |
+| **OV-D2** | `POST /v1/proposals/:id/open` writes freeze heights from current `indexer_state` tips (`last_indexed_height`, `last_indexed_bsc_block`). JSON `terra_height` / `bsc_block` on the request are ignored. |
+| **OV-D3** | Vote weight is the frozen `proposal_snapshots` row at those open heights. Selling after open does not change weight. |
+| **OV-D4** | A wallet that registers **during draft** and holds CL8Y is in the electorate if `voting_registrations` exists before freeze. Register **after** open is not in that snapshot. |
+| **OV-D5** | `POST .../votes` on `status≠open` is `403`. Replay against a draft fails. Open twice is `409`. |
+| **OV-D6** | Draft ≥1000 CL8Y uses the live OV-B1 height. That check is not a freeze. |
 
-The proposer’s freeze height on **that** chain is `max(indexer tip, registered_at_height)`. A Terra registered-at height is never applied to the BSC freeze clock (and the reverse).
+Threshold: `MIN_PROPOSAL_CL8Y` (default 1000 human units) → `1000 * 10^18` raw, evaluated on the registering address’s chain only, **to start a draft**. Opening a poll is committee-only and is **not** a 1000 CL8Y check.
+
+Do not freeze twice. Do not take freeze heights from the client.
+
+## Template (issue #10)
+
+New drafts persist `body_sections` JSONB. Required keys: `problem`, `solution`, `pros_cons`, `summary`, `success_criteria` (≥40 visible characters after strip-tags + whitespace collapse). `context` is optional. `summary` ≤ 500 visible characters. Combined sanitized HTML ≤ 64 KiB.
+
+`body_hash` is SHA-256 of compact UTF-8 JSON with **sorted keys** (`context`, `problem`, `pros_cons`, `solution`, `success_criteria`, `summary`) and ammonia-sanitized values. Code: [`../operator-voting/src/proposal_sections.rs`](../operator-voting/src/proposal_sections.rs) · TS [`../frontend/src/utils/proposalSections.ts`](../frontend/src/utils/proposalSections.ts).
+
+Legacy rows without sections still render `body_html`.
+
+## Draft collaboration (issue #11)
+
+Status machine: `draft` → `open` (committee `open_vote`). v1 has no `withdrawn` / `rejected`.
+
+| Action | Who | Notes |
+|--------|------|-------|
+| Draft | registered, ≥1000 CL8Y | `purpose=draft` |
+| Amend sections | proposer only, while draft | `purpose=amend`; `prev_body_hash` must match; last signed with matching prev wins; stale prev → `409` |
+| Comment | any registered wallet (not 1000) | Draft **and** open. Cap **20 comments per address per proposal** (`MAX_COMMENTS_PER_WALLET_PER_PROPOSAL`). Empty after sanitize → `400`. Max 8 KiB. |
+| Analysis | committee allowlist, **not** the proposer | `purpose=analyze`. Independent record; cannot be a proposer section. Immutable after open. |
+| Open | `VOTING_COMMITTEE_ADDRESSES` | `purpose=open_vote`; must sign current section hash. Analysis is optional (UI shows “no independent analysis attached”). |
+| Vote | registered at freeze with weight | `status=open` only |
+
+Identity v1: comments, amends, and committee actions are per address. Do not merge `terra1…` and `0x…`.
+
+AI review is **not** implemented. Operators skip it. Committee signature is the only open-vote authority. `source=ai` is reserved in the table CHECK for a later env-gated job.
+
+## Committee
+
+`VOTING_COMMITTEE_ADDRESSES` — comma-separated Terra bech32 and/or `0x`, same parser as the blacklist. Invalid entries fail startup. Empty allowlist → nobody can open or attach analysis (fail closed). Opening does not require 1000 CL8Y on the committee wallet.
 
 ## Balance read (OV-B1, issue #9)
 
@@ -77,7 +119,7 @@ Code: [`../operator-voting/src/balance_query.rs`](../operator-voting/src/balance
 
 ## Blacklist
 
-`VOTING_BLACKLIST_ADDRESSES` — comma-separated Terra bech32 and/or `0x`. Invalid entries fail startup. Compare after lowercase / EIP-55 normalize. Blacklisted addresses cannot register-propose-vote (propose and vote denied; register also denied).
+`VOTING_BLACKLIST_ADDRESSES` — comma-separated Terra bech32 and/or `0x`. Invalid entries fail startup. Compare after lowercase / EIP-55 normalize. Blacklisted addresses cannot register, draft, comment, amend, open, or vote.
 
 ## HTML
 
@@ -85,7 +127,7 @@ Proposal **sections** are stored after [ammonia](https://docs.rs/ammonia) allowl
 
 ## Structured sections (OV-S, issue #10)
 
-New proposals are a fixed section object, not a single WYSIWYG blob. Votes stay offchain / advisory. Draft/review/committee is **not** this issue ([#13](https://gitlab.com/PlasticDigits/voting/-/issues/13)).
+New proposals are a fixed section object, not a single WYSIWYG blob. Draft/review/committee is issue [#11](https://gitlab.com/PlasticDigits/voting/-/issues/11); [#13](https://gitlab.com/PlasticDigits/voting/-/issues/13) is governance research.
 
 | Key | UI label | Required? |
 |-----|----------|-----------|
@@ -117,9 +159,7 @@ Serializer (TypeScript and Rust must match):
 
 SHA-256 hex: `85b0e3985805be8d192178665cf0b745ddcb14cb5ccfc37d2b49c137fe0f5ed1`
 
-Code: [`../operator-voting/src/proposal_sections.rs`](../operator-voting/src/proposal_sections.rs) · [`../frontend/src/utils/proposalSections.ts`](../frontend/src/utils/proposalSections.ts). Migration: [`../ledger/migrations/20260830000001_proposal_sections.sql`](../ledger/migrations/20260830000001_proposal_sections.sql). No new tables — `deploy/grants.sql` unchanged. Skill: [`../skills/AGENTS_PROPOSAL_TEMPLATE.md`](../skills/AGENTS_PROPOSAL_TEMPLATE.md).
-
-## POST rate limits (O-RL)
+Code: [`../operator-voting/src/proposal_sections.rs`](../operator-voting/src/proposal_sections.rs) · [`../frontend/src/utils/proposalSections.ts`](../frontend/src/utils/proposalSections.ts). Migrations: [`../ledger/migrations/20260830000001_proposal_sections.sql`](../ledger/migrations/20260830000001_proposal_sections.sql) then [`../ledger/migrations/20260830000002_draft_lifecycle.sql`](../ledger/migrations/20260830000002_draft_lifecycle.sql). The later migration adds comments/analysis tables; [`../deploy/grants.sql`](../deploy/grants.sql) grants their least-privilege access.
 
 ## POST rate limits (O-RL)
 

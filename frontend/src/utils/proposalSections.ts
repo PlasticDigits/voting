@@ -42,6 +42,21 @@ export type SectionKey = (typeof SECTION_KEYS_SORTED)[number]
 export type RequiredSectionKey = (typeof REQUIRED_SECTION_KEYS)[number]
 
 export type ProposalSections = Record<SectionKey, string>
+export const CANONICAL_SECTION_KEYS = SECTION_KEYS_SORTED
+export const MIN_SECTION_VISIBLE = MIN_SECTION_VISIBLE_CHARS
+export const MAX_SUMMARY_VISIBLE = MAX_SUMMARY_VISIBLE_CHARS
+
+export const CANONICAL_ANALYSIS_KEYS = ['benefits', 'long_term', 'risks', 'short_term', 'what'] as const
+export type AnalysisKey = (typeof CANONICAL_ANALYSIS_KEYS)[number]
+export type AnalysisSections = Record<AnalysisKey, string>
+
+export const ANALYSIS_LABELS: Record<AnalysisKey, string> = {
+  what: 'What is proposed',
+  benefits: 'Benefits',
+  risks: 'Risks',
+  short_term: 'Short-term impact',
+  long_term: 'Long-term impact',
+}
 
 export const SECTION_LABELS: Record<SectionKey, string> = {
   summary: 'Summary (TL;DR)',
@@ -119,6 +134,8 @@ export function plainToSectionHtml(text: string): string {
   return `<p>${escapeHtml(collapsed)}</p>`
 }
 
+export const textToSectionHtml = plainToSectionHtml
+
 export function emptySections(): ProposalSections {
   return { ...EMPTY_SECTIONS }
 }
@@ -136,12 +153,44 @@ export function sanitizeSectionObject(input: Partial<ProposalSections> | Record<
   return out
 }
 
+export const sanitizeSections = sanitizeSectionObject
+
 export function canonicalizeSections(sections: ProposalSections): string {
   const ordered: Record<string, string> = {}
   for (const key of SECTION_KEYS_SORTED) {
     ordered[key] = sections[key]
   }
   return JSON.stringify(ordered)
+}
+
+export const canonicalizeProposalSections = canonicalizeSections
+
+export function emptyAnalysis(): AnalysisSections {
+  return { benefits: '', long_term: '', risks: '', short_term: '', what: '' }
+}
+
+export function sanitizeAnalysis(raw: AnalysisSections): AnalysisSections {
+  const out = emptyAnalysis()
+  for (const key of CANONICAL_ANALYSIS_KEYS) {
+    out[key] = sanitizeSectionHtml(raw[key] ?? '')
+  }
+  return out
+}
+
+export function canonicalizeAnalysisSections(sections: AnalysisSections): string {
+  const ordered: Record<string, string> = {}
+  for (const key of CANONICAL_ANALYSIS_KEYS) {
+    ordered[key] = sections[key] ?? ''
+  }
+  return JSON.stringify(ordered)
+}
+
+export function sectionErrors(sections: ProposalSections): Partial<Record<SectionKey, string>> {
+  return validateSections(sections).errors
+}
+
+export function sectionsAreValid(sections: ProposalSections): boolean {
+  return validateSections(sections).ok
 }
 
 export async function hashSections(sections: ProposalSections): Promise<string> {

@@ -18,7 +18,7 @@ Read [`docs/OPERATOR_VOTING.md`](../docs/OPERATOR_VOTING.md) OV-S1–S8 before c
 - Merge Terra and BSC identities
 - Change the ammonia allowlist without updating the TS strip
 - Treat list `summary` as trusted HTML (`innerHTML`)
-- Implement draft/comments/committee here — that is [#13](https://gitlab.com/PlasticDigits/voting/-/issues/13)
+- Implement draft/comments/committee here — that is [#11](https://gitlab.com/PlasticDigits/voting/-/issues/11). [#13](https://gitlab.com/PlasticDigits/voting/-/issues/13) is governance research.
 
 ## Hash
 

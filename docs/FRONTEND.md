@@ -1,6 +1,6 @@
 # Voting dApp
 
-Cross-links: [OPERATOR_VOTING.md](OPERATOR_VOTING.md) · [OPS.md](OPS.md) · skills [AGENTS_LEGAL_CLICKWRAP.md](../skills/AGENTS_LEGAL_CLICKWRAP.md) · [AGENTS_WALLET_CONNECTORS.md](../skills/AGENTS_WALLET_CONNECTORS.md) · [AGENTS_OPS_STAGING.md](../skills/AGENTS_OPS_STAGING.md) · [AGENTS_VOTING_BUNDLE.md](../skills/AGENTS_VOTING_BUNDLE.md) · issues [#3](https://gitlab.com/PlasticDigits/voting/-/issues/3) · [#5](https://gitlab.com/PlasticDigits/voting/-/issues/5) · [#6](https://gitlab.com/PlasticDigits/voting/-/issues/6) · [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7) · [#8](https://gitlab.com/PlasticDigits/voting/-/issues/8) · [#9](https://gitlab.com/PlasticDigits/voting/-/issues/9) · [#10](https://gitlab.com/PlasticDigits/voting/-/issues/10) · [#12](https://gitlab.com/PlasticDigits/voting/-/issues/12) · [#14](https://gitlab.com/PlasticDigits/voting/-/issues/14)
+Cross-links: [OPERATOR_VOTING.md](OPERATOR_VOTING.md) · [OPS.md](OPS.md) · skills [AGENTS_LEGAL_CLICKWRAP.md](../skills/AGENTS_LEGAL_CLICKWRAP.md) · [AGENTS_WALLET_CONNECTORS.md](../skills/AGENTS_WALLET_CONNECTORS.md) · [AGENTS_OPS_STAGING.md](../skills/AGENTS_OPS_STAGING.md) · [AGENTS_DRAFT_REVIEW.md](../skills/AGENTS_DRAFT_REVIEW.md) · issues [#3](https://gitlab.com/PlasticDigits/voting/-/issues/3) · [#5](https://gitlab.com/PlasticDigits/voting/-/issues/5) · [#6](https://gitlab.com/PlasticDigits/voting/-/issues/6) · [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7) · [#8](https://gitlab.com/PlasticDigits/voting/-/issues/8) · [#9](https://gitlab.com/PlasticDigits/voting/-/issues/9) · [#10](https://gitlab.com/PlasticDigits/voting/-/issues/10) · [#11](https://gitlab.com/PlasticDigits/voting/-/issues/11)
 
 Package: `frontend/`. Canonical routes on the dedicated host: `/`, `/new`, `/:id`. DEX-era `/vote`, `/vote/new`, `/vote/:id` stay as aliases.
 
@@ -57,7 +57,7 @@ Do not add Reown AppKit / `@walletconnect/modal` as a new Terra pairing UI. Cosm
 
 ## Copy
 
-Votes are **offchain / advisory**. Register on the chain you hold **before** a proposal you care about is created. Identity v1 = one address, one voter.
+Votes are **offchain / advisory**. Register on the chain you hold **before votes open** (drafts do not freeze weight). Identity v1 = one address, one voter. Compose uses the structured template (issue [#10](https://gitlab.com/PlasticDigits/voting/-/issues/10)). Vote CTAs render only when `status=open` (issue [#11](https://gitlab.com/PlasticDigits/voting/-/issues/11)). Connected draft / comment / amend / open / vote stay behind clickwrap.
 
 The dApp never reads CW20 `Balance` or BEP-20 `balanceOf` in the browser. The badge is `GET /v1/balances` ([OPERATOR_VOTING.md](OPERATOR_VOTING.md) OV-B1–B6, issues [#9](https://gitlab.com/PlasticDigits/voting/-/issues/9) · [#14](https://gitlab.com/PlasticDigits/voting/-/issues/14)):
 

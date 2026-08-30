@@ -27,7 +27,7 @@ dApp UI can stub the API with MSW in parallel, but production “done” require
 - 18-decimal raw amounts
 - Propose threshold ≥1000 CL8Y on **that** address’s chain
 - Blacklist: Terra bech32 **and** normalized `0x` (case-insensitive)
-- Snapshot weight, not tip, after create
+- Snapshot weight, not tip, after **votes open** (not draft create)
 - Flash-in before snapshot is counted by design (document; not a bug)
 - Default GET `/v1/balances` for a registered wallet uses `max(tip, registered_at_height)` (OV-B1, [#9](https://gitlab.com/PlasticDigits/voting/-/issues/9)). Do **not** “fix” a 0 badge with browser LCD/`eth_call`. Unregistered 0 is not a live holding.
 - Registration pending is not Registered (POST `/v1/register` `ok` is an intent). Do not swallow `pending_intents` SQL errors as an empty queue (L12). Do not leave Registering… without Retry ([#14](https://gitlab.com/PlasticDigits/voting/-/issues/14)). Do not close #9 instead of #14.

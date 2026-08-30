@@ -1,7 +1,7 @@
 //! POST IP/QPS limiter (`governor`). GET and OPTIONS are unrestricted.
 //!
 //! Invariants (cross-link: [`docs/OPERATOR_VOTING.md`](../../docs/OPERATOR_VOTING.md)):
-//! - **O-RL1** — every POST (`/v1/register`, `/v1/proposals`, votes, …) shares one per-IP quota.
+//! - **O-RL1** — every POST (`/v1/register`, `/v1/proposals`, comments, open, votes, …) shares one per-IP quota.
 //! - **O-RL2** — GET `/health` and other reads are not QPS-limited.
 //! - **O-RL3** — the 64 KiB body cap (`MAX_BODY_BYTES`) is independent of this layer.
 //! - **O-RL4** — `X-Forwarded-For` / `X-Real-IP` are trusted only when configured (Coolify).

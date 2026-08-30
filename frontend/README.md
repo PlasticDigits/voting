@@ -2,7 +2,7 @@
 
 Standalone Vite + React voting UI for offchain, advisory CL8Y snapshot votes.
 
-Votes are **not** on-chain execution. Register the wallet that holds CL8Y **on that chain** before a proposal is created. Identity v1 is **one address, one voter** — a `terra1…` and a `0x…` are never merged.
+Votes are **not** on-chain execution. Register the wallet that holds CL8Y **on that chain** before votes open. Identity v1 is **one address, one voter** — a `terra1…` and a `0x…` are never merged.
 
 ## Env
 

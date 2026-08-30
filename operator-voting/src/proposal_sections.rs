@@ -2,10 +2,11 @@
 //!
 //! Invariants: [`docs/OPERATOR_VOTING.md`](../../docs/OPERATOR_VOTING.md) (OV-S1–S8).
 //!
-//! `body_hash` for `purpose=propose` is SHA-256 (hex) of the **canonical JSON**
+//! `body_hash` for `purpose=draft` is SHA-256 (hex) of the **canonical JSON**
 //! of ammonia-sanitized section HTML. Key order is sorted ASCII. Values are
 //! JSON strings with no insignificant whitespace in the object encoding.
 
+use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use crate::config::MAX_BODY_BYTES;
@@ -62,6 +63,65 @@ pub struct PreparedSections {
     pub canonical_json: String,
     pub body_hash: String,
     pub body_html: String,
+}
+
+/// Typed compatibility view used by lifecycle tests and analysis code.
+/// Validation and hashing still flow through `prepare_sections`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProposalSections {
+    #[serde(default)]
+    pub problem: String,
+    #[serde(default)]
+    pub context: String,
+    #[serde(default)]
+    pub solution: String,
+    #[serde(default)]
+    pub pros_cons: String,
+    #[serde(default)]
+    pub summary: String,
+    #[serde(default)]
+    pub success_criteria: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AnalysisSections {
+    #[serde(default)]
+    pub what: String,
+    #[serde(default)]
+    pub benefits: String,
+    #[serde(default)]
+    pub risks: String,
+    #[serde(default)]
+    pub short_term: String,
+    #[serde(default)]
+    pub long_term: String,
+}
+
+pub const ANALYSIS_KEYS_SORTED: [&str; 5] =
+    ["benefits", "long_term", "risks", "short_term", "what"];
+
+impl AnalysisSections {
+    fn get(&self, key: &str) -> &str {
+        match key {
+            "what" => &self.what,
+            "benefits" => &self.benefits,
+            "risks" => &self.risks,
+            "short_term" => &self.short_term,
+            "long_term" => &self.long_term,
+            _ => "",
+        }
+    }
+
+    fn set(&mut self, key: &str, value: String) {
+        match key {
+            "what" => self.what = value,
+            "benefits" => self.benefits = value,
+            "risks" => self.risks = value,
+            "short_term" => self.short_term = value,
+            "long_term" => self.long_term = value,
+            _ => {}
+        }
+    }
 }
 
 pub fn section_label(key: &str) -> &str {
@@ -177,6 +237,24 @@ pub fn prepare_sections(raw: &Value) -> VotingResult<PreparedSections> {
     })
 }
 
+pub fn sanitize_proposal_sections(raw: &ProposalSections) -> ProposalSections {
+    ProposalSections {
+        problem: sanitize_proposal_html(&raw.problem),
+        context: sanitize_proposal_html(&raw.context),
+        solution: sanitize_proposal_html(&raw.solution),
+        pros_cons: sanitize_proposal_html(&raw.pros_cons),
+        summary: sanitize_proposal_html(&raw.summary),
+        success_criteria: sanitize_proposal_html(&raw.success_criteria),
+    }
+}
+
+pub fn sections_hash(sections: &ProposalSections) -> String {
+    let value = serde_json::to_value(sections).expect("serialize proposal sections");
+    prepare_sections(&value)
+        .expect("hash only valid proposal sections")
+        .body_hash
+}
+
 pub fn summary_html(sections: &Map<String, Value>) -> Option<String> {
     sections
         .get("summary")
@@ -199,6 +277,57 @@ pub fn render_body_html(sections: &Map<String, Value>) -> String {
         out.push_str("</section>");
     }
     out
+}
+
+pub fn prepare_analysis(
+    raw: &AnalysisSections,
+) -> VotingResult<(AnalysisSections, String, String)> {
+    let mut sanitized = AnalysisSections::default();
+    let mut combined = 0usize;
+    for key in ANALYSIS_KEYS_SORTED {
+        let clean = sanitize_proposal_html(raw.get(key));
+        combined = combined.saturating_add(clean.len());
+        if combined > MAX_BODY_BYTES {
+            return Err(VotingError::BadRequest("analysis exceeds 64 KiB".into()));
+        }
+        if visible_len(&clean) < MIN_SECTION_VISIBLE_CHARS {
+            return Err(VotingError::BadRequest(format!(
+                "analysis {key} must contain at least {MIN_SECTION_VISIBLE_CHARS} visible characters"
+            )));
+        }
+        sanitized.set(key, clean);
+    }
+    let mut canonical_map = Map::new();
+    for key in ANALYSIS_KEYS_SORTED {
+        canonical_map.insert(
+            key.to_string(),
+            Value::String(sanitized.get(key).to_string()),
+        );
+    }
+    let canonical = serde_json::to_string(&Value::Object(canonical_map))
+        .map_err(|e| VotingError::BadRequest(format!("canonicalize analysis: {e}")))?;
+    Ok((sanitized, canonical.clone(), body_hash(&canonical)))
+}
+
+pub fn sanitize_analysis_sections(raw: &AnalysisSections) -> AnalysisSections {
+    let mut sanitized = AnalysisSections::default();
+    for key in ANALYSIS_KEYS_SORTED {
+        sanitized.set(key, sanitize_proposal_html(raw.get(key)));
+    }
+    sanitized
+}
+
+pub fn analysis_hash(sections: &AnalysisSections) -> String {
+    prepare_analysis(sections)
+        .expect("hash only valid analysis sections")
+        .2
+}
+
+pub fn render_analysis_html(sections: &AnalysisSections) -> String {
+    format!(
+        "<h2>What is proposed</h2>{}<h2>Benefits</h2>{}<h2>Risks</h2>{}<h2>Short-term impact</h2>{}<h2>Long-term impact</h2>{}",
+        sections.what, sections.benefits, sections.risks, sections.short_term, sections.long_term,
+    )
 }
 
 fn strip_tags(html: &str) -> String {

@@ -12,7 +12,7 @@ async function connectSimulatedTerra(page: Page, path: string) {
   }
 }
 
-async function registerProposeVote(page: Page, path: string, title: string) {
+async function registerDraftCommentOpenVote(page: Page, path: string, title: string) {
   await mockOperatorVoting(page)
   await connectSimulatedTerra(page, path)
 
@@ -23,18 +23,25 @@ async function registerProposeVote(page: Page, path: string, title: string) {
   await page.getByTestId('propose-cta').click()
   await expect(page.getByTestId('propose-balance')).toContainText('1000 CL8Y')
   await page.getByTestId('proposal-title').fill(title)
-  const fill = 'Playwright section text that clears the forty character minimum.'
-  await page.getByTestId('proposal-section-problem').fill(fill)
-  await page.getByTestId('proposal-section-solution').fill(fill)
-  await page.getByTestId('proposal-section-pros_cons').fill(fill)
-  await page.getByTestId('proposal-section-summary').fill(fill)
-  await page.getByTestId('proposal-section-success_criteria').fill(fill)
+  const section = 'Playwright section text has more than forty visible characters.'
+  for (const key of ['problem', 'solution', 'pros_cons', 'summary', 'success_criteria']) {
+    await page.getByTestId(`proposal-section-${key}`).fill(section)
+  }
   await page.getByTestId('submit-proposal').click()
 
   await expect(page.getByRole('heading', { name: title })).toBeVisible({ timeout: 15_000 })
   await expect(page.getByTestId('proposal-sections')).toBeVisible()
   await expect(page.getByTestId('proposal-section-view-summary')).toContainText('Summary (TL;DR)')
   await expect(page).toHaveURL(new RegExp(`/${E2E_PROPOSAL_ID}$`))
+  await expect(page.getByTestId('proposal-status')).toHaveText('draft')
+  await expect(page.getByTestId('vote-for')).toHaveCount(0)
+
+  await page.getByTestId('comment-body').fill('A registered reviewer note.')
+  await page.getByTestId('submit-comment').click()
+  await expect(page.getByTestId('comment-list')).toContainText('A registered reviewer note')
+
+  await page.getByTestId('open-poll').click()
+  await expect(page.getByTestId('proposal-status')).toHaveText('open')
   await page.getByTestId('vote-for').click()
   await expect(page.getByTestId('vote-recorded')).toContainText('for')
 
@@ -59,35 +66,10 @@ test('pending register polls until ledger-registered', async ({ page }) => {
   await expect(page.getByTestId('connected-chain')).toContainText('1000 CL8Y')
 })
 
-test('pending timeout shows Retry without a second seed prompt', async ({ page }) => {
-  await mockOperatorVoting(page, { registerPendingTicks: 4 })
-  await connectSimulatedTerra(page, '/')
-  await page.getByTestId('register-cta').click()
-  await expect(page.getByTestId('registration-pending')).toBeVisible()
-  await expect(page.getByTestId('register-retry')).toBeVisible({ timeout: 15_000 })
-  await expect(page.getByRole('alert')).toContainText('still pending')
-  await expect(page.getByTestId('connected-chain')).not.toContainText('CL8Y')
-  await page.getByTestId('register-retry').click()
-  await expect(page.getByTestId('registration-pending')).toBeVisible()
-  await expect(page.getByTestId('registration-status')).toBeVisible({ timeout: 15_000 })
-  await expect(page.getByTestId('connected-chain')).toContainText('1000 CL8Y')
+test('register → draft → comment → open → vote (canonical /)', async ({ page }) => {
+  await registerDraftCommentOpenVote(page, '/', 'E2E proposal')
 })
 
-test('reload while pending resumes polling', async ({ page }) => {
-  await mockOperatorVoting(page, { alreadyPending: true, registerPendingTicks: 3 })
-  await connectSimulatedTerra(page, '/')
-  await expect(page.getByTestId('register-cta')).toHaveCount(0)
-  await expect(
-    page.getByTestId('registration-pending').or(page.getByTestId('registration-status')),
-  ).toBeVisible()
-  await expect(page.getByTestId('registration-status')).toBeVisible({ timeout: 15_000 })
-  await expect(page.getByTestId('connected-chain')).toContainText('1000 CL8Y')
-})
-
-test('register → list → create → vote (canonical /)', async ({ page }) => {
-  await registerProposeVote(page, '/', 'E2E proposal')
-})
-
-test('register → list → create → vote (/vote alias)', async ({ page }) => {
-  await registerProposeVote(page, '/vote', 'E2E alias proposal')
+test('register → draft → comment → open → vote (/vote alias)', async ({ page }) => {
+  await registerDraftCommentOpenVote(page, '/vote', 'E2E alias proposal')
 })

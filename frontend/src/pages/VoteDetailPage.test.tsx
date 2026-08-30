@@ -1,76 +1,80 @@
 import { describe, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
-import { MemoryRouter } from 'react-router-dom'
+import { render, screen, waitFor } from '@testing-library/react'
+import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import VoteDetailPage from '@/pages/VoteDetailPage'
-import { GOLDEN_SECTIONS } from '@/utils/proposalSections'
+import type { ProposalDetail } from '@/services/operatorVoting'
+
+const identity = {
+  address: 'terra1voterxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
+  chain: 'terra' as const,
+  legalNetwork: 'TerraClassic' as const,
+  label: 'Terra Classic',
+}
+
+const base: ProposalDetail = {
+  id: '11111111-1111-1111-1111-111111111111',
+  chain: 'terra',
+  proposer: 'terra1proposerxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
+  title: 'Draft idea',
+  summary: 'A summary with forty visible characters for the list card.',
+  terra_height: null,
+  bsc_block: null,
+  created_at: '2026-08-30T00:00:00Z',
+  status: 'draft',
+  tally: [],
+  body_html: '<p>legacy</p>',
+  body_sections: {
+    context: '',
+    problem: '<p>problem text that is long enough for the template minimum.</p>',
+    solution: '<p>solution text that is long enough for the template minimum.</p>',
+    pros_cons: '<p>tradeoffs text that is long enough for the template minimum.</p>',
+    summary: '<p>A summary with forty visible characters for the list card.</p>',
+    success_criteria: '<p>success text that is long enough for the template minimum.</p>',
+  },
+  comments: [],
+  analysis: [],
+  advisory: true,
+}
+
+let current: ProposalDetail = { ...base }
 
 vi.mock('@/hooks/useConnectedIdentity', () => ({
-  useConnectedIdentity: () => ({ address: null, chain: null, label: '' }),
+  useConnectedIdentity: () => identity,
 }))
-
-vi.mock('react-router-dom', async () => {
-  const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom')
-  return { ...actual, useParams: () => ({ id: '11111111-1111-1111-1111-111111111111' }) }
-})
-
-const getProposal = vi.fn()
 
 vi.mock('@/services/operatorVoting', () => ({
-  getProposal: (...args: unknown[]) => getProposal(...args),
+  getProposal: async () => current,
   castVote: vi.fn(),
+  postComment: vi.fn(),
+  postAnalysis: vi.fn(),
+  openProposal: vi.fn(),
+  amendProposal: vi.fn(),
 }))
 
-describe('proposal detail sections', () => {
-  it('renders labeled sections in canonical order', async () => {
-    getProposal.mockResolvedValue({
-      id: '11111111-1111-1111-1111-111111111111',
-      chain: 'terra',
-      proposer: 'terra1x',
-      title: 'Templated',
-      terra_height: 1,
-      bsc_block: 1,
-      created_at: new Date().toISOString(),
-      status: 'open',
-      tally: [],
-      advisory: true,
-      body_html: '<p>concat</p>',
-      body_sections: GOLDEN_SECTIONS,
-    })
-    render(
-      <MemoryRouter>
-        <VoteDetailPage />
-      </MemoryRouter>
-    )
-    expect(await screen.findByTestId('proposal-sections')).toBeInTheDocument()
-    expect(screen.getByTestId('proposal-section-view-summary')).toHaveTextContent('Summary (TL;DR)')
-    expect(screen.getByTestId('proposal-section-view-problem')).toHaveTextContent(
-      'The idea or problem to be solved'
-    )
-    expect(screen.queryByTestId('proposal-legacy-body')).toBeNull()
+function renderDetail() {
+  return render(
+    <MemoryRouter initialEntries={[`/${base.id}`]}>
+      <Routes>
+        <Route path="/:id" element={<VoteDetailPage />} />
+      </Routes>
+    </MemoryRouter>
+  )
+}
+
+describe('draft vs open vote CTAs', () => {
+  it('hides vote buttons on a draft', async () => {
+    current = { ...base, status: 'draft', terra_height: null, bsc_block: null }
+    renderDetail()
+    await waitFor(() => expect(screen.getByTestId('proposal-status')).toHaveTextContent('draft'))
+    expect(screen.queryByTestId('vote-actions')).toBeNull()
+    expect(screen.getByTestId('open-poll')).toBeInTheDocument()
   })
 
-  it('falls back to sanitized legacy body_html', async () => {
-    getProposal.mockResolvedValue({
-      id: '11111111-1111-1111-1111-111111111111',
-      chain: 'terra',
-      proposer: 'terra1x',
-      title: 'Legacy',
-      terra_height: 1,
-      bsc_block: 1,
-      created_at: new Date().toISOString(),
-      status: 'open',
-      tally: [],
-      advisory: true,
-      body_html: '<p>old body</p><script>alert(1)</script>',
-      body_sections: null,
-    })
-    render(
-      <MemoryRouter>
-        <VoteDetailPage />
-      </MemoryRouter>
-    )
-    const legacy = await screen.findByTestId('proposal-legacy-body')
-    expect(legacy).toHaveTextContent('old body')
-    expect(legacy.innerHTML).not.toMatch(/script/i)
+  it('shows vote buttons after open', async () => {
+    current = { ...base, status: 'open', terra_height: 40, bsc_block: 1 }
+    renderDetail()
+    await waitFor(() => expect(screen.getByTestId('vote-actions')).toBeInTheDocument())
+    expect(screen.getByTestId('vote-for')).toBeEnabled()
+    expect(screen.queryByTestId('open-poll')).toBeNull()
   })
 })

@@ -17,6 +17,7 @@
  ┌────────────────────────────────┐
  │  operator-voting (Axum)        │  restricted role
  │  ADR-36 + EIP-191              │
+ │  drafts / comments / open    │
  │  proposals / votes / blacklist │
  └────────────────┬───────────────┘
                   │ HTTPS
@@ -44,7 +45,7 @@ Three deployables (ledger worker, API, dApp) and **two** DB roles. Coolify image
 
 ## Snapshot
 
-A proposal freezes `{ terra_height, bsc_block }` at create time (wall-clock aligned). Terra voters use the CW20 ledger at that height. EVM voters use the BEP-20 ledger at that block. Do not convert via USD.
+A proposal **draft** does not freeze the electorate. Committee `open_vote` records `{ terra_height, bsc_block }` from current `indexer_state` tips (wall-clock aligned). Terra voters use the CW20 ledger at that height. EVM voters use the BEP-20 ledger at that block. Do not convert via USD. Register **before votes open**. Details: [OPERATOR_VOTING.md](OPERATOR_VOTING.md) OV-D1–D6 (issue [#11](https://gitlab.com/PlasticDigits/voting/-/issues/11)).
 
 ## Double-count
 

@@ -16,7 +16,7 @@ test('disconnected hard navigation of /new and /vote/new still opens (connect pr
   await mockOperatorVoting(page)
   for (const path of ['/new', '/vote/new']) {
     await page.goto(path)
-    await expect(page.getByText('Connect a wallet to create a proposal.')).toBeVisible()
+    await expect(page.getByText('Connect a wallet to start a draft.')).toBeVisible()
     await expect(page.getByRole('link', { name: 'Back to proposals' })).toBeVisible()
   }
 })
@@ -26,7 +26,7 @@ test('hard navigation of /new and /vote/new with simulated wallet shows compose'
   await installSimulatedKeplr(page)
   for (const path of ['/new', '/vote/new']) {
     await page.goto(path, { waitUntil: 'domcontentloaded' })
-    await expect(page.getByRole('heading', { name: 'New proposal' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'New draft' })).toBeVisible()
   }
 })
 
@@ -50,7 +50,7 @@ test('client navigation list → new → back stays on canonical paths', async (
   }
   await page.getByTestId('propose-cta').click()
   await expect(page).toHaveURL(/\/new$/)
-  await expect(page.getByRole('heading', { name: 'New proposal' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'New draft' })).toBeVisible()
   await page.getByTestId('brand-home').click()
   await expect(page).toHaveURL(/\/$/)
   await expect(page.getByRole('heading', { name: 'Proposals' })).toBeVisible()

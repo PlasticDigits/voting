@@ -1,4 +1,5 @@
 import { inferVotingChain, type VoteChoice, type VotingChain } from '@/utils/votingPayload'
+import type { AnalysisSections, ProposalSections } from '@/utils/proposalSections'
 
 export type SignedRequest = {
   chain: VotingChain
@@ -13,17 +14,39 @@ export type ProposalListItem = {
   chain: string
   proposer: string
   title: string
-  terra_height: number
-  bsc_block: number
+  summary?: string | null
+  terra_height: number | null
+  bsc_block: number | null
   created_at: string
+  opened_at?: string | null
   status: string
   tally: { choice: string; weight: string }[] | Record<string, string>
-  summary?: string | null
+}
+
+export type ProposalComment = {
+  id: string
+  chain: string
+  wallet_address: string
+  body_html: string
+  created_at: string
+}
+
+export type ProposalAnalysis = {
+  id: string
+  chain: string
+  wallet_address: string
+  body_html: string
+  source: string
+  created_at: string
+  sections: AnalysisSections
+  machine_generated?: boolean
 }
 
 export type ProposalDetail = ProposalListItem & {
   body_html: string
-  body_sections?: Record<string, string> | null
+  body_sections?: ProposalSections | null
+  comments?: ProposalComment[]
+  analysis?: ProposalAnalysis[]
   advisory: boolean
 }
 
@@ -177,9 +200,49 @@ export async function getProposal(id: string): Promise<ProposalDetail> {
 }
 
 export async function createProposal(
-  req: SignedRequest & { title: string; body_sections: Record<string, string> }
-): Promise<{ id: string; terra_height: number; bsc_block: number }> {
+  req: SignedRequest & { title: string; body_sections: ProposalSections }
+): Promise<{ id: string; status: string; terra_height: number | null; bsc_block: number | null }> {
   return api('/v1/proposals', { method: 'POST', body: JSON.stringify(req) })
+}
+
+export async function amendProposal(
+  id: string,
+  req: SignedRequest & { title: string; body_sections: ProposalSections }
+): Promise<{ ok: boolean; body_hash: string }> {
+  return api(`/v1/proposals/${encodeURIComponent(id)}/sections`, {
+    method: 'PUT',
+    body: JSON.stringify(req),
+  })
+}
+
+export async function postComment(
+  id: string,
+  req: SignedRequest & { body_html: string }
+): Promise<{ id: string }> {
+  return api(`/v1/proposals/${encodeURIComponent(id)}/comments`, {
+    method: 'POST',
+    body: JSON.stringify(req),
+  })
+}
+
+export async function postAnalysis(
+  id: string,
+  req: SignedRequest & { sections: AnalysisSections }
+): Promise<{ id: string; source: string }> {
+  return api(`/v1/proposals/${encodeURIComponent(id)}/analysis`, {
+    method: 'POST',
+    body: JSON.stringify(req),
+  })
+}
+
+export async function openProposal(
+  id: string,
+  req: SignedRequest
+): Promise<{ ok: boolean; status: string; terra_height: number; bsc_block: number }> {
+  return api(`/v1/proposals/${encodeURIComponent(id)}/open`, {
+    method: 'POST',
+    body: JSON.stringify(req),
+  })
 }
 
 export async function castVote(

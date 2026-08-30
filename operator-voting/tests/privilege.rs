@@ -26,7 +26,10 @@ fn grants_sql_is_least_privilege() {
         "cl8y_bep20_transfers",
         "indexer_state",
     ] {
-        assert!(GRANTS_SQL.contains(table), "grants.sql must mention {table}");
+        assert!(
+            GRANTS_SQL.contains(table),
+            "grants.sql must mention {table}"
+        );
     }
     assert!(
         !GRANTS_SQL.contains("GRANT ALL ON SCHEMA voting"),
@@ -63,38 +66,54 @@ async fn restricted_role_from_grants_sql_cannot_write_ledger() {
         .await
         .expect("operator_voting login from deploy/grants.sql");
 
-    let read = sqlx::query_scalar::<_, String>("SELECT public.voting_cl8y_balance_at('terra1missing', 1)::text")
-        .fetch_one(&restricted)
-        .await;
-    assert!(read.is_ok(), "restricted role must EXECUTE balance functions: {read:?}");
+    let read = sqlx::query_scalar::<_, String>(
+        "SELECT public.voting_cl8y_balance_at('terra1missing', 1)::text",
+    )
+    .fetch_one(&restricted)
+    .await;
+    assert!(
+        read.is_ok(),
+        "restricted role must EXECUTE balance functions: {read:?}"
+    );
 
     let write_bal = sqlx::query(
         "INSERT INTO cl8y_balances (wallet_address, height, balance) VALUES ('x', 1, 1)",
     )
     .execute(&restricted)
     .await;
-    assert!(write_bal.is_err(), "restricted role must not write cl8y_balances");
+    assert!(
+        write_bal.is_err(),
+        "restricted role must not write cl8y_balances"
+    );
 
     let write_xfer = sqlx::query(
         "INSERT INTO cl8y_cw20_transfers (height, tx_hash, from_address, to_address, amount, action) VALUES (1, 'h', 'a', 'b', 1, 'transfer')",
     )
     .execute(&restricted)
     .await;
-    assert!(write_xfer.is_err(), "restricted role must not write cl8y_cw20_transfers");
+    assert!(
+        write_xfer.is_err(),
+        "restricted role must not write cl8y_cw20_transfers"
+    );
 
-    let write_state = sqlx::query(
-        "UPDATE indexer_state SET value = '9' WHERE key = 'last_indexed_height'",
-    )
-    .execute(&restricted)
-    .await;
-    assert!(write_state.is_err(), "restricted role must not write indexer_state");
+    let write_state =
+        sqlx::query("UPDATE indexer_state SET value = '9' WHERE key = 'last_indexed_height'")
+            .execute(&restricted)
+            .await;
+    assert!(
+        write_state.is_err(),
+        "restricted role must not write indexer_state"
+    );
 
     let write_reg = sqlx::query(
         "INSERT INTO voting_registrations (chain, wallet_address, registered_at_height, initial_balance) VALUES ('terra', 'terra1x', 1, 1)",
     )
     .execute(&restricted)
     .await;
-    assert!(write_reg.is_err(), "restricted role must not insert voting_registrations");
+    assert!(
+        write_reg.is_err(),
+        "restricted role must not insert voting_registrations"
+    );
 
     let sig_ok = sqlx::query(
         r#"
@@ -104,12 +123,75 @@ async fn restricted_role_from_grants_sql_cannot_write_ledger() {
     )
     .execute(&restricted)
     .await;
-    assert!(sig_ok.is_ok(), "restricted role must write voting.signatures: {sig_ok:?}");
+    assert!(
+        sig_ok.is_ok(),
+        "restricted role must write voting.signatures: {sig_ok:?}"
+    );
+
+    let draft_ok = sqlx::query(
+        r#"
+        INSERT INTO voting.proposals (id, chain, proposer, title, body_html, body_canonical, status)
+        VALUES (gen_random_uuid(), 'terra', 'terra1test', 't', '<p>b</p>', '{}', 'draft')
+        "#,
+    )
+    .execute(&restricted)
+    .await;
+    assert!(
+        draft_ok.is_ok(),
+        "restricted role must write voting.proposals: {draft_ok:?}"
+    );
+
+    let comment_ok = sqlx::query(
+        r#"
+        WITH s AS (
+            INSERT INTO voting.signatures (id, chain, wallet_address, signature, payload_hash, purpose)
+            VALUES (gen_random_uuid(), 'terra', 'terra1test', 'sig2', 'hash2', 'comment')
+            RETURNING id
+        ), p AS (
+            SELECT id FROM voting.proposals WHERE proposer = 'terra1test' LIMIT 1
+        )
+        INSERT INTO voting.proposal_comments (id, proposal_id, chain, wallet_address, body_html, signature_id)
+        SELECT gen_random_uuid(), p.id, 'terra', 'terra1test', '<p>ok</p>', s.id FROM s, p
+        "#,
+    )
+    .execute(&restricted)
+    .await;
+    assert!(
+        comment_ok.is_ok(),
+        "restricted role must write voting.proposal_comments: {comment_ok:?}"
+    );
+
+    let analysis_ok = sqlx::query(
+        r#"
+        WITH s AS (
+            INSERT INTO voting.signatures (id, chain, wallet_address, signature, payload_hash, purpose)
+            VALUES (gen_random_uuid(), 'terra', 'terra1committee', 'sig3', 'hash3', 'analyze')
+            RETURNING id
+        ), p AS (
+            SELECT id FROM voting.proposals WHERE proposer = 'terra1test' LIMIT 1
+        )
+        INSERT INTO voting.proposal_analysis
+            (id, proposal_id, chain, wallet_address, sections, body_html, source, signature_id)
+        SELECT gen_random_uuid(), p.id, 'terra', 'terra1committee',
+               '{"what":"ok","benefits":"ok","risks":"ok","short_term":"ok","long_term":"ok"}'::jsonb,
+               '<p>ok</p>', 'committee', s.id
+        FROM s, p
+        "#,
+    )
+    .execute(&restricted)
+    .await;
+    assert!(
+        analysis_ok.is_ok(),
+        "restricted role must write voting.proposal_analysis: {analysis_ok:?}"
+    );
 
     let create = sqlx::query("CREATE TABLE voting.should_not_exist (id int)")
         .execute(&restricted)
         .await;
-    assert!(create.is_err(), "restricted role must not CREATE in schema voting");
+    assert!(
+        create.is_err(),
+        "restricted role must not CREATE in schema voting"
+    );
 }
 
 fn apply_grants_sql(url: &str) {

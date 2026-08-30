@@ -9,6 +9,9 @@ export type MockOperatorOpts = {
   alreadyPending?: boolean
 }
 
+const SECTION_HTML =
+  '<p>This draft section has forty visible characters for the template.</p>'
+
 export async function mockOperatorVoting(page: Page, opts: MockOperatorOpts = {}) {
   let ledgerReady = false
   let registerPosted = Boolean(opts.alreadyPending)
@@ -19,53 +22,95 @@ export async function mockOperatorVoting(page: Page, opts: MockOperatorOpts = {}
     proposer: string
     title: string
     body_html: string
-    body_sections: Record<string, string> | null
-    summary: string | null
-    terra_height: number
-    bsc_block: number
+    summary: string
+    terra_height: number | null
+    bsc_block: number | null
     created_at: string
+    opened_at: string | null
     status: string
     tally: Record<string, string>
     advisory: boolean
+    body_sections: Record<string, string>
+    comments: Array<{ id: string; chain: string; wallet_address: string; body_html: string; created_at: string }>
+    analysis: unknown[]
   }> = []
   const votes = new Map<string, string>()
 
   await page.route('**/v1/proposals', async (route) => {
     if (route.request().method() === 'GET') {
       await route.fulfill({
-        json: proposals.map(({ body_html: _b, body_sections: _s, ...rest }) => rest),
+        json: proposals.map(
+          ({ body_html: _b, body_sections: _s, comments: _c, analysis: _a, ...rest }) => rest
+        ),
       })
       return
     }
     const body = route.request().postDataJSON() as {
       title: string
-      body_html?: string
       body_sections?: Record<string, string>
       address: string
     }
-    const sections = body.body_sections ?? null
     proposals.push({
       id: E2E_PROPOSAL_ID,
       chain: 'terra',
       proposer: body.address,
       title: body.title,
-      body_html: body.body_html ?? '',
-      body_sections: sections,
-      summary: sections?.summary ?? null,
-      terra_height: 1,
-      bsc_block: 1,
+      body_html: body.body_sections?.problem ?? SECTION_HTML,
+      summary: body.body_sections?.summary ?? SECTION_HTML,
+      terra_height: null,
+      bsc_block: null,
       created_at: new Date().toISOString(),
-      status: 'open',
+      opened_at: null,
+      status: 'draft',
       tally: {},
       advisory: true,
+      body_sections: body.body_sections ?? {
+        context: '',
+        problem: SECTION_HTML,
+        solution: SECTION_HTML,
+        pros_cons: SECTION_HTML,
+        summary: SECTION_HTML,
+        success_criteria: SECTION_HTML,
+      },
+      comments: [],
+      analysis: [],
     })
-    await route.fulfill({ status: 201, json: { id: E2E_PROPOSAL_ID, terra_height: 1, bsc_block: 1 } })
+    await route.fulfill({
+      status: 201,
+      json: { id: E2E_PROPOSAL_ID, status: 'draft', terra_height: null, bsc_block: null },
+    })
   })
 
   await page.route('**/v1/proposals/*/votes', async (route) => {
     const body = route.request().postDataJSON() as { choice: string; address: string }
     votes.set(body.address, body.choice)
     await route.fulfill({ json: { ok: true, weight: '1000000000000000000000' } })
+  })
+
+  await page.route('**/v1/proposals/*/comments', async (route) => {
+    const id = route.request().url().split('/v1/proposals/')[1]?.split('/')[0]
+    const found = proposals.find((p) => p.id === id)
+    const body = route.request().postDataJSON() as { body_html: string; address: string }
+    found?.comments.push({
+      id: 'c1',
+      chain: 'terra',
+      wallet_address: body.address,
+      body_html: body.body_html,
+      created_at: new Date().toISOString(),
+    })
+    await route.fulfill({ status: 201, json: { id: 'c1' } })
+  })
+
+  await page.route('**/v1/proposals/*/open', async (route) => {
+    const id = route.request().url().split('/v1/proposals/')[1]?.split('/')[0]
+    const found = proposals.find((p) => p.id === id)
+    if (found) {
+      found.status = 'open'
+      found.terra_height = 40
+      found.bsc_block = 1
+      found.opened_at = new Date().toISOString()
+    }
+    await route.fulfill({ json: { ok: true, status: 'open', terra_height: 40, bsc_block: 1 } })
   })
 
   await page.route('**/v1/proposals/*', async (route) => {

@@ -44,14 +44,14 @@ export default function VoteNewPage() {
       const signed = await signVotingRequest({
         chain,
         address,
-        purpose: 'propose',
+        purpose: 'draft',
         title,
         body_hash,
       })
       const created = await createProposal({ ...signed, title, body_sections: sections })
       navigate(ROUTES.proposal(created.id))
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Propose failed')
+      setError(err instanceof Error ? err.message : 'Draft failed')
     } finally {
       setBusy(false)
     }
@@ -60,7 +60,7 @@ export default function VoteNewPage() {
   if (!address) {
     return (
       <div className="panel">
-        <p>Connect a wallet to create a proposal.</p>
+        <p>Connect a wallet to start a draft.</p>
         <Link to={ROUTES.list}>Back to proposals</Link>
       </div>
     )
@@ -71,12 +71,12 @@ export default function VoteNewPage() {
   return (
     <div className="page-stack">
       <section className="panel">
-        <h1>New proposal</h1>
+        <h1>New draft</h1>
         <p className="lede">
-          Server is the source of truth for the {MIN_PROPOSAL_CL8Y} CL8Y gate and required sections. You
-          sign a hash of the canonical section JSON; operator-voting checks that hash, then stores
-          ammonia-sanitized HTML per section. {label} and the other chain are never summed. Never enter a
-          seed phrase.
+          Starts as a <strong>draft</strong>, not a votable poll. The snapshot freezes only when a
+          committee wallet opens voting. Server is the source of truth for the {MIN_PROPOSAL_CL8Y} CL8Y
+          gate and required sections. {label} and the other chain are never summed. Never enter a seed
+          phrase.
         </p>
         {registered && snapshot.balance != null && (
           <p data-testid="propose-balance">
@@ -85,13 +85,12 @@ export default function VoteNewPage() {
         )}
         {snapshot.status === 'unregistered' && (
           <p className="lede" data-testid="propose-register-hint">
-            Register to snapshot this address’s CL8Y before proposing. The list page does not show a live
-            chain balance.
+            Register before votes open. The list page does not show a live chain balance.
           </p>
         )}
         {snapshot.status === 'pending' && (
           <p className="lede" data-testid="propose-pending">
-            Registration snapshot pending. Propose stays disabled until the ledger row exists.
+            Registration snapshot pending. Draft stays disabled until the ledger row exists.
           </p>
         )}
         {snapshot.canRetry && (
@@ -133,7 +132,7 @@ export default function VoteNewPage() {
           disabled={!canSubmit}
           onClick={() => void handleSubmit()}
         >
-          {busy ? 'Signing…' : 'Create proposal'}
+          {busy ? 'Signing…' : 'Create draft'}
         </button>
       </section>
     </div>

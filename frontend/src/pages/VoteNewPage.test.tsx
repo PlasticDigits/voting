@@ -37,16 +37,12 @@ vi.mock('@/services/operatorVoting', () => ({
   createProposal: vi.fn(),
 }))
 
-const FILL = 'x'.repeat(MIN_SECTION_VISIBLE_CHARS)
+const SECTION = 'This draft section has forty visible characters.'
 
 function fillRequiredSections() {
-  fireEvent.change(screen.getByTestId('proposal-section-problem'), { target: { value: FILL } })
-  fireEvent.change(screen.getByTestId('proposal-section-solution'), { target: { value: FILL } })
-  fireEvent.change(screen.getByTestId('proposal-section-pros_cons'), { target: { value: FILL } })
-  fireEvent.change(screen.getByTestId('proposal-section-summary'), { target: { value: FILL } })
-  fireEvent.change(screen.getByTestId('proposal-section-success_criteria'), {
-    target: { value: FILL },
-  })
+  for (const key of ['problem', 'solution', 'pros_cons', 'summary', 'success_criteria']) {
+    fireEvent.change(screen.getByTestId(`proposal-section-${key}`), { target: { value: SECTION } })
+  }
 }
 
 describe('propose gate', () => {
@@ -67,7 +63,7 @@ describe('propose gate', () => {
     expect(screen.getByTestId('propose-balance')).toHaveTextContent('need 1000')
   })
 
-  it('keeps submit disabled at 1000 CL8Y until required sections meet the API minima', async () => {
+  it('enables submit at the 1000 CL8Y boundary once titled and templated', async () => {
     snapshot.status = 'registered'
     snapshot.balance = MIN_PROPOSAL_RAW.toString()
     snapshot.error = null

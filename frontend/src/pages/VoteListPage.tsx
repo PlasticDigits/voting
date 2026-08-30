@@ -52,8 +52,9 @@ export default function VoteListPage() {
         <h1>Proposals</h1>
         <p className="lede">
           Votes are offchain and advisory. Register the address that holds CL8Y on that chain{' '}
-          <strong>before a proposal is created</strong>. Identity v1 is one address, one voter — Terra and BSC
-          wallets are never merged. Never enter a seed phrase in this app.
+          <strong>before votes open</strong> (drafts do not freeze the electorate). Identity v1 is one
+          address, one voter — Terra and BSC wallets are never merged. Never enter a seed phrase in this
+          app.
         </p>
         {address && chain ? (
           <>
@@ -93,7 +94,7 @@ export default function VoteListPage() {
                 </button>
               )}
               <Link className="btn-primary" to={ROUTES.newProposal} data-testid="propose-cta">
-                New proposal
+                New draft
               </Link>
             </div>
             {snapshot.status === 'unregistered' && (
