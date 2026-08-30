@@ -10,6 +10,8 @@ export default function WalletButton() {
   const { isConnecting, disconnect, walletModalOpen, setWalletModalOpen, closeWalletModal, cancelConnection } =
     useWalletStore()
   const evmDisconnect = useEvmWalletStore((s) => s.disconnect)
+  const evmConnecting = useEvmWalletStore((s) => s.connecting)
+  const connecting = isConnecting || evmConnecting
   const { address, label } = useConnectedIdentity()
   const [showDropdown, setShowDropdown] = useState(false)
   const triggerRef = useRef<HTMLButtonElement>(null)
@@ -78,17 +80,17 @@ export default function WalletButton() {
       <button
         type="button"
         onClick={() => {
-          if (isConnecting) {
+          if (connecting) {
             cancelConnection()
             return
           }
           setWalletModalOpen(true)
         }}
-        aria-label={isConnecting ? 'Cancel connecting' : 'Connect wallet'}
+        aria-label={connecting ? 'Cancel connecting' : 'Connect wallet'}
         className="btn-primary !px-3 !py-2"
         data-testid="wallet-connect"
       >
-        {isConnecting ? 'Cancel' : 'Connect Wallet'}
+        {connecting ? 'Cancel' : 'Connect Wallet'}
       </button>
       {walletModalOpen && createPortal(<WalletModal onClose={closeWalletModal} />, document.body)}
     </>

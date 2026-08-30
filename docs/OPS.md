@@ -1,6 +1,6 @@
 # Ops runbook (issue #7)
 
-Cross-links: [HANDOFF.md](HANDOFF.md) · [ARCHITECTURE.md](ARCHITECTURE.md) · [OPERATOR_VOTING.md](OPERATOR_VOTING.md) · [FRONTEND.md](FRONTEND.md) · [LEDGER_INVARIANTS.md](LEDGER_INVARIANTS.md) · skill [AGENTS_OPS_STAGING.md](../skills/AGENTS_OPS_STAGING.md) · Legal [AGENTS_LEGAL_CLICKWRAP.md](../skills/AGENTS_LEGAL_CLICKWRAP.md) · wallets [AGENTS_WALLET_CONNECTORS.md](../skills/AGENTS_WALLET_CONNECTORS.md) · GitLab [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7) · [#8](https://gitlab.com/PlasticDigits/voting/-/issues/8) · [#9](https://gitlab.com/PlasticDigits/voting/-/issues/9) · [#14](https://gitlab.com/PlasticDigits/voting/-/issues/14)
+Cross-links: [HANDOFF.md](HANDOFF.md) · [ARCHITECTURE.md](ARCHITECTURE.md) · [OPERATOR_VOTING.md](OPERATOR_VOTING.md) · [FRONTEND.md](FRONTEND.md) · [LEDGER_INVARIANTS.md](LEDGER_INVARIANTS.md) · skill [AGENTS_OPS_STAGING.md](../skills/AGENTS_OPS_STAGING.md) · Legal [AGENTS_LEGAL_CLICKWRAP.md](../skills/AGENTS_LEGAL_CLICKWRAP.md) · wallets [AGENTS_WALLET_CONNECTORS.md](../skills/AGENTS_WALLET_CONNECTORS.md) · GitLab [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7) · [#8](https://gitlab.com/PlasticDigits/voting/-/issues/8) · [#9](https://gitlab.com/PlasticDigits/voting/-/issues/9) · [#12](https://gitlab.com/PlasticDigits/voting/-/issues/12) · [#14](https://gitlab.com/PlasticDigits/voting/-/issues/14)
 
 In-tree ledger / `operator-voting` / `/vote` landed in !1. This document is the remaining **ops + public-expose** checklist. Do not mark production voting done until every required item below is true on staging.
 
@@ -10,7 +10,7 @@ In-tree ledger / `operator-voting` / `/vote` landed in !1. This document is the 
 |----|------|
 | **O1** | Three Coolify services: `voting-ledger`, `operator-voting`, dApp. Ledger writer migrates; `operator-voting` uses the restricted role from [`../deploy/grants.sql`](../deploy/grants.sql) (L10). |
 | **O2** | `APPLY_MIGRATIONS` is **false** for `operator-voting` in prod. The image pins it; `RUN_MODE=prod` **refuses to start** if it is true. Never give that process `INSERT` on ledger ingest tables. Apply [`../deploy/grants.sql`](../deploy/grants.sql) as the DB owner — privilege tests run that file, not a lookalike. |
-| **O3** | Production / Coolify frontend builds **unset** `VITE_PLAYWRIGHT_E2E` and `VITE_DEV_MNEMONIC`. `vite.config.ts` (`prodEnvGuards`) and [`../deploy/docker/frontend.Dockerfile`](../deploy/docker/frontend.Dockerfile) fail the image if the hatch is on. CSP (`connect-src`, no blanket `https:`) is stamped by the image from [`../deploy/docker/frontend.security-headers.conf`](../deploy/docker/frontend.security-headers.conf) **and** by the Coolify static paste [`../deploy/coolify-frontend.nginx.conf`](../deploy/coolify-frontend.nginx.conf). Live `vote.cl8y.com` on Coolify’s stock nginx (1.31.x) does **not** inherit the Dockerfile snippet — re-paste that file after pulling, then `curl -sI https://vote.cl8y.com/vote` must show `X-Frame-Options: DENY` and a `Content-Security-Policy` without `connect-src https:`. |
+| **O3** | Production / Coolify frontend builds **unset** `VITE_PLAYWRIGHT_E2E` and `VITE_DEV_MNEMONIC`, and **require** `VITE_WC_PROJECT_ID` ([#12](https://gitlab.com/PlasticDigits/voting/-/issues/12)). `vite.config.ts` (`prodEnvGuards`) and [`../deploy/docker/frontend.Dockerfile`](../deploy/docker/frontend.Dockerfile) fail the image if the hatch is on or the WC id is missing. CSP (`connect-src` / `frame-src`, no blanket `https:` or `frame-src *`) is stamped by the image from [`../deploy/docker/frontend.security-headers.conf`](../deploy/docker/frontend.security-headers.conf) **and** by the Coolify static paste [`../deploy/coolify-frontend.nginx.conf`](../deploy/coolify-frontend.nginx.conf). Live `vote.cl8y.com` on Coolify’s stock nginx (1.31.x) does **not** inherit the Dockerfile snippet — re-paste that file after pulling (include WC `frame-src`), then `curl -sI https://vote.cl8y.com/vote` must show `X-Frame-Options: DENY` and a `Content-Security-Policy` without `connect-src https:`. |
 | **O4** | No `VITE_*` BSC JSON-RPC URL. Indexer / ledger owns `eth_call` / `eth_getLogs`. |
 | **O5** | Connected `/vote` UI stays behind [cl8y-ecosystem-legal](https://gitlab.com/PlasticDigits/cl8y-ecosystem-legal). Property is `vote.cl8y.com` (registered; Legal #12). |
 | **O6** | `operator-voting` POST endpoints are IP/QPS limited (**O-RL1–O-RL5** in [OPERATOR_VOTING.md](OPERATOR_VOTING.md)) before public expose. Body cap (64 KiB) is not a substitute. |
@@ -35,7 +35,7 @@ Boot order:
 2. Start `voting-ledger` (`RUN_MODE=prod`, writer `DATABASE_URL`, `TERRA_LCD_URL`, `BSC_RPC_URLS`). It applies sqlx migrations.
 3. As the DB owner, apply [`../deploy/grants.sql`](../deploy/grants.sql) with `psql -v ON_ERROR_STOP=1 -d "$WRITER_URL"`. Set a real `operator_voting` password (not the file default). Privilege tests apply that same file via `psql -d`. `GRANT EXECUTE` must stay on `public.voting_*_balance_at` (L10 search_path).
 4. Start `operator-voting` with the restricted URL. Confirm `APPLY_MIGRATIONS` is unset/false (image default; prod config refuses true). Set `CORS_ORIGINS=https://vote.cl8y.com` (or the staging origin). Set `RATE_LIMIT_TRUST_FORWARDED=true` (Coolify proxy).
-5. Build the dApp with `VITE_OPERATOR_VOTING_URL=https://…` only. Do not pass `VITE_PLAYWRIGHT_E2E`, `VITE_DEV_MNEMONIC`, or any `VITE_*` BSC RPC. The image writes Legal + API origins into nginx CSP. Confirm the service uses [`../deploy/docker/frontend.Dockerfile`](../deploy/docker/frontend.Dockerfile) (nginx 1.27 + `frontend.nginx.conf`). If Coolify’s default static nginx is in front instead, paste [`../deploy/coolify-frontend.nginx.conf`](../deploy/coolify-frontend.nginx.conf) (`try_files $uri /index.html`, `/assets/` `=404`). Prove:
+5. Build the dApp with `VITE_OPERATOR_VOTING_URL=https://…` and `VITE_WC_PROJECT_ID` (WalletConnect Cloud project that lists `https://vote.cl8y.com`). Do not pass `VITE_PLAYWRIGHT_E2E`, `VITE_DEV_MNEMONIC`, or any `VITE_*` BSC RPC. The image writes Legal + API origins into nginx CSP. Confirm the service uses [`../deploy/docker/frontend.Dockerfile`](../deploy/docker/frontend.Dockerfile) (nginx 1.27 + `frontend.nginx.conf`). If Coolify’s default static nginx is in front instead, paste [`../deploy/coolify-frontend.nginx.conf`](../deploy/coolify-frontend.nginx.conf) (`try_files $uri /index.html`, `/assets/` `=404`). Prove:
 
    ```bash
    curl -sI https://vote.cl8y.com/vote
@@ -67,7 +67,8 @@ Playwright with `VITE_PLAYWRIGHT_E2E=true` is **not** a substitute. After Legal 
 |--------|-------|------|
 | Keplr | Terra Classic | Legal → register → propose if ≥1000 CW20 → vote |
 | MetaMask | BSC 56 | Legal → register → vote (propose if ≥1000 BEP-20) |
-| Cosmos WalletConnect | Terra mobile | Pairing still works with the ported DEX helpers (WC-M1–M12) |
+| Cosmos WalletConnect | Terra mobile | Galaxy Station / Keplr / Station / Cosmostation / LuncDash: Open/Copy sheet or desktop QR — not hung Connecting... ([#12](https://gitlab.com/PlasticDigits/voting/-/issues/12), WC-M1–M12) |
+| BSC WalletConnect | BSC 56 | wagmi QR/modal → `0x…` on chain 56. Cancel must clear EVM connecting. |
 
 Wrong-chain MetaMask (not 56) and missing `signArbitrary` must show the existing readable errors. Do not ask for seeds.
 
@@ -129,6 +130,7 @@ Postgres integration tests take `pg_advisory_lock(739001)` ([`../ledger/src/test
 These cannot be completed from a repo-only agent:
 
 - Coolify project create / DNS / TLS / secret install (dApp + `operator-voting` are up; ledger writer is private)
-- Re-paste [`../deploy/coolify-frontend.nginx.conf`](../deploy/coolify-frontend.nginx.conf) so live `vote.cl8y.com` (nginx 1.31.x) sends O3 CSP / `X-Frame-Options` — in-tree paste is not a Coolify save
+- Re-paste [`../deploy/coolify-frontend.nginx.conf`](../deploy/coolify-frontend.nginx.conf) so live `vote.cl8y.com` (nginx 1.31.x) sends O3 CSP / `X-Frame-Options` (include WC `frame-src`) — in-tree paste is not a Coolify save
 - Legal admin property + CORS + portal allowlist write (done on [cl8y-ecosystem-legal#12](https://gitlab.com/PlasticDigits/cl8y-ecosystem-legal/-/issues/12))
-- Keplr / MetaMask / mobile WC on a real staging origin — still blocked on [#9](https://gitlab.com/PlasticDigits/voting/-/issues/9) (registered balance 0). Do not close this issue as live QA done while #9 is open.
+- Keplr / MetaMask / Galaxy Station / BSC WalletConnect on a real staging origin — still blocked on [#9](https://gitlab.com/PlasticDigits/voting/-/issues/9) (registered balance 0). Do not close [#12](https://gitlab.com/PlasticDigits/voting/-/issues/12) on Playwright hatch E2E.
+- Coolify frontend build-arg `VITE_WC_PROJECT_ID` set; WalletConnect Cloud project includes `https://vote.cl8y.com`

@@ -59,4 +59,4 @@ DEX documents this for `dex.cl8y.com` in `AGENTS_FRONTEND_CLICKWRAP.md`. Repeat 
 
 1. Do not treat a localStorage NFA/risk flag as Legal proof.
 2. Do not use Legal sign URLs as voting `signArbitrary` / `personal_sign`.
-3. After WalletConnect on mobile Chrome, if Accept still needs `window.keplr`, say so (DEX #554 WC-M12). Same class of hint for EVM in-app browsers.
+3. After WalletConnect on mobile Chrome, if Accept still needs `window.keplr`, say so (DEX #554 WC-M12). Same class of hint for EVM in-app browsers. WC success must **not** skip TermsGate ([#12](https://gitlab.com/PlasticDigits/voting/-/issues/12)).

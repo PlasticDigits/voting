@@ -1,6 +1,6 @@
 # Voting dApp
 
-Cross-links: [OPERATOR_VOTING.md](OPERATOR_VOTING.md) · [OPS.md](OPS.md) · skills [AGENTS_LEGAL_CLICKWRAP.md](../skills/AGENTS_LEGAL_CLICKWRAP.md) · [AGENTS_WALLET_CONNECTORS.md](../skills/AGENTS_WALLET_CONNECTORS.md) · [AGENTS_OPS_STAGING.md](../skills/AGENTS_OPS_STAGING.md) · issues [#3](https://gitlab.com/PlasticDigits/voting/-/issues/3) · [#5](https://gitlab.com/PlasticDigits/voting/-/issues/5) · [#6](https://gitlab.com/PlasticDigits/voting/-/issues/6) · [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7) · [#8](https://gitlab.com/PlasticDigits/voting/-/issues/8) · [#9](https://gitlab.com/PlasticDigits/voting/-/issues/9) · [#14](https://gitlab.com/PlasticDigits/voting/-/issues/14)
+Cross-links: [OPERATOR_VOTING.md](OPERATOR_VOTING.md) · [OPS.md](OPS.md) · skills [AGENTS_LEGAL_CLICKWRAP.md](../skills/AGENTS_LEGAL_CLICKWRAP.md) · [AGENTS_WALLET_CONNECTORS.md](../skills/AGENTS_WALLET_CONNECTORS.md) · [AGENTS_OPS_STAGING.md](../skills/AGENTS_OPS_STAGING.md) · issues [#3](https://gitlab.com/PlasticDigits/voting/-/issues/3) · [#5](https://gitlab.com/PlasticDigits/voting/-/issues/5) · [#6](https://gitlab.com/PlasticDigits/voting/-/issues/6) · [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7) · [#8](https://gitlab.com/PlasticDigits/voting/-/issues/8) · [#9](https://gitlab.com/PlasticDigits/voting/-/issues/9) · [#12](https://gitlab.com/PlasticDigits/voting/-/issues/12) · [#14](https://gitlab.com/PlasticDigits/voting/-/issues/14)
 
 Package: `frontend/`. Canonical routes on the dedicated host: `/`, `/new`, `/:id`. DEX-era `/vote`, `/vote/new`, `/vote/:id` stay as aliases.
 
@@ -17,7 +17,7 @@ Nginx: [`../deploy/docker/frontend.nginx.conf`](../deploy/docker/frontend.nginx.
 
 ## Legal (required)
 
-`ConnectedTermsGate` uses `@plasticdigits/cl8y-clickwrap`. Property default `vote.cl8y.com` (`VITE_LEGAL_PROPERTY`). Connected Terra → `network="TerraClassic"`. Connected EVM → `network="EVM"`. Disconnected browse is open. Fail closed after connect. `redirect_uri` is **path-preserving** (`window.location.href`, origin allowlist `https://vote.cl8y.com`). `VITE_PLAYWRIGHT_E2E=true` may skip the gate in Playwright `webServer` only — **unset in production**. `vite.config.ts` and the Coolify image refuse any non-empty hatch, mnemonic, or `VITE_*` BSC RPC ([`../frontend/src/utils/prodEnvGuards.ts`](../frontend/src/utils/prodEnvGuards.ts)). Production nginx CSP (`connect-src`, no blanket `https:`) is stamped from [`../deploy/docker/frontend.security-headers.conf`](../deploy/docker/frontend.security-headers.conf) (Dockerfile) and inlined in [`../deploy/coolify-frontend.nginx.conf`](../deploy/coolify-frontend.nginx.conf) (static paste; live `operator.vote.cl8y.com`).
+`ConnectedTermsGate` uses `@plasticdigits/cl8y-clickwrap`. Property default `vote.cl8y.com` (`VITE_LEGAL_PROPERTY`). Connected Terra → `network="TerraClassic"`. Connected EVM → `network="EVM"`. Disconnected browse is open. Fail closed after connect. `redirect_uri` is **path-preserving** (`window.location.href`, origin allowlist `https://vote.cl8y.com`). `VITE_PLAYWRIGHT_E2E=true` may skip the gate in Playwright `webServer` only — **unset in production**. `vite.config.ts` and the Coolify image refuse any non-empty hatch, mnemonic, or `VITE_*` BSC RPC, and refuse a missing `VITE_WC_PROJECT_ID` ([`../frontend/src/utils/prodEnvGuards.ts`](../frontend/src/utils/prodEnvGuards.ts), [#12](https://gitlab.com/PlasticDigits/voting/-/issues/12)). Production nginx CSP (`connect-src` / `frame-src`, no blanket `https:` or `frame-src *`) is stamped from [`../deploy/docker/frontend.security-headers.conf`](../deploy/docker/frontend.security-headers.conf) (Dockerfile) and inlined in [`../deploy/coolify-frontend.nginx.conf`](../deploy/coolify-frontend.nginx.conf) (static paste; live `operator.vote.cl8y.com`). Re-paste that snippet after this merge so live HTML also sends WC `frame-src`.
 
 Legal portal sign URLs are **terms only**, not voting auth.
 
@@ -31,6 +31,29 @@ Ops (Legal repo): property `vote.cl8y.com` is registered ([cl8y-ecosystem-legal#
 | BSC | Bridge wagmi + `useEvmWalletDiscovery` | EIP-191 `personal_sign` |
 
 One connected address at a time. No seed prompts. No `VITE_*` BSC RPC for balances. Wrong chain (not 56) and missing `signArbitrary` show readable errors.
+
+## WalletConnect (issue #12 / WC-M1–WC-M12)
+
+Hung **Connecting...** with no QR and no Open/Copy sheet is a product bug, not “ops only”. Pairing helpers already lived in-tree; the missing pieces were the **cosmes intercept**, **boot order**, **production project id**, and **CSP frames**.
+
+| Invariant | Voting behavior |
+|-----------|-----------------|
+| **WC-M1** | Mobile UA / iPad desktop-UA / viewport ≤767px: pairing sheet Open + Copy, not QR-only. |
+| **WC-M2** | Desktop: hook returns `false`; patched cosmes still shows Scan + canvas QR. |
+| **WC-M3** | No `window.location.href` from the async `display_uri` callback. Open is a user-gesture `<a href>`. |
+| **WC-M4** | Copy copies the raw `wc:` URI via `CopyButton`. |
+| **WC-M5** | `isAllowedWalletConnectDeepLink` rejects `javascript:`, `data:`, and random `https://`. |
+| **WC-M6** | `postinstall` `patch-package` on `@goblinhunt/cosmes`. Patched `QRCodeModal` calls `__CL8Y_WC_PAIRING_MODAL__`. Install the hook in [`../frontend/src/main.tsx`](../frontend/src/main.tsx) **before** `createRoot`. |
+| **WC-M7** | Injected in-app browsers stay Extension. |
+| **WC-M8** | Hook hides Connect when the mobile sheet opens (`z-[10001]` vs Connect `z-[9999]`). EVM WC closes Connect so the Reown QR is visible. |
+| **WC-M9** | Cancel / backdrop / Escape / 90s timeout abort Terra `controller.connect()` **and** in-flight wagmi WC; late sessions do not attach. |
+| **WC-M10** | Mobile Chrome without the matching extension offers Keplr / Station / Cosmostation via WC. No Leap. |
+| **WC-M11** | Android Galaxy Open is `intent://…scheme=galaxystation`, not Hexxagon `https://…#Intent`. |
+| **WC-M12** | Legal TermsGate still runs after WC. Portal sign URLs are terms only. |
+
+Production `npm run build` / the Coolify image **fail** without `VITE_WC_PROJECT_ID`. Do not commit the secret. WalletConnect Cloud must list origin `https://vote.cl8y.com` on that same project id. Playwright hatch E2E is **not** live WC QA — do not close #12 or #7’s Cosmos WC checkbox on Simulated Wallet.
+
+Do not add Reown AppKit / `@walletconnect/modal` as a new Terra pairing UI. Cosmes owns Terra QR; the dApp owns the mobile Open/Copy sheet.
 
 ## Copy
 

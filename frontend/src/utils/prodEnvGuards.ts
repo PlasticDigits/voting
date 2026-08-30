@@ -1,5 +1,5 @@
 /**
- * Production / Coolify build guards for issue #7 (O3, O4).
+ * Production / Coolify build guards for issue #7 (O3, O4) and #12 (WC project id).
  *
  * Used by `vite.config.ts` so `npm run build` fails closed the same way
  * `deploy/docker/frontend.Dockerfile` does. Keep this module free of
@@ -20,6 +20,11 @@ export function productionEnvViolations(
   if (env.VITE_REGISTER_POLL_TIMEOUT_MS?.trim()) {
     violations.push(
       'VITE_REGISTER_POLL_TIMEOUT_MS must be unset for production builds (Playwright-only; default 120s).',
+    )
+  }
+  if (!env.VITE_WC_PROJECT_ID?.trim()) {
+    violations.push(
+      'VITE_WC_PROJECT_ID is required for production builds (issue #12 / DEX #378 / M-10).',
     )
   }
 

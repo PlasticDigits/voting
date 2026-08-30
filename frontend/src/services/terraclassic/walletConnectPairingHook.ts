@@ -9,8 +9,9 @@ import {
 } from '@/utils/walletConnectPairing'
 
 /**
- * Registers the cosmes `QRCodeModal` intercept (GitLab #519).
- * Install once at boot so the hook exists before any WalletConnect `connect()`.
+ * Registers the cosmes `QRCodeModal` intercept (GitLab DEX #519 / voting #12).
+ * Install once at **module scope in `main.tsx` before `createRoot`** so the hook
+ * exists before any WalletConnect `connect()` (including auto-reconnect).
  */
 export function installWalletConnectPairingHook(): () => void {
   const hook: WalletConnectPairingHook = {

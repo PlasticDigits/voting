@@ -11,13 +11,25 @@ describe('production env guards (O3 / O4)', () => {
       productionEnvViolations({
         VITE_OPERATOR_VOTING_URL: 'https://voting-api.example',
         VITE_LEGAL_PROPERTY: 'vote.cl8y.com',
+        VITE_WC_PROJECT_ID: '00000000000000000000000000000000',
       }),
     ).toEqual([])
     expect(() =>
       assertProductionVotingEnv({
         VITE_OPERATOR_VOTING_URL: 'https://voting-api.example',
+        VITE_WC_PROJECT_ID: '00000000000000000000000000000000',
       }),
     ).not.toThrow()
+  })
+
+  it('rejects missing VITE_WC_PROJECT_ID (issue #12)', () => {
+    expect(productionEnvViolations({})).toEqual(
+      expect.arrayContaining([expect.stringContaining('VITE_WC_PROJECT_ID')]),
+    )
+    expect(productionEnvViolations({ VITE_WC_PROJECT_ID: '   ' }).length).toBeGreaterThan(0)
+    expect(() => assertProductionVotingEnv({ VITE_OPERATOR_VOTING_URL: 'https://x' })).toThrow(
+      /VITE_WC_PROJECT_ID/,
+    )
   })
 
   it('rejects Legal hatch, mnemonic, and any VITE_* BSC RPC', () => {
@@ -41,6 +53,8 @@ describe('production env guards (O3 / O4)', () => {
     const dockerfile = readFileSync(resolve(deployDocker, 'frontend.Dockerfile'), 'utf8')
     expect(dockerfile).toContain('test -z "$VITE_PLAYWRIGHT_E2E"')
     expect(dockerfile).toContain('test -z "$VITE_DEV_MNEMONIC"')
+    expect(dockerfile).toContain('test -n "$VITE_WC_PROJECT_ID"')
+    expect(dockerfile).toContain('COPY frontend/patches ./patches')
     expect(dockerfile).toContain('VITE_BSC_RPC_URL')
 
     const headers = readFileSync(resolve(deployDocker, 'frontend.security-headers.conf'), 'utf8')
@@ -50,6 +64,13 @@ describe('production env guards (O3 / O4)', () => {
     const csp = headers.match(/Content-Security-Policy "([^"]+)"/)?.[1] ?? ''
     const connect = csp.split(';').find((d) => d.trim().startsWith('connect-src')) ?? ''
     expect(connect.split(/\s+/)).not.toContain('https:')
+    const frame = csp.split(';').find((d) => d.trim().startsWith('frame-src')) ?? ''
+    expect(frame).toContain('https://verify.walletconnect.com')
+    expect(frame.split(/\s+/)).not.toContain('*')
+    expect(csp).toContain("frame-ancestors 'none'")
+    expect(headers).toContain('https://walletconnect.luncdash.com')
+    const img = csp.split(';').find((d) => d.trim().startsWith('img-src')) ?? ''
+    expect(img).toContain('https://*.walletconnect.com')
   })
 
   it('Coolify static nginx snippet stamps CSP (no blanket https:) for the live 1.31.x path', () => {
@@ -65,5 +86,8 @@ describe('production env guards (O3 / O4)', () => {
     const connect = csp.split(';').find((d) => d.trim().startsWith('connect-src')) ?? ''
     expect(connect.split(/\s+/)).not.toContain('https:')
     expect(connect).toContain("connect-src")
+    const frame = csp.split(';').find((d) => d.trim().startsWith('frame-src')) ?? ''
+    expect(frame).toContain('https://verify.walletconnect.com')
+    expect(frame.split(/\s+/)).not.toContain('*')
   })
 })

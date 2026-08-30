@@ -32,7 +32,7 @@ interface WalletState {
   connect: (walletName: WalletName, walletType: WalletType) => Promise<void>
   connectDev: () => void
   disconnect: () => Promise<void>
-  /** Clears `isConnecting`, aborts pending WalletConnect, closes pairing (GitLab #554). */
+  /** Clears Terra + EVM connecting, aborts pending WalletConnect, closes pairing (GitLab #554 / voting #12). */
   cancelConnection: () => void
 }
 
@@ -45,7 +45,7 @@ export const useWalletStore = create<WalletState>((set, get) => ({
   setWalletModalOpen: (open) => set({ walletModalOpen: open }),
   openWalletModal: () => set({ walletModalOpen: true }),
   closeWalletModal: () => {
-    if (get().isConnecting) {
+    if (get().isConnecting || useEvmWalletStore.getState().connecting) {
       get().cancelConnection()
       return
     }
@@ -114,6 +114,7 @@ export const useWalletStore = create<WalletState>((set, get) => ({
     connectAttemptId += 1
     abortPendingTerraWalletConnect()
     useWalletConnectPairingStore.getState().close()
+    useEvmWalletStore.getState().cancelConnection()
     set({ isConnecting: false, error: null, walletModalOpen: false })
   },
 }))
