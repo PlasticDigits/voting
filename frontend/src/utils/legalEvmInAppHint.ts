@@ -1,14 +1,15 @@
 /**
- * EVM Legal next-step after connect (issue #16).
+ * EVM Legal shortcut after connect (issue #16).
  *
- * Voting WalletConnect / injected sessions do not follow the user to
- * `terms.cl8y.com`. Chrome/Safari then hit Legal “No EVM wallet found”.
- * Surface Open-in-MetaMask + copy instead of a dead Accept. Do **not**
- * implement portal `personal_sign` here (C1 / #5).
+ * Accept (`@plasticdigits/cl8y-clickwrap` >= 0.1.1) full-navigates to the
+ * portal with `account` on the query. The portal (Legal #15, closed) has
+ * Open in MetaMask / Binance Web3 / Copy / WalletConnect — Chrome/Safari
+ * can finish terms there. This hint is a same-page shortcut, not a claim
+ * that Accept is a dead end. Do **not** implement portal `personal_sign`
+ * here (C1 / #5).
  *
- * Binance Web3 has no first-party documented dapp-browser URL we can
- * ship; copy-link + MetaMask (documented `link.metamask.io/dapp/`) is
- * the path. Do not invent `bnc://` schemes.
+ * Voting does not ship a Binance dapp-browser URL; Copy link + MetaMask
+ * (`link.metamask.io/dapp/`) is the path. Do not invent `bnc://`.
  */
 import {
   getLegalProperty,
@@ -19,7 +20,7 @@ import {
 export const METAMASK_DAPP_BROWSER_ORIGIN = 'https://link.metamask.io'
 
 export const LEGAL_EVM_INAPP_HINT =
-  'Chrome and Safari cannot finish terms. Open the Legal page in MetaMask, or paste the link in Binance Web3.'
+  'Accept opens the Legal page. On a phone, open it in MetaMask or paste the link in Binance Web3.'
 
 export function hasInjectedEip1193(
   win: { ethereum?: unknown } = typeof window !== 'undefined' ? window : {}
@@ -33,8 +34,8 @@ export function isEvmWalletConnectConnectorId(connectorId: string | null | undef
 }
 
 /**
- * Show when unsigned **and** this page cannot finish terms in-place:
- * no EIP-1193 inject, or the session is WalletConnect (Legal will not see it).
+ * Show when unsigned **and** this tab cannot sign in-place: no EIP-1193
+ * inject, or the session is WalletConnect (the portal will not see it).
  */
 export function shouldShowLegalEvmInAppHint(input: {
   hasInjectedEip1193: boolean

@@ -23,7 +23,7 @@ Legal portal sign URLs are **terms only**, not voting auth. Vendor fallback `bui
 
 ### EVM in-app hint (issue #16 / L-EVM1–L-EVM5)
 
-A voting WalletConnect or Chrome/Safari session does **not** follow the user to `terms.cl8y.com`. Unsigned EVM users without `window.ethereum` (or connected via WalletConnect) get the same class of next step as Terra Keplr: Open in MetaMask (documented `https://link.metamask.io/dapp/…`) plus Copy link. Idle copy tells them to paste in Binance Web3. There is no first-party documented Binance dapp URL; do not invent `bnc://`. Desktop injected MetaMask hides the hint — Accept still full-navigates to the portal.
+A voting WalletConnect or Chrome/Safari session does **not** follow the user to `terms.cl8y.com`. **Accept** still does: `@plasticdigits/cl8y-clickwrap` **>= 0.1.1** puts `account=` on that URL (`0.1.0` dropped it). The portal (Legal #15, **closed**) then offers Open in MetaMask / Binance Web3 / Copy / WalletConnect. Voting’s hint is a shortcut (Open in MetaMask + Copy link) — copy must say Accept opens Legal, not that Chrome/Safari cannot finish terms. Do not invent a voting-side `bnc://`. Desktop injected MetaMask hides the hint; Accept still full-navigates.
 
 | ID | Rule |
 |----|------|
@@ -31,7 +31,7 @@ A voting WalletConnect or Chrome/Safari session does **not** follow the user to 
 | **L-EVM2** | Accept and copy/open URLs include `property` (`vote.cl8y.com` / `VITE_LEGAL_PROPERTY`), sanitized `redirect_uri`, `app_name=CL8Y Voting`, and the **connected** `account=0x…`. Never read `account` from the page query to overwrite the store. |
 | **L-EVM3** | Hint hrefs are Legal terms origin + `/sign/evm` only, optionally wrapped in `https://link.metamask.io/dapp/`. Do not open arbitrary `https://` from wallet payloads. `account` is never a redirect target. |
 | **L-EVM4** | WalletConnect success must **not** skip TermsGate ([#12](https://gitlab.com/PlasticDigits/voting/-/issues/12)). Status error / unknown stays fail-closed (no propose/vote). |
-| **L-EVM5** | Do not reimplement portal EIP-191 in this dApp ([#5](https://gitlab.com/PlasticDigits/voting/-/issues/5)). Completing `signed_latest` for MetaMask iOS / Binance Web3 in system browsers still depends on [cl8y-ecosystem-legal#15](https://gitlab.com/PlasticDigits/cl8y-ecosystem-legal/-/issues/15). |
+| **L-EVM5** | Do not reimplement portal EIP-191 in this dApp ([#5](https://gitlab.com/PlasticDigits/voting/-/issues/5)). Production clickwrap must be **>= 0.1.1** so Accept forwards `account`. Portal next-steps for phones are Legal’s (issue 15, closed). |
 
 Code: [`../frontend/src/utils/legalEvmInAppHint.ts`](../frontend/src/utils/legalEvmInAppHint.ts) · [`../frontend/src/components/legal/LegalKeplrInAppHint.tsx`](../frontend/src/components/legal/LegalKeplrInAppHint.tsx) · skill [`../skills/AGENTS_LEGAL_CLICKWRAP.md`](../skills/AGENTS_LEGAL_CLICKWRAP.md).
 

@@ -143,9 +143,12 @@ describe('buildMetaMaskDappBrowserUrl', () => {
 })
 
 describe('LEGAL_EVM_INAPP_HINT copy', () => {
-  it('is retail-short and does not push a desktop extension or call Legal a vote', () => {
+  it('matches Accept → portal behavior and does not claim Chrome/Safari cannot finish', () => {
+    expect(LEGAL_EVM_INAPP_HINT).toMatch(/Accept/)
+    expect(LEGAL_EVM_INAPP_HINT).toMatch(/Legal page/)
     expect(LEGAL_EVM_INAPP_HINT).toMatch(/MetaMask/)
     expect(LEGAL_EVM_INAPP_HINT).toMatch(/Binance Web3/)
+    expect(LEGAL_EVM_INAPP_HINT).not.toMatch(/cannot finish/i)
     expect(LEGAL_EVM_INAPP_HINT).not.toMatch(/extension/i)
     expect(LEGAL_EVM_INAPP_HINT).not.toMatch(/install MetaMask/i)
     expect(LEGAL_EVM_INAPP_HINT).not.toMatch(/\bvote\b/i)

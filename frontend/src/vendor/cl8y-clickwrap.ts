@@ -3,7 +3,8 @@
  *
  * The published SDK from GitLab project 82547916 installed successfully in this
  * worktree. Keep this file so the app still compiles if registry auth is missing.
- * Production must use the published package, not this fallback.
+ * Production must use the published package **>= 0.1.1**, not this fallback
+ * (`0.1.0` Accept omitted `account=`).
  */
 
 export type Network = 'EVM' | 'Solana' | 'TerraClassic' | 'Telegram'

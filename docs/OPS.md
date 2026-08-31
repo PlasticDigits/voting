@@ -66,7 +66,7 @@ Playwright with `VITE_PLAYWRIGHT_E2E=true` is **not** a substitute. After Legal 
 | Wallet | Chain | Path |
 |--------|-------|------|
 | Keplr | Terra Classic | Legal → register → propose if ≥1000 CW20 → vote |
-| MetaMask | BSC 56 | Legal → register → vote (propose if ≥1000 BEP-20). Unsigned Chrome/Safari must see Open in MetaMask / Copy link before Accept ([#16](https://gitlab.com/PlasticDigits/voting/-/issues/16)). Completing portal sign from that path still depends on [cl8y-ecosystem-legal#15](https://gitlab.com/PlasticDigits/cl8y-ecosystem-legal/-/issues/15). |
+| MetaMask | BSC 56 | Legal → register → vote (propose if ≥1000 BEP-20). Unsigned Chrome/Safari: Accept opens the portal (`account=` via clickwrap >= 0.1.1); voting also shows Open in MetaMask / Copy link ([#16](https://gitlab.com/PlasticDigits/voting/-/issues/16)). Portal phone next-steps are live ([cl8y-ecosystem-legal#15](https://gitlab.com/PlasticDigits/cl8y-ecosystem-legal/-/issues/15), closed). |
 | Cosmos WalletConnect | Terra mobile | Galaxy Station / Keplr / Station / Cosmostation / LuncDash: Open/Copy sheet or desktop QR — not hung Connecting... ([#12](https://gitlab.com/PlasticDigits/voting/-/issues/12), WC-M1–M12) |
 | BSC WalletConnect | BSC 56 | wagmi QR/modal → `0x…` on chain 56. Cancel must clear EVM connecting. |
 

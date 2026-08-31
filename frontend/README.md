@@ -44,7 +44,7 @@ The Coolify image stamps [`../deploy/docker/frontend.security-headers.conf`](../
 
 ## Legal
 
-Connected wallets must accept CL8Y Legal before propose / vote CTAs. Browse while disconnected stays open. Fail closed if status is unknown. Use `@plasticdigits/cl8y-clickwrap`. If the GitLab npm registry is unauthenticated, the app falls back to `src/vendor/cl8y-clickwrap.ts` so it compiles — **production must use the published SDK**. Vendor fallback `buildSignUrl` / `TermsGate` still pass `account`. Unsigned EVM in Chrome/Safari (or WalletConnect) gets Open in MetaMask + copy ([#16](https://gitlab.com/PlasticDigits/voting/-/issues/16)); do not skip TermsGate after connect.
+Connected wallets must accept CL8Y Legal before propose / vote CTAs. Browse while disconnected stays open. Fail closed if status is unknown. Use `@plasticdigits/cl8y-clickwrap` **>= 0.1.1** (Accept forwards `account`). If the GitLab npm registry is unauthenticated, the app falls back to `src/vendor/cl8y-clickwrap.ts` so it compiles — **production must use the published SDK**. Unsigned EVM in Chrome/Safari (or WalletConnect) gets Open in MetaMask + copy ([#16](https://gitlab.com/PlasticDigits/voting/-/issues/16)); Accept still opens the portal. Do not skip TermsGate after connect.
 
 ## Signing
 

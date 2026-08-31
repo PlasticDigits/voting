@@ -44,7 +44,7 @@ Use `@plasticdigits/cl8y-clickwrap` (`TermsGate` / `createClient`). **Do not** r
 7. **Secrets.** No Legal `ADMIN_TOKEN` in this frontend.
 8. **E2E hatch.** `VITE_PLAYWRIGHT_E2E=true` may skip the gate in Playwright `webServer` only. Production / Coolify unset — [`../frontend/src/utils/prodEnvGuards.ts`](../frontend/src/utils/prodEnvGuards.ts) and the frontend Dockerfile fail the build if it is set.
 9. **Copy.** Legal is terms evidence, not a substitute for “votes are offchain / advisory” disclosure.
-10. **EVM in-app hint is required** ([#16](https://gitlab.com/PlasticDigits/voting/-/issues/16), L-EVM1–L-EVM5). Unsigned EVM without `window.ethereum`, or any WalletConnect EVM session, must get Open in MetaMask (`https://link.metamask.io/dapp/…` wrapping the Legal `/sign/evm` URL) plus Copy link — not only Accept. Terra Keplr copy stays Terra-only. Do not invent a Binance `bnc://` scheme; tell users to paste the copied Legal link in Binance Web3. Pass the connected `0x…` as `account` on Accept (vendor fallback included). Do **not** reimplement portal EIP-191 in voting. Completing terms in system Safari/Chrome still depends on [cl8y-ecosystem-legal#15](https://gitlab.com/PlasticDigits/cl8y-ecosystem-legal/-/issues/15).
+10. **EVM in-app hint is required** ([#16](https://gitlab.com/PlasticDigits/voting/-/issues/16), L-EVM1–L-EVM5). Unsigned EVM without `window.ethereum`, or any WalletConnect EVM session, must get Open in MetaMask (`https://link.metamask.io/dapp/…`) plus Copy link **in addition to** Accept. Copy: Accept opens the Legal page; on a phone, open it in MetaMask or paste the link in Binance Web3. Do **not** say Chrome/Safari cannot finish terms — Accept (`@plasticdigits/cl8y-clickwrap` **>= 0.1.1**) lands on the portal, which already has Open in MetaMask / Binance Web3 / Copy / WalletConnect ([cl8y-ecosystem-legal#15](https://gitlab.com/PlasticDigits/cl8y-ecosystem-legal/-/issues/15), closed). Terra Keplr copy stays Terra-only. Do not invent a Binance `bnc://` on voting. Pass the connected `0x…` as `account` on Accept (published SDK 0.1.1 + vendor fallback). Do **not** reimplement portal EIP-191 in voting.
 
 ## Ops (Legal repo — often a separate change)
 
@@ -56,7 +56,7 @@ DEX documents this for `dex.cl8y.com` in `AGENTS_FRONTEND_CLICKWRAP.md`. Repeat 
 
 ## npm
 
-`@plasticdigits/cl8y-clickwrap` is published from Legal (GitLab project id `82547916`). Scope `@plasticdigits` at the GitLab npm registry the same way the DEX `.npmrc` does.
+`@plasticdigits/cl8y-clickwrap` is published from Legal (GitLab project id `82547916`). Scope `@plasticdigits` at the GitLab npm registry the same way the DEX `.npmrc` does. Production must be **>= 0.1.1** — `0.1.0` `TermsGate` Accept omitted `account=` on the portal URL.
 
 ## Rules of thumb
 
