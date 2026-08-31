@@ -189,6 +189,9 @@ describe('ConnectedTermsGate', () => {
       expect(screen.getByRole('button', { name: /accept terms/i })).toBeVisible()
       expect(screen.getByTestId('legal-evm-inapp-hint')).toBeVisible()
     })
+    expect(screen.getByTestId('legal-evm-inapp-hint')).toHaveTextContent(
+      'Accept opens the Legal page. On a phone, open it in MetaMask or paste the link in Binance Web3.'
+    )
     expect(screen.queryByTestId('legal-keplr-inapp-hint')).not.toBeInTheDocument()
     expect(screen.getByTestId('legal-evm-open-metamask')).toHaveAttribute(
       'href',
@@ -248,6 +251,9 @@ describe('ConnectedTermsGate', () => {
     const accept = await screen.findByRole('button', { name: /accept terms/i })
     fireEvent.click(accept)
 
+    await waitFor(() => {
+      expect(loc.href).toContain('sign/evm')
+    })
     const href = loc.href
     expect(href).toContain('sign/evm')
     expect(href).toContain('property=vote.cl8y.com')
