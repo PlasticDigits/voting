@@ -17,4 +17,7 @@ paths = [
   '''(?i)^docs/''',
   '''(?i)^skills/''',
   '''(?i)^deploy/''',
+  # Cosmes QRCodeModal patch (issue #12). `let key: Secp256k1PubKey` is a type
+  # name, not a credential. Default generic-api-key matches the identifier.
+  '''(?i)^frontend/patches/''',
 ]

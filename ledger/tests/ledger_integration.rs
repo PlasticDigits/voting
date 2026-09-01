@@ -36,13 +36,17 @@ async fn setup() -> Option<(PgPool, voting_ledger::test_lock::IntegrationDbLock)
     let url = test_db_url()?;
     let lock = voting_ledger::test_lock::hold_integration_db(&url)
         .await
-        .ok()?;
-    let pool = PgPool::connect(&url).await.ok()?;
-    db::migrate(&pool).await.ok()?;
+        .unwrap_or_else(|e| panic!("advisory lock: {e}"));
+    let pool = voting_ledger::test_lock::test_pool(&url)
+        .await
+        .unwrap_or_else(|e| panic!("test postgres: {e}"));
+    db::migrate(&pool)
+        .await
+        .unwrap_or_else(|e| panic!("ledger migrate: {e}"));
     sqlx::query("TRUNCATE voting_registrations, cl8y_cw20_transfers, cl8y_balances, cl8y_bep20_transfers, cl8y_bsc_balances, voting.registration_intents, voting.signatures CASCADE")
         .execute(&pool)
         .await
-        .ok()?;
+        .unwrap_or_else(|e| panic!("truncate: {e}"));
     Some((pool, lock))
 }
 
@@ -347,7 +351,7 @@ async fn pending_intents_permission_failure_is_not_empty_queue() {
         .ok();
 
     let denied_url = rewrite_user(&url, "voting_l12_denied", "l12-denied");
-    let denied = PgPool::connect(&denied_url)
+    let denied = voting_ledger::test_lock::test_pool(&denied_url)
         .await
         .expect("denied role login");
     let err = db::pending_intents(&denied).await.unwrap_err();

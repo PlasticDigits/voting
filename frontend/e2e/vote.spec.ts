@@ -73,3 +73,31 @@ test('register → draft → comment → open → vote (canonical /)', async ({ 
 test('register → draft → comment → open → vote (/vote alias)', async ({ page }) => {
   await registerDraftCommentOpenVote(page, '/vote', 'E2E alias proposal')
 })
+
+test('pending timeout shows Retry snapshot instead of a dead Registering pill', async ({
+  page,
+}) => {
+  await mockOperatorVoting(page, { snapshotNeverReady: true })
+  await connectSimulatedTerra(page, '/')
+  await page.getByTestId('register-cta').click()
+  await expect(page.getByTestId('registration-pending')).toBeVisible()
+  await expect(page.getByTestId('register-retry')).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByRole('alert')).toContainText('still pending')
+  await expect(page.getByTestId('register-cta')).toHaveCount(0)
+  await expect(page.getByTestId('connected-chain')).not.toContainText('0 CL8Y')
+  await expect(page.getByTestId('connected-chain')).not.toContainText('CL8Y')
+})
+
+test('reload while pending resumes wait and still hides the amount', async ({ page }) => {
+  await mockOperatorVoting(page, { alreadyPending: true, snapshotNeverReady: true })
+  await connectSimulatedTerra(page, '/')
+  await expect(page.getByTestId('registration-pending')).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByTestId('connected-chain')).not.toContainText('CL8Y')
+
+  await page.reload()
+  await connectSimulatedTerra(page, '/')
+  await expect(page.getByTestId('registration-pending')).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByTestId('connected-chain')).not.toContainText('CL8Y')
+  await expect(page.getByTestId('register-retry')).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByRole('alert')).toContainText('still pending')
+})

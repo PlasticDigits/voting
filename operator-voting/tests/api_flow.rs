@@ -9,10 +9,10 @@ use operator_voting::blacklist::parse_committee;
 use operator_voting::config::{VotingConfig, APP_NAME};
 use operator_voting::crypto::{cosmos_address_from_pubkey, eip191_hash, verify_terra};
 use operator_voting::db;
-use operator_voting::payload::SignedPayload;
+use operator_voting::payload::{body_hash, SignedPayload};
 use operator_voting::proposal_sections::{
     analysis_hash, prepare_sections, sanitize_analysis_sections, sanitize_proposal_sections,
-    sections_hash, AnalysisSections, ProposalSections,
+    AnalysisSections, ProposalSections,
 };
 use serde_json::Value;
 use sha3::Digest;
@@ -30,22 +30,28 @@ async fn setup_pool() -> Option<(PgPool, voting_ledger::test_lock::IntegrationDb
     let url = test_db_url()?;
     let lock = voting_ledger::test_lock::hold_integration_db(&url)
         .await
-        .ok()?;
-    let pool = PgPool::connect(&url).await.ok()?;
-    voting_ledger::db::migrate(&pool).await.ok()?;
-    db::migrate(&pool).await.ok()?;
+        .unwrap_or_else(|e| panic!("advisory lock: {e}"));
+    let pool = voting_ledger::test_lock::test_pool(&url)
+        .await
+        .unwrap_or_else(|e| panic!("test postgres: {e}"));
+    voting_ledger::db::migrate(&pool)
+        .await
+        .unwrap_or_else(|e| panic!("ledger migrate: {e}"));
+    db::migrate(&pool)
+        .await
+        .unwrap_or_else(|e| panic!("operator-voting migrate: {e}"));
     sqlx::query(
         "TRUNCATE voting.votes, voting.proposal_snapshots, voting.proposal_comments, voting.proposal_analysis, voting.proposals, voting.registration_intents, voting.signatures, voting_registrations, cl8y_balances, cl8y_bsc_balances, cl8y_cw20_transfers, cl8y_bep20_transfers CASCADE",
     )
     .execute(&pool)
     .await
-    .ok()?;
+    .unwrap_or_else(|e| panic!("truncate: {e}"));
     sqlx::query(
         "UPDATE indexer_state SET value = '0' WHERE key IN ('last_indexed_height', 'last_indexed_bsc_block')",
     )
     .execute(&pool)
     .await
-    .ok()?;
+    .unwrap_or_else(|e| panic!("reset tips: {e}"));
     Some((pool, lock))
 }
 
@@ -143,7 +149,14 @@ fn sample_sections() -> ProposalSections {
 }
 
 fn sections_body_hash(sections: &ProposalSections) -> String {
-    sections_hash(&sanitize_proposal_sections(sections))
+    let sanitized = sanitize_proposal_sections(sections);
+    let value = serde_json::to_value(&sanitized).expect("serialize proposal sections");
+    match prepare_sections(&value) {
+        Ok(prepared) => prepared.body_hash,
+        // Invalid fixtures still need a signed `body_hash` field. The API
+        // rejects on OV-S1 minima before comparing hashes (`api.rs` create).
+        Err(_) => body_hash("{}"),
+    }
 }
 
 fn valid_sections() -> Value {
@@ -159,7 +172,11 @@ fn draft_payload(
 ) -> SignedPayload {
     let mut p = payload(chain, chain_id, "draft", addr);
     p.title = Some(title.into());
-    p.body_hash = Some(prepare_sections(sections).unwrap().body_hash);
+    p.body_hash = Some(
+        prepare_sections(sections)
+            .map(|prepared| prepared.body_hash)
+            .unwrap_or_else(|_| body_hash("{}")),
+    );
     p
 }
 

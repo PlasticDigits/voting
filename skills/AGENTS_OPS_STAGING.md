@@ -5,17 +5,17 @@ description: >-
   operator-voting POST rate limits, SPA document fallback for /vote (issue #8),
   registered-holder balance reads (issue #9 OV-B1),   WalletConnect pairing
   (issue #12), registration pending never becoming a snapshot (issue #14),
-  EVM Legal in-app/copy hint (issue #16),
-  and optional LocalTerra LCD equality.
-  Use when verifying or implementing GitLab voting issues #7, #8, #9, #12, #14, or #16
-  or public expose.
+  EVM Legal in-app/copy hint (issue #16), Coolify dApp rebuild after !11
+  copy (issue #17), and optional LocalTerra LCD equality.
+  Use when verifying or implementing GitLab voting issues #7, #8, #9, #12,
+  #14, #16, or #17 or public expose.
 ---
 
 # Ops / staging (voting issue #7)
 
 Read [`docs/OPS.md`](../docs/OPS.md) first. In-tree #1–#6 are not enough for production. [#8](https://gitlab.com/PlasticDigits/voting/-/issues/8) is a production-blocking Legal-return 404 when the edge does not SPA-fallback `/vote`.
 
-This skill is for **3rd-party agents** continuing Coolify, Legal admin, or live wallet QA. Do not invent a fourth deploy path. If a registered holder shows **0 CL8Y** after Register, read [OPERATOR_VOTING.md](../docs/OPERATOR_VOTING.md) OV-B1 and issue [#9](https://gitlab.com/PlasticDigits/voting/-/issues/9) before touching LCD in the browser. If Register stays **Registering…** with no amount, that is [#14](https://gitlab.com/PlasticDigits/voting/-/issues/14) (pending never becomes a snapshot) — do not close #9 instead.
+This skill is for **3rd-party agents** continuing Coolify, Legal admin, or live wallet QA. Do not invent a fourth deploy path. If a registered holder shows **0 CL8Y** after Register, read [OPERATOR_VOTING.md](../docs/OPERATOR_VOTING.md) OV-B1 and issue [#9](https://gitlab.com/PlasticDigits/voting/-/issues/9) before touching LCD in the browser. If Register stays **Registering…** with no amount, that is [#14](https://gitlab.com/PlasticDigits/voting/-/issues/14) (pending never becomes a snapshot) — do not close #9 instead. If live HTML still says Chrome/Safari cannot finish terms, rebuild the dApp from `main` ([#17](https://gitlab.com/PlasticDigits/voting/-/issues/17)); do not revert in-tree copy.
 
 ## What is already in-tree
 
@@ -69,7 +69,7 @@ This skill is for **3rd-party agents** continuing Coolify, Legal admin, or live 
 
 ```bash
 cargo test --workspace --lib
-LEDGER_TEST_DATABASE_URL=postgres://voting:voting@127.0.0.1:5433/voting cargo test --workspace --tests
+LEDGER_TEST_DATABASE_URL=postgres://voting:voting@127.0.0.1:5433/voting cargo test --workspace --tests --jobs 1 -- --test-threads=1
 cd frontend && npm test
 sh deploy/docker/test-frontend-spa-fallback.sh
 ```

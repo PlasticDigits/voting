@@ -1,6 +1,6 @@
 # Ops runbook (issue #7)
 
-Cross-links: [HANDOFF.md](HANDOFF.md) · [ARCHITECTURE.md](ARCHITECTURE.md) · [OPERATOR_VOTING.md](OPERATOR_VOTING.md) · [FRONTEND.md](FRONTEND.md) · [LEDGER_INVARIANTS.md](LEDGER_INVARIANTS.md) · skill [AGENTS_OPS_STAGING.md](../skills/AGENTS_OPS_STAGING.md) · Legal [AGENTS_LEGAL_CLICKWRAP.md](../skills/AGENTS_LEGAL_CLICKWRAP.md) · wallets [AGENTS_WALLET_CONNECTORS.md](../skills/AGENTS_WALLET_CONNECTORS.md) · GitLab [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7) · [#8](https://gitlab.com/PlasticDigits/voting/-/issues/8) · [#9](https://gitlab.com/PlasticDigits/voting/-/issues/9) · [#12](https://gitlab.com/PlasticDigits/voting/-/issues/12) · [#14](https://gitlab.com/PlasticDigits/voting/-/issues/14) · [#16](https://gitlab.com/PlasticDigits/voting/-/issues/16)
+Cross-links: [HANDOFF.md](HANDOFF.md) · [ARCHITECTURE.md](ARCHITECTURE.md) · [OPERATOR_VOTING.md](OPERATOR_VOTING.md) · [FRONTEND.md](FRONTEND.md) · [LEDGER_INVARIANTS.md](LEDGER_INVARIANTS.md) · skill [AGENTS_OPS_STAGING.md](../skills/AGENTS_OPS_STAGING.md) · Legal [AGENTS_LEGAL_CLICKWRAP.md](../skills/AGENTS_LEGAL_CLICKWRAP.md) · wallets [AGENTS_WALLET_CONNECTORS.md](../skills/AGENTS_WALLET_CONNECTORS.md) · GitLab [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7) · [#8](https://gitlab.com/PlasticDigits/voting/-/issues/8) · [#9](https://gitlab.com/PlasticDigits/voting/-/issues/9) · [#12](https://gitlab.com/PlasticDigits/voting/-/issues/12) · [#14](https://gitlab.com/PlasticDigits/voting/-/issues/14) · [#16](https://gitlab.com/PlasticDigits/voting/-/issues/16) · [#17](https://gitlab.com/PlasticDigits/voting/-/issues/17)
 
 In-tree ledger / `operator-voting` / `/vote` landed in !1. This document is the remaining **ops + public-expose** checklist. Do not mark production voting done until every required item below is true on staging.
 
@@ -123,14 +123,31 @@ Do not close [#14](https://gitlab.com/PlasticDigits/voting/-/issues/14) on a scr
 
 Integration coverage without LocalTerra: [`../ledger/tests/ledger_integration.rs`](../ledger/tests/ledger_integration.rs) (`register_transfer_balance_at_and_no_backfill`) and [`../operator-voting/tests/api_flow.rs`](../operator-voting/tests/api_flow.rs) (`default_balance_clamps_when_tip_lags_register`). Live LCD equality remains an ops check.
 
-Postgres integration tests take `pg_advisory_lock(739001)` ([`../ledger/src/test_lock.rs`](../ledger/src/test_lock.rs)) so parallel `cargo test` binaries cannot `TRUNCATE` each other.
+## 6. Live probe (2026-09-01)
+
+Public checks only (no wallet identifiers, no Coolify rebuild from this repo):
+
+| Check | Result |
+|-------|--------|
+| `GET https://vote.cl8y.com/vote` | **200** HTML, `X-Frame-Options: DENY`, explicit CSP (`frame-src` WalletConnect, `connect-src` includes `https://api.web3modal.org`, **no** `connect-src https:`). O3 headers are on the live edge. |
+| Live JS `index-cN5sRfvA.js` (HTML last-modified 2026-08-31 05:05 UTC, **before** !11) | Still ships `Chrome and Safari cannot finish terms…`. In-tree `LEGAL_EVM_INAPP_HINT` is `Accept opens the Legal page…`. Rebuild is [#17](https://gitlab.com/PlasticDigits/voting/-/issues/17). |
+| `GET https://operator.vote.cl8y.com/health` | **200** `{ ok, service: operator-voting }` |
+| Unregistered `GET /v1/balances/terra1…` | Includes OV-B6 keys `registered`, `pending`, `as_of_height`, `initial_balance` (Terra tip `30162104`; BSC sample `as_of_height: 0`) |
+| `GET /openapi.json` | Draft lifecycle paths present (`/comments`, `/analysis`, `/open`, `/sections`) |
+| `GET /v1/proposals` | `[]` (no staging drafts) |
+| `https://ledger.vote.cl8y.com/health` | Proxy **503** `no available server` (HTTPS cert also untrusted). Writer stays private; a 503 is not `intents_ok`. Blocks close of [#9](https://gitlab.com/PlasticDigits/voting/-/issues/9) / [#14](https://gitlab.com/PlasticDigits/voting/-/issues/14). |
+
+Do not treat this table as Keplr/MetaMask/Galaxy QA. Human wallet paths remain on #7 / #9 / #12 / #16.
+
+Postgres integration tests take `pg_advisory_lock(739001)` ([`../ledger/src/test_lock.rs`](../ledger/src/test_lock.rs)) so parallel `cargo test` binaries cannot `TRUNCATE` each other. Connect uses an 8s timeout and retries. If `LEDGER_TEST_DATABASE_URL` is set, setup **fails** on connect/migrate errors instead of skipping as green. Local compose uses **host-network** `PGPORT=5433` so sqlx is not stuck behind docker-proxy (TCP accept, no Postgres handshake).
 
 ## Still blocked without human ops
 
 These cannot be completed from a repo-only agent:
 
-- Coolify project create / DNS / TLS / secret install (dApp + `operator-voting` are up; ledger writer is private)
-- Re-paste [`../deploy/coolify-frontend.nginx.conf`](../deploy/coolify-frontend.nginx.conf) so live `vote.cl8y.com` (nginx 1.31.x) sends O3 CSP / `X-Frame-Options` (include WC `frame-src` and `https://api.web3modal.org`) — in-tree paste is not a Coolify save
+- Coolify project create / DNS / TLS / secret install (dApp + `operator-voting` are up; ledger writer is private — public `ledger.vote.cl8y.com` is still proxy 503)
+- Coolify **frontend rebuild from `main` (`f000040` or later)** so live JS includes `Accept opens the Legal page…` ([#17](https://gitlab.com/PlasticDigits/voting/-/issues/17)). O3 CSP / `X-Frame-Options` **are** already on live `GET /vote` as of 2026-09-01; re-paste [`../deploy/coolify-frontend.nginx.conf`](../deploy/coolify-frontend.nginx.conf) only if a future nginx edit drops them
 - Legal admin property + CORS + portal allowlist write (done on [cl8y-ecosystem-legal#12](https://gitlab.com/PlasticDigits/cl8y-ecosystem-legal/-/issues/12))
-- Keplr / MetaMask / Galaxy Station / BSC WalletConnect on a real staging origin — still blocked on [#9](https://gitlab.com/PlasticDigits/voting/-/issues/9) (registered balance 0). Do not close [#12](https://gitlab.com/PlasticDigits/voting/-/issues/12) on Playwright hatch E2E.
+- Keplr / MetaMask / Galaxy Station / BSC WalletConnect on a real staging origin — still blocked on [#9](https://gitlab.com/PlasticDigits/voting/-/issues/9) (LCD equality after **registered**) and writer health ([#14](https://gitlab.com/PlasticDigits/voting/-/issues/14)). Do not close [#12](https://gitlab.com/PlasticDigits/voting/-/issues/12) on Playwright hatch E2E.
 - Coolify frontend build-arg `VITE_WC_PROJECT_ID` set; WalletConnect Cloud project includes `https://vote.cl8y.com`
+- GitLab CI minutes (`ci_quota_exceeded` on !11) — restore so the next MRs are not merge-blind ([#17](https://gitlab.com/PlasticDigits/voting/-/issues/17))

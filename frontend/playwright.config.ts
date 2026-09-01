@@ -1,5 +1,9 @@
 import { defineConfig, devices } from '@playwright/test'
 
+// One webServer + 5 workers is the default (`npm run test:e2e`). Isolated
+// agent shards set PW_PORT so they do not collide on 5176.
+const port = Number(process.env.PW_PORT || 5176)
+
 export default defineConfig({
   testDir: './e2e',
   fullyParallel: true,
@@ -7,13 +11,13 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
   use: {
-    baseURL: 'http://127.0.0.1:5176',
+    baseURL: `http://127.0.0.1:${port}`,
     trace: 'on-first-retry',
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: {
-    command: 'npm run dev -- --host 127.0.0.1 --port 5176 --strictPort',
-    url: 'http://127.0.0.1:5176',
+    command: `npm run dev -- --host 127.0.0.1 --port ${port} --strictPort`,
+    url: `http://127.0.0.1:${port}`,
     reuseExistingServer: false,
     timeout: 120_000,
     env: {

@@ -1,9 +1,9 @@
 # Agent handoff
 
-**Last updated:** 2026-08-31  
+**Last updated:** 2026-09-01  
 **Repo:** [PlasticDigits/voting](https://gitlab.com/PlasticDigits/voting)  
 **Local:** `~/repos/voting`  
-**Implementation branch:** `feat/voting-bundle` (merged). Ops: [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7). Legal `/vote` 404 [#8](https://gitlab.com/PlasticDigits/voting/-/issues/8) is closed. Registered balance: [#9](https://gitlab.com/PlasticDigits/voting/-/issues/9). Structured proposals: [#10](https://gitlab.com/PlasticDigits/voting/-/issues/10) (OV-S). Draft lifecycle: [#11](https://gitlab.com/PlasticDigits/voting/-/issues/11) (OV-D). WalletConnect: [#12](https://gitlab.com/PlasticDigits/voting/-/issues/12). Governance research: [#13](https://gitlab.com/PlasticDigits/voting/-/issues/13). Pending registration: [#14](https://gitlab.com/PlasticDigits/voting/-/issues/14). EVM Legal in-app hint: [#16](https://gitlab.com/PlasticDigits/voting/-/issues/16).
+**Implementation branch:** `feat/voting-bundle` (merged). Ops: [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7). Legal `/vote` 404 [#8](https://gitlab.com/PlasticDigits/voting/-/issues/8) is closed. Registered balance: [#9](https://gitlab.com/PlasticDigits/voting/-/issues/9). Structured proposals: [#10](https://gitlab.com/PlasticDigits/voting/-/issues/10) (OV-S). Draft lifecycle: [#11](https://gitlab.com/PlasticDigits/voting/-/issues/11) (OV-D). WalletConnect: [#12](https://gitlab.com/PlasticDigits/voting/-/issues/12). Governance research: [#13](https://gitlab.com/PlasticDigits/voting/-/issues/13). Pending registration: [#14](https://gitlab.com/PlasticDigits/voting/-/issues/14). EVM Legal in-app hint: [#16](https://gitlab.com/PlasticDigits/voting/-/issues/16). Coolify dApp rebuild after !11 copy: [#17](https://gitlab.com/PlasticDigits/voting/-/issues/17).
 
 ## Current state
 
@@ -15,9 +15,9 @@ In-tree packages:
 | `operator-voting/` | ADR-36 + EIP-191 API |
 | `frontend/` | dApp (`/`, `/new`, `/:id`; `/vote*` aliases), Legal gate, DEX Terra + Bridge EVM wallets |
 
-GitLab issues **#1–#6** are implemented in this tree. [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7) tracks remaining ops. [#8](https://gitlab.com/PlasticDigits/voting/-/issues/8) is **closed** on live `GET /vote` 200 HTML. [#9](https://gitlab.com/PlasticDigits/voting/-/issues/9) adds OV-B1 registered-balance handling. [#10](https://gitlab.com/PlasticDigits/voting/-/issues/10) adds structured `body_sections`, the OV-S canonical hash, labeled compose, list TL;DR, and detail sections. [#11](https://gitlab.com/PlasticDigits/voting/-/issues/11) adds draft/comment/analysis/open APIs and OV-D freeze-at-open. [#12](https://gitlab.com/PlasticDigits/voting/-/issues/12) adds the cosmes pairing patch, hook before `createRoot`, production project-id fail-closed, CSP frames, and EVM Cancel. [#13](https://gitlab.com/PlasticDigits/voting/-/issues/13) is governance research only. [#14](https://gitlab.com/PlasticDigits/voting/-/issues/14) adds 120-second pending poll/retry, the independent ledger intent loop, L12, and OV-B6. [#16](https://gitlab.com/PlasticDigits/voting/-/issues/16) adds the EVM Legal in-app/copy hint; published clickwrap **>= 0.1.1** puts `account` on Accept (Legal #15 portal next-steps are **closed**).
+GitLab issues **#1–#6** are implemented in this tree. [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7) tracks remaining ops. [#8](https://gitlab.com/PlasticDigits/voting/-/issues/8) is **closed** on live `GET /vote` 200 HTML. [#9](https://gitlab.com/PlasticDigits/voting/-/issues/9) adds OV-B1 registered-balance handling. [#10](https://gitlab.com/PlasticDigits/voting/-/issues/10) adds structured `body_sections`, the OV-S canonical hash, labeled compose, list TL;DR, and detail sections. [#11](https://gitlab.com/PlasticDigits/voting/-/issues/11) adds draft/comment/analysis/open APIs and OV-D freeze-at-open. [#12](https://gitlab.com/PlasticDigits/voting/-/issues/12) adds the cosmes pairing patch, hook before `createRoot`, production project-id fail-closed, CSP frames, and EVM Cancel. [#13](https://gitlab.com/PlasticDigits/voting/-/issues/13) is governance research only. [#14](https://gitlab.com/PlasticDigits/voting/-/issues/14) adds 120-second pending poll/retry, the independent ledger intent loop, L12, and OV-B6. [#16](https://gitlab.com/PlasticDigits/voting/-/issues/16) adds the EVM Legal in-app/copy hint; published clickwrap **>= 0.1.1** puts `account` on Accept (Legal #15 portal next-steps are **closed**). [#17](https://gitlab.com/PlasticDigits/voting/-/issues/17) is the Coolify frontend rebuild so live HTML serves the !11 sentence (`Accept opens the Legal page…`); in-tree copy is on `main` (`f000040+`).
 
-Issue mapping: [`ISSUE_MIGRATION.md`](ISSUE_MIGRATION.md). Invariants: [`LEDGER_INVARIANTS.md`](LEDGER_INVARIANTS.md) (L12), [`OPERATOR_VOTING.md`](OPERATOR_VOTING.md) (OV-B6, OV-S, OV-D), [`FRONTEND.md`](FRONTEND.md) (L-EVM1–L-EVM5, [#16](https://gitlab.com/PlasticDigits/voting/-/issues/16)), [`OPS.md`](OPS.md). Hybrid governance doctrine (do not invent a model): [`GOVERNANCE_RESEARCH.md`](GOVERNANCE_RESEARCH.md) (issue [#13](https://gitlab.com/PlasticDigits/voting/-/issues/13)). #10 owns `20260830000001_proposal_sections.sql`; #11 applies `20260830000002_draft_lifecycle.sql` on top.
+Issue mapping: [`ISSUE_MIGRATION.md`](ISSUE_MIGRATION.md). Invariants: [`LEDGER_INVARIANTS.md`](LEDGER_INVARIANTS.md) (L12), [`OPERATOR_VOTING.md`](OPERATOR_VOTING.md) (OV-B6, OV-S, OV-D), [`FRONTEND.md`](FRONTEND.md) (L-EVM1–L-EVM5, [#16](https://gitlab.com/PlasticDigits/voting/-/issues/16)), [`OPS.md`](OPS.md) (live probe 2026-09-01). Hybrid governance doctrine (do not invent a model): [`GOVERNANCE_RESEARCH.md`](GOVERNANCE_RESEARCH.md) (issue [#13](https://gitlab.com/PlasticDigits/voting/-/issues/13)). #10 owns `20260830000001_proposal_sections.sql`; #11 applies `20260830000002_draft_lifecycle.sql` on top. Skill for #10/#11: [`../skills/AGENTS_DRAFT_REVIEW.md`](../skills/AGENTS_DRAFT_REVIEW.md).
 
 ## Why a new repo
 
@@ -79,7 +79,8 @@ cargo test --workspace --lib
 cd frontend && npm test
 
 # postgres integration (docker compose -f docker-compose.test.yml up -d)
-LEDGER_TEST_DATABASE_URL=postgres://voting:voting@127.0.0.1:5433/voting cargo test --workspace --tests
+# Compose uses host-network PGPORT 5433 so sqlx is not stuck behind docker-proxy.
+LEDGER_TEST_DATABASE_URL=postgres://voting:voting@127.0.0.1:5433/voting cargo test --workspace --tests --jobs 1 -- --test-threads=1
 
 # Playwright (Legal hatch on webServer only)
 cd frontend && npm run test:e2e

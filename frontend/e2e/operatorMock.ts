@@ -7,6 +7,8 @@ export const E2E_PROPOSAL_ID = '11111111-1111-1111-1111-111111111111'
 export type MockOperatorOpts = {
   registerPendingTicks?: number
   alreadyPending?: boolean
+  /** Intent exists but `voting_registrations` never lands (issue #14 timeout/retry). */
+  snapshotNeverReady?: boolean
 }
 
 const SECTION_HTML =
@@ -125,7 +127,7 @@ export async function mockOperatorVoting(page: Page, opts: MockOperatorOpts = {}
 
   await page.route('**/v1/register', async (route) => {
     registerPosted = true
-    if (pendingTicks <= 0) ledgerReady = true
+    if (!opts.snapshotNeverReady && pendingTicks <= 0) ledgerReady = true
     await route.fulfill({ json: { ok: true, pending: !ledgerReady } })
   })
 
@@ -134,19 +136,27 @@ export async function mockOperatorVoting(page: Page, opts: MockOperatorOpts = {}
       await route.fulfill({ status: 404, json: { error: 'not registered' } })
       return
     }
+    const pendingBody = {
+      terra: null,
+      bsc: null,
+      pending: { terra: true, bsc: false },
+    }
+    // GET 404s only when there is neither a ledger row nor an intent (L11 / OV-B3).
+    // An in-flight intent must stay `pending`, not look unregistered.
+    if (opts.snapshotNeverReady) {
+      await route.fulfill({ status: 200, json: pendingBody })
+      return
+    }
     if (!ledgerReady && pendingTicks > 0) {
       pendingTicks -= 1
       if (pendingTicks > 0) {
-        await route.fulfill({
-          status: 200,
-          json: { terra: null, bsc: null, pending: { terra: true, bsc: false } },
-        })
+        await route.fulfill({ status: 200, json: pendingBody })
         return
       }
       ledgerReady = true
     }
     if (!ledgerReady) {
-      await route.fulfill({ status: 404, json: { error: 'not registered' } })
+      await route.fulfill({ status: 200, json: pendingBody })
       return
     }
     await route.fulfill({

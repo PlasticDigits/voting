@@ -1,8 +1,6 @@
 //! Apply `deploy/grants.sql` (O1 / L10) and assert the restricted role
 //! can read balance functions + write `voting.*` but cannot write ledger ingest.
 
-use sqlx::PgPool;
-
 fn test_db_url() -> Option<String> {
     std::env::var("LEDGER_TEST_DATABASE_URL")
         .or_else(|_| std::env::var("DATABASE_URL"))
@@ -54,7 +52,9 @@ async fn restricted_role_from_grants_sql_cannot_write_ledger() {
     let _lock = voting_ledger::test_lock::hold_integration_db(&url)
         .await
         .expect("advisory lock");
-    let admin = PgPool::connect(&url).await.unwrap();
+    let admin = voting_ledger::test_lock::test_pool(&url)
+        .await
+        .expect("admin pool");
     voting_ledger::db::migrate(&admin).await.unwrap();
 
     // Coolify applies this file with psql (DO blocks + multiple GRANTs).
@@ -62,7 +62,7 @@ async fn restricted_role_from_grants_sql_cannot_write_ledger() {
     apply_grants_sql(&url);
 
     let restricted_url = rewrite_user(&url, "operator_voting", "change-me-in-prod");
-    let restricted = PgPool::connect(&restricted_url)
+    let restricted = voting_ledger::test_lock::test_pool(&restricted_url)
         .await
         .expect("operator_voting login from deploy/grants.sql");
 
@@ -196,6 +196,7 @@ async fn restricted_role_from_grants_sql_cannot_write_ledger() {
 
 fn apply_grants_sql(url: &str) {
     let output = std::process::Command::new("psql")
+        .env("PGCONNECT_TIMEOUT", "8")
         .args(["-v", "ON_ERROR_STOP=1", "--no-psqlrc", "-X", "-d", url])
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())

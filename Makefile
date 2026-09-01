@@ -5,7 +5,7 @@ test-lib:
 
 test-pg:
 	LEDGER_TEST_DATABASE_URL=$${LEDGER_TEST_DATABASE_URL:-postgres://voting:voting@127.0.0.1:5433/voting} \
-		cargo test --workspace --tests -- --test-threads=1
+		cargo test --workspace --tests --jobs 1 -- --test-threads=1
 
 test-frontend:
 	cd frontend && npm test

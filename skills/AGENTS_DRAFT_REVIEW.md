@@ -18,7 +18,7 @@ This skill is for **3rd-party agents** continuing the pre-vote lifecycle. Do not
 | Item | Where |
 |------|--------|
 | Template sections + canonical hash | [`operator-voting/src/proposal_sections.rs`](../operator-voting/src/proposal_sections.rs) · [`frontend/src/utils/proposalSections.ts`](../frontend/src/utils/proposalSections.ts) |
-| Status `draft` → `open` | [`ledger/migrations/20260830000004_draft_lifecycle.sql`](../ledger/migrations/20260830000004_draft_lifecycle.sql) |
+| Status `draft` → `open` | [`ledger/migrations/20260830000002_draft_lifecycle.sql`](../ledger/migrations/20260830000002_draft_lifecycle.sql) (after #10 `20260830000001_proposal_sections.sql`) |
 | API | [`operator-voting/src/api.rs`](../operator-voting/src/api.rs) |
 | Committee env | `VOTING_COMMITTEE_ADDRESSES` in [`.env.example`](../.env.example) · [`deploy/coolify.env.example`](../deploy/coolify.env.example) |
 | dApp | [`frontend/src/pages/VoteNewPage.tsx`](../frontend/src/pages/VoteNewPage.tsx) (create **draft**) · `VoteDetailPage.tsx` (comments, hide votes until open) |
