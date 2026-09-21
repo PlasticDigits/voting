@@ -15,7 +15,13 @@ and sister-repo **H3** / **H5** / **MG** tables are other trees’ copies of
 the same flags, not this repo’s issue number.
 
 Design branch `cac-design-issue-30` is transport only; it is not the product
-PR. Do not open a design-only PR.
+PR. Do not open a design-only PR. Copy **the independently accepted SHA**
+(this SHA or a successor after independent review) onto the product tip.
+Land criterion: product tip `docs/adr/0001-remove-catchall-codeowners.md`
+and `docs/ARCHITECTURE.md` are **byte-identical** to that SHA. This
+revision of `01ddeaa` closes three holes: S3 plant-check **close without
+merge** on a named non-product path; that byte-identity gate; architecture
+**H30-1** as four-path **absence**, not “exists but not requesting.”
 
 This ADR does not authorize deploy, spend, custody rotation, Coolify
 `vote.cl8y.com` publish, Legal admin writes, or Forgejo protection PATCH
@@ -40,11 +46,14 @@ the combined diff onto that existing PR). Merging that PR **closes `#30`**.
 A successor is allowed only if its body contains `Closes #30` **and** the
 S3 leftover issue already exists. Merging a successor does **not** close
 `#30` without that footer.
-**Leftover-complete** (S3: dedicated post-merge plant-check PR with a
-**non-empty**, **non-WIP** diff) is tracked on a follow-up issue / leftover
+**Leftover-complete** (S3: dedicated post-merge plant-check PR `{n}` whose
+**only** changed path is the throwaway `docs/h30-plant-check.md`, **non-WIP**,
+**closed without merging**) is tracked on a follow-up issue / leftover
 checklist that survives that merge. S3 is not a close gate for `#30`.
-Operator attestation may **record** the plant-check GETs of that dedicated
-PR; it is not a substitute for the PR.
+Closing the leftover **issue** is not the same contract as closing `{n}`
+unmerged. Operator attestation may **record** the plant-check GETs of that
+dedicated PR; it is not a substitute for opening `{n}`, and it does not
+authorize merging `{n}`.
 
 This is a product-tree copy of the pattern named by
 [cl8y-forgejo#48](https://git.cl8y.com/PlasticDigits/cl8y-forgejo/issues/48).
@@ -175,9 +184,9 @@ Forgejo search paths.
 1. **Delete** root `CODEOWNERS`. Do not leave an empty or comments-only file
    (Forgejo still parses it).
 2. **Do not add** `docs/CODEOWNERS`, `.gitea/CODEOWNERS`, or
-   `.forgejo/CODEOWNERS`. After land, `test -f` fails on all four paths.
-   None of those paths may contain a reviewer rule for any pattern (not
-   only `.*`).
+   `.forgejo/CODEOWNERS`. After land, `test ! -e` is true on all four
+   paths (no file, including empty or comments-only). None of those
+   paths may contain a reviewer rule for any pattern (not only `.*`).
 3. **Keep** the merge gate in [`ARCHITECTURE.md`](../ARCHITECTURE.md)
    **H30**. On the product PR, **add** exactly this paragraph to root
    `README.md` after the **Local git hooks** section. Keep existing product
@@ -196,13 +205,17 @@ is not a merge gate. Do not re-add catch-all `CODEOWNERS`
 [ADR 0001](docs/adr/0001-remove-catchall-codeowners.md).
 ```
 
-4. **One product PR** whose diff is: delete `CODEOWNERS` + ADR 0001 +
-   architecture **H30** + README pointer + the **WP-pre** pipeline file.
-   Default vehicle: push that combined diff onto
-   [#30](https://git.cl8y.com/code/voting/pulls/30).
-   `cac-design-issue-30` is transport; do not merge it to `main` and do not
-   open it as the product PR. If a successor is required, its body **must**
-   contain `Closes #30`, and the S3 leftover issue **must** already exist.
+4. **One product PR** whose diff versus `origin/main` is **only**: delete
+   `CODEOWNERS` + the two standing `docs/` files **byte-identical** to the
+   independently accepted SHA + README pointer (Decision 3) + the quoted
+   **WP-pre** `.woodpecker.yaml`. Default vehicle: push that combined
+   diff onto [#30](https://git.cl8y.com/code/voting/pulls/30).
+   Copy `docs/adr/0001-remove-catchall-codeowners.md` and
+   `docs/ARCHITECTURE.md` from that SHA; do not rewrite **H30** while
+   combining. `cac-design-issue-30` is transport; do not merge it to `main`
+   and do not open it as the product PR. If a successor is required, its
+   body **must** contain `Closes #30`, and the S3 leftover issue **must**
+   already exist.
 5. **Leave** already-planted official requests on open PRs (including #30
    and #29). They are non-blocking under **H30-8** / **H30-9**. Do not
    dismiss them from CAC. Human dismiss is optional leftover, not AC. They
@@ -211,15 +224,24 @@ is not a merge gate. Do not re-add catch-all `CODEOWNERS`
 7. **Split land from leftover-complete.** PR `#30` (or a `Closes #30`
    successor) is S1+S2+**WP-pre** only. S3 lives on a follow-up issue
    opened before that merge (plus the leftover checklist below). Require a
-   **dedicated** post-merge plant-check PR that **changes at least one
-   file**, is **non-WIP**, and is opened **after** the delete is on `main`.
-   Do not accept `#30`’s leftover plant, `#29`’s plant, or “the next
-   natural PR.” A no-op dedicated PR is not evidence: `.*` matches every
-   path, and Forgejo does not plant on a no-op even if `CODEOWNERS` is
-   still on `main` (dex#1309 no-op warning). A draft/WIP follow-up is not
-   evidence (Forgejo skips CODEOWNERS on WIP). Operator attestation may
-   **record** the GETs of that dedicated PR; it is not a substitute
-   for opening it.
+   **dedicated** post-merge plant-check PR `{n}` that is **non-WIP**,
+   opened **after** the delete is on `main`, and whose diff versus `main`
+   is **exactly** one added throwaway docs note:
+   `docs/h30-plant-check.md` (one line, e.g. `H30 plant-check; do not merge.`).
+   `{n}` **must not** change `ledger/`, `operator-voting/`, `frontend/`,
+   `deploy/`, or any of the four CODEOWNERS paths. **Close `{n}` without
+   merging it.** Merging `{n}` onto `main` is a failure mode (hello ADR:
+   “Merging the plant-check PR”). Closing the leftover **issue** after
+   the record is pasted is a different contract and does not authorize
+   merging `{n}`. Do not accept `#30`’s leftover plant, `#29`’s plant, or
+   “the next natural PR.” A no-op dedicated PR is not evidence: `.*`
+   matches every path, and Forgejo does not plant on a no-op even if
+   `CODEOWNERS` is still on `main` (dex#1309 no-op warning). A draft/WIP
+   follow-up is not evidence (Forgejo skips CODEOWNERS on WIP). A
+   plant-check that edits product code to “prove” a non-empty diff is not
+   evidence. Operator attestation may **record** the GETs of that
+   dedicated PR; it is not a substitute for opening it and does not
+   authorize merging `{n}`.
 8. **WP-pre (land prerequisite, owned).** The deletion-PR head SHA must
    show a real Woodpecker **success** status `ci/woodpecker/pr/woodpecker`
    (creator/target `ci.cl8y.com`, not a manual Forgejo POST) before
@@ -252,10 +274,19 @@ steps:
 **Enablement owner (pre-merge gate):** confirm `code/voting` is an
 active Woodpecker project **before** combining onto `#30` (Forgejo repo id
 **43** on `ci.cl8y.com`; webhook to `https://ci.cl8y.com/api/hook` for
-`push` + `pull_request`). File owner ≠ posting owner (forge ops). Empty
+`push` + `pull_request`). Pass/fail GET (optional extra proof; still a
+land blocker if it fails): Forgejo `GET /api/v1/repos/code/voting/hooks`
+shows an **active** hook whose URL is `https://ci.cl8y.com/api/hook` and
+whose events include `push` **and** `pull_request`, **or** Woodpecker
+repo GET for `code/voting` has `active == true`. Fail closed on missing
+hook, wrong URL, missing events, or `active == false`. **WP-pre**
+(success status from `ci.cl8y.com`) remains the land proof; this GET
+does not replace it. File owner ≠ posting owner (forge ops). Empty
 statuses with no YAML are ambiguous: missing file **or** repo not
 registered. dex#1247’s 44/44 `code/*` enablement on 2026-09-12 is **not**
-this preflight.
+this preflight. A leftover to extend this same root file with product CI
+is optional and is **not** a close gate for `#30`. Do not expand this
+ticket into cargo / frontend / gitleaks on Woodpecker.
 
 If the YAML is on the PR and nothing posts: **land blocked**. Do not treat
 a missing context as leftover, “out of this slice,” or silent sister-ops.
@@ -294,9 +325,17 @@ Do not merge a PR whose body uses Fixes / Closes / Resolves for this
 issue number. Leftover-complete is an issue close after the record
 below is pasted, not a merge.
 
+**Close plant-check PR `{n}` without merging it.** Closing this leftover
+issue is a different contract and does not authorize merging `{n}`.
+
+`{n}` diff versus `main` is **exactly** the added throwaway
+`docs/h30-plant-check.md`. Forbidden paths: `ledger/`,
+`operator-voting/`, `frontend/`, `deploy/`, and any CODEOWNERS path.
+
 ## Record
 
-- plant-check PR `{n}`:
+- plant-check PR `{n}` (exactly `docs/h30-plant-check.md`; **closed without merge**):
+- `{n}` merged onto `main`? (must be **no**):
 - `GET /api/v1/repos/code/voting/pulls/{n}` body (the
   JSON used for the pass decision):
 - `GET /api/v1/repos/code/voting/pulls/{n}/reviews` body
@@ -311,15 +350,15 @@ below is pasted, not a merge.
 | --- | --- |
 | `CODEOWNERS` (root) | Remove file. |
 | `docs/CODEOWNERS`, `.gitea/CODEOWNERS`, `.forgejo/CODEOWNERS` | Must remain absent (no empty file). |
-| Forgejo PR review interface | After land, a **dedicated** non-WIP plant-check PR against `main` that **changes at least one file** must not get an official CODEOWNERS team request. `requested_reviewers_teams` from this file becomes empty for those new PRs. |
+| Forgejo PR review interface | After land, a **dedicated** non-WIP plant-check PR `{n}` against `main` whose **only** changed path is `docs/h30-plant-check.md` must not get an official CODEOWNERS team request. **Close `{n}` without merging.** `requested_reviewers_teams` from this file becomes empty for those new PRs. |
 | Branch protection API | No write from this ticket. Operator GET must still match architecture **GET-required** (**H30-2**, **H30-3**, **H30-5**, **H30-8**, **H30-9**). Observed rows are do-not-touch. Prior `updated_at` is attested; close re-GETs. Unauthenticated GET is 401. |
 | Root `.woodpecker.yaml` | **Required on the deletion PR.** **#30 land bootstrap** quoted in Decision 8 / architecture **Pipeline**. MUST that path. `steps:` + two-item `when:` + digest-pinned alpine + `find` one-liner. No secrets, Coolify, Telegram, BSC, Terra. Do not add `.yml` or `.woodpecker/`. Any later real CI extends this same file. |
 | `.gitlab-ci.yml` | Unchanged leftover hosting CI. Not a Forgejo required context. |
 | `.gitignore` | Unchanged. `docs/` is already trackable (`ARCHITECTURE.md` on `main`). Do not add a directory ignore of `docs/`. |
-| `docs/ARCHITECTURE.md`, `docs/adr/0001-remove-catchall-codeowners.md` | Added/updated on the design branch; land with S1+S2. |
+| `docs/ARCHITECTURE.md`, `docs/adr/0001-remove-catchall-codeowners.md` | Added/updated on the design branch. Product tip copies them **byte-identical** from the independently accepted SHA. |
 | Root `README.md` | **Edit** on the deletion PR: add the Decision 3 **Merge gate** paragraph and index ADR 0001 / **H30** in Docs for agents. Keep product tables, tokens, and verify commands. Do not stub. |
 | `ledger/`, `operator-voting/`, `frontend/`, `deploy/`, `skills/`, `.gitleaks.toml`, `.githooks/`, product invariant docs, `code/maintainers` team | Unchanged. The team may keep existing; it simply is not planted as official review. Cargo / npm tests stay ungated. |
-| Leftover tracker issue | `fj issue create` before merge of #30; owns plant-check; closed as an issue, not via merge. |
+| Leftover tracker issue | `fj issue create` before merge of #30; owns plant-check `{n}` (named path, close without merge); closed as an issue, not via merge. Closing this issue is not permission to merge `{n}`. |
 
 No runtime contract, schema, LCD, RPC, Legal, wallet, or HTTP API change.
 
@@ -327,7 +366,7 @@ No runtime contract, schema, LCD, RPC, Legal, wallet, or HTTP API change.
 
 | ID | Kind | Rule |
 | --- | --- | --- |
-| **H30-1** | Non-GET | `test -f` fails on `CODEOWNERS`, `docs/CODEOWNERS`, `.gitea/CODEOWNERS`, and `.forgejo/CODEOWNERS`. Absence, not “file exists but is not requesting reviewers.” File `@code/maintainers` / JSON team `maintainers` are the same leftover plant. |
+| **H30-1** | Non-GET | `test ! -e` is true on `CODEOWNERS`, `docs/CODEOWNERS`, `.gitea/CODEOWNERS`, and `.forgejo/CODEOWNERS`. Absence, including empty or comments-only files, not “file exists but is not requesting reviewers.” File `@code/maintainers` / JSON team `maintainers` are the same leftover plant. |
 | **H30-2** | GET-required | `enable_push=false` on `main`. |
 | **H30-3** | GET-required | `enable_status_check=true` and required context `ci/woodpecker/pr/woodpecker`. |
 | **H30-4** | Non-GET | Merge is SHA-pinned `Do: merge`. Never document or use `force_merge`. Not a protection field; omit from GET matching. |
@@ -361,9 +400,12 @@ class stop firing **for this repo** once new PRs have no plant.
 | Wait for `code/hello` canary merge before this delete | Sister pattern, not a local iid. This repo’s protection is already rolled; the file still plants. hello#15 is still open. |
 | Cite hello#15 as a landed product delete | The landed pattern is dex#1309. |
 | Leave ADR only on `cac-design-issue-30` | Standing docs never reach `main`; later agents re-add `.* @code/maintainers`. |
+| Rewrite ADR/architecture while combining onto `#30` | Implement can change **H30** after independent review. Product tip two `docs/` files must be **byte-identical** to the accepted SHA. |
 | Merge live #30 as delete-only (S1 without S2 / WP-pre) | **H30-1** maybe true, README/ADR/architecture / posting context false; later agents have no “do not re-add” contract. hello#15 is the delete-only trap (1 file, mergeable). Empty statuses already fail **H30-3**. |
 | Close #30 only after a later PR proves no new plant | Merge of #30 closes the tracker; waiting for the follow-up before merge never produces it. |
-| Treat `#30` leftover plant, `#29`’s plant, or an empty-diff follow-up as S3 | Merge closes `#30` before leftover-complete. A dedicated **non-empty non-WIP** post-merge PR is the evidence. |
+| Treat `#30` leftover plant, `#29`’s plant, an empty-diff follow-up, or a merged `{n}` as S3 | Merge closes `#30` before leftover-complete. A dedicated **non-WIP** post-merge PR whose **only** path is `docs/h30-plant-check.md`, **closed without merge**, is the evidence. |
+| Plant-check `{n}` edits `ledger/`, `operator-voting/`, `frontend/`, `deploy/`, or a CODEOWNERS path | Proves a non-empty diff by touching the product tree. Forbidden. Named path is `docs/h30-plant-check.md` only. |
+| Merge the plant-check PR `{n}` onto `main` | Lands a throwaway (or a product edit). Hello failure mode “Merging the plant-check PR.” Close `{n}` without merge. Closing the leftover issue is a different contract. |
 | Operator attestation instead of the dedicated plant-check PR | False-pass path. Attestation may record GETs of that PR; it is not a substitute. |
 | Merge a successor without `Closes #30` | `#30` stays open. Body must contain `Closes #30` and the S3 leftover issue must already exist. |
 | Drop the Woodpecker required context so an empty-CI repo can merge | Violates **H30-3**. Do not `force_merge`. Produce the context via **WP-pre**. Do not treat GitLab as a substitute. |
@@ -402,15 +444,17 @@ not the Forgejo merge gate.
    GET `updated_at` 2026-09-21T07:29:30Z). Unauthenticated GET is 401.
    Re-GET at merge; do not PATCH.
 2. Before merging the deletion PR, open a follow-up **leftover** issue that
-   owns S3 (dedicated **non-empty non-WIP** plant-check PR). Merging
+   owns S3 (dedicated **non-WIP** plant-check PR `{n}` whose only path is
+   `docs/h30-plant-check.md`, **closed without merge**). Merging
    [#30](https://git.cl8y.com/code/voting/pulls/30) closes that
    number; S3 must not live only there. If a successor is used, that
    leftover issue must already exist **and** the successor body must
    contain `Closes #30`.
 3. Combine onto the existing product head, then merge **one** PR (see
-   slices). Design branch `cac-design-issue-30` is **not** that PR. Today
-   `chore/remove-catchall-codeowners` is delete-only @ `eb352b8`; a
-   delete-only merge is not land (hello#15).
+   slices). Copy the two standing `docs/` files **byte-identical** from
+   the independently accepted SHA. Design branch `cac-design-issue-30` is
+   **not** that PR. Today `chore/remove-catchall-codeowners` is delete-only
+   @ `eb352b8`; a delete-only merge is not land (hello#15).
 4. Open PRs created while the file existed (#30 and #29) may still show an
    official team `maintainers` request. Non-blocking under **H30-8**. No
    bulk dismiss required to close #30. Disqualified as leftover-complete
@@ -428,7 +472,9 @@ tokens, or protection-script inventories.
 `main` rule equals architecture **GET-required** for `enable_push`,
 `enable_status_check`, `status_check_contexts`, `required_approvals`,
 `block_on_official_review_requests`, and `block_on_rejected_reviews`. Fail
-if any of those five IDs differ. Do **not** treat observed flags or
+if any of those five IDs (**H30-2** / **H30-3** / **H30-5** / **H30-8** /
+**H30-9**) differ. **H30-3** covers two JSON keys (`enable_status_check`
+and `status_check_contexts`). Do **not** treat observed flags or
 **H30-4** as GET-match fields. The 2026-09-21T07:29:30Z GET is
 attested; unauthenticated GET is 401. Merge still re-reads for
 drift. A green `find` clone-check or GitLab `test:rust` job does not satisfy
@@ -443,7 +489,9 @@ Fail-closed pair (jq on the two GETs). Pass iff **all** of:
 - no review with `official == true && state == "REQUEST_REVIEW"`
   (user **or** team)
 - PR GET `draft == false`; title does not contain `WIP` (case-insensitive);
-  at least one changed file vs `main`
+  `git diff origin/main...HEAD` is **exactly** the added file
+  `docs/h30-plant-check.md` (no `ledger/`, `operator-voting/`,
+  `frontend/`, `deploy/`, or CODEOWNERS path)
 
 `maintainers` / `id: 4` is the known-plant example (live #30), not
 the only fail. Do not require `team.organization` on the reviews GET.
@@ -494,10 +542,13 @@ pass #30.
 is present, fail. If all clauses hold, wait once 30 seconds and re-GET
 both before pass; pass only if the second pair still satisfies all
 clauses. Record `{n}` and the two JSON bodies (the pair used for the
-pass decision) plus the four-path check on `main` on the leftover
-tracker, then close that **issue** without merge. PR #30’s own official
+pass decision) plus the four-path `test ! -e` check on `main` on the leftover
+tracker. **Close `{n}` without merging it.** Then close the leftover
+**issue** (issue close, not via merge). Closing the leftover issue is not
+permission to merge `{n}`. PR #30’s own official
 request does not pass. PR #29’s plant does not pass. “The next
-natural PR” does not pass.
+natural PR” does not pass. A `{n}` that edits product code or a
+CODEOWNERS path does not pass. A merged `{n}` does not pass.
 
 **CI (land prerequisite).** Woodpecker context `ci/woodpecker/pr/woodpecker`
 must be **present and success** on the **combined** product-PR head
@@ -516,14 +567,16 @@ still SHA-pins `Do: merge` (**H30-4**).
 | File deleted on a branch but still on `main` | New non-WIP PRs that change a file keep planting official review until the product PR merges. Expected until land. Occupying #30 already demonstrates this. |
 | `chore/remove-catchall-codeowners` stays delete-only @ `eb352b8` | `#30` must not merge. Convert to draft; push S2 + WP-pre onto that head. |
 | Live #30 stays `draft: false` after a **delete-only** head is pushed | hello#15 trap: 1 file, `mergeable: true`. Convert to draft **before** pushing a combined head so S1-without-S2 cannot close `#30` if a context later posts. |
-| Copy left in `docs/`, `.gitea/`, or `.forgejo/` (including empty/comments-only) | Forgejo still loads the first existing path and may plant. Land fails **H30-1**; delete those paths too (none exist on current `main`). Standing `docs/adr/` and `docs/ARCHITECTURE.md` are not CODEOWNERS. |
+| Copy left in `docs/CODEOWNERS`, `.gitea/`, or `.forgejo/` (including empty/comments-only) | Forgejo still loads the first existing path and may plant. Land fails **H30-1** (`test ! -e` false); delete those paths too (none exist on current `main`). Standing `docs/adr/` and `docs/ARCHITECTURE.md` are not CODEOWNERS. The throwaway `docs/h30-plant-check.md` is leftover-only and must not land. |
 | S1 (delete-only) merges without S2 / WP-pre | **H30-1** true, README/ADR/architecture / posting context absent from `main`. Forbidden. Empty statuses currently also fail **H30-3**. |
 | Successor merges without `Closes #30` | `#30` stays open. Forbidden as the land vehicle. |
 | cl8y-forgejo migrate/apply re-copies a template | Sister-repo race ([cl8y-forgejo#48](https://git.cl8y.com/PlasticDigits/cl8y-forgejo/issues/48) `_ensure_codeowners`). Out of this slice. If a later apply re-adds the file, delete again via PR; never direct-push `main`. |
 | Official request leftover on #30 or #29 | Non-blocking (**H30-8**). Optional human dismiss. Not a rollback signal. Not leftover-complete evidence. |
 | Treating merge of `#30` as leftover-complete | Merge closes `#30` before S3. Use the leftover issue / checklist. |
-| Operator attestation without the dedicated PR | False-pass. Fail S3; open the dedicated non-empty non-WIP PR. Attestation may only record its GETs. |
-| Plant-check PR has empty diff | False-pass: Forgejo does not plant on a no-op even if `CODEOWNERS` remains. Fail S3; open a new dedicated PR that changes at least one file. |
+| Operator attestation without the dedicated PR | False-pass. Fail S3; open the dedicated non-WIP `{n}` on `docs/h30-plant-check.md`. Attestation may only record its GETs. |
+| Plant-check PR has empty diff | False-pass: Forgejo does not plant on a no-op even if `CODEOWNERS` remains. Fail S3; open a new dedicated PR whose only path is `docs/h30-plant-check.md`. |
+| Plant-check `{n}` touches `ledger/`, `operator-voting/`, `frontend/`, `deploy/`, or a CODEOWNERS path | Invalid. Open a new `{n}` whose only path is `docs/h30-plant-check.md`. |
+| Merging the plant-check PR `{n}` | Lands a throwaway docs note (or a product edit if the path constraint was ignored). **Close `{n}` without merge.** Closing the leftover issue is a different contract. |
 | WIP/draft follow-up used as “no new plant” | Forgejo skips CODEOWNERS on WIP. Invalid. Use a non-WIP PR into `main`. |
 | Pass-iff ignores `requested_reviewers` | User plant would pass; live #30 has `[]` so teams-only looks green while Tests say fail if users were requested. |
 | Pass-iff matches `@code/maintainers` | Misses live team `maintainers` / `id: 4`; use the fail-closed pair. |
@@ -541,6 +594,7 @@ still SHA-pins `Do: merge` (**H30-4**).
 | `block_on_outdated_branch` blocks merge | Rebase the product head onto current `main`. Do not PATCH the flag off. |
 | Implement PATCHes protection or edits CAC / Coolify / ledger / frontend | Out of authority / wrong repo. |
 | `git grep '^\.\* @'` as the land check | After a correct delete, that command exits **1** (`set -e` false-fail). A comments-only leftover is a grep pass. Land predicate is `test ! -e` on all four paths. |
+| Rewrite of ADR/architecture on the product tip vs the accepted SHA | Land fails the byte-identity gate. Copy the two files; do not edit **H30** while combining. |
 
 ## Ordered implementation slices
 
@@ -548,11 +602,11 @@ still SHA-pins `Do: merge` (**H30-4**).
 | --- | --- | --- | --- |
 | **S0** | This design on `cac-design-issue-30` (ADR 0001 + architecture **H30**). Transport only. | No. Do not open or merge as a product PR. | None in `code/voting`. Woodpecker enablement is a **WP-enable / combine** gate, not an S0 file dep. |
 | **S1** | Delete root `CODEOWNERS` on a branch that differs from `main`. Confirm the other three paths are absent. Live head `eb352b8` on `chore/remove-catchall-codeowners` is that delete. | **Draft-only** until S2+WP-pre are on the same branch. Not a landable slice. Convert live #30 to `draft` **before** pushing a combined head (lock against a later delete-only tip). | S0 accepted. |
-| **S2** | Same branch as S1: standing docs + README pointer (Decision 3 body). Add the quoted root `.woodpecker.yaml`. No ledger / operator-voting / frontend / deploy / skill / OPS edits. Open the leftover issue that will own S3. | Only as the **combined** product PR with S1+WP-pre. | S1 on the same head. |
-| **WP-enable** | **Pre-merge gate.** Confirm `code/voting` is an active Woodpecker project **before** combining onto `#30`. File owner ≠ posting owner. If YAML later posts nothing: named unblock (cl8y-forgejo#48 or a local dex#1247-shaped leftover) plus retrigger. Fake status POSTs and `force_merge` forbidden. | N/A. Blocks combine / WP-pre. | Not a local iid. Named forge ops. |
+| **S2** | Same branch as S1: copy standing docs **byte-identical** from the accepted SHA + README pointer (Decision 3 body). Add the quoted root `.woodpecker.yaml`. No ledger / operator-voting / frontend / deploy / skill / OPS edits. Open the leftover issue that will own S3. | Only as the **combined** product PR with S1+WP-pre. | S1 on the same head. |
+| **WP-enable** | **Pre-merge gate.** Confirm `code/voting` is an active Woodpecker project **before** combining onto `#30` (optional pass/fail GET: Forgejo hook → `https://ci.cl8y.com/api/hook` with `push`+`pull_request`, or Woodpecker `active`). File owner ≠ posting owner. If YAML later posts nothing: named unblock (cl8y-forgejo#48 or a local dex#1247-shaped leftover) plus retrigger. Fake status POSTs and `force_merge` forbidden. | N/A. Blocks combine / WP-pre. | Not a local iid. Named forge ops. |
 | **WP-pre** | **Land prerequisite (not leftover).** Deletion-PR head has a real **success** `ci/woodpecker/pr/woodpecker` from Woodpecker (`ci.cl8y.com`). File owner: `#30` implement (quoted YAML). Enablement owner: forge ops. Blocks merge of S1+S2. | N/A as a solo merge. | WP-enable; S2 file on the PR. |
-| **Product PR** | **One** PR: default [#30](https://git.cl8y.com/code/voting/pulls/30) (`chore/remove-catchall-codeowners`) whose `git diff origin/main...HEAD` is delete + ADR 0001 + architecture + README pointer + root `.woodpecker.yaml`. Merging this PR **closes #30**. Successor only with `Closes #30` in the body **and** S3 leftover issue already open. | Yes, once S1+S2+WP-pre are on the head, rebased, Woodpecker green. | S0 accepted; S1+S2+WP-enable+WP-pre combined. |
-| **S3** | Leftover-complete “no new plant” (tests item 4). Dedicated post-merge **non-WIP non-empty** plant-check PR. Operator attestation may record that PR’s GETs; it is not a substitute. Not a close gate for #30. | N/A | Product PR merged to `main`. |
+| **Product PR** | **One** PR: default [#30](https://git.cl8y.com/code/voting/pulls/30) (`chore/remove-catchall-codeowners`) whose `git diff origin/main...HEAD` is **only** CODEOWNERS delete + two `docs/` files **byte-identical** to the accepted SHA + README pointer + quoted root `.woodpecker.yaml`. Merging this PR **closes #30**. Successor only with `Closes #30` in the body **and** S3 leftover issue already open. | Yes, once S1+S2+WP-pre are on the head, rebased, Woodpecker green. | S0 accepted; S1+S2+WP-enable+WP-pre combined. |
+| **S3** | Leftover-complete “no new plant” (tests item 4). Dedicated post-merge **non-WIP** plant-check PR `{n}` whose only path is `docs/h30-plant-check.md`. **Close `{n}` without merge.** Operator attestation may record that PR’s GETs; it is not a substitute. Not a close gate for #30. | N/A | Product PR merged to `main`. |
 
 PR `#30` (or `Closes #30` successor) ships **S1+S2+WP-pre** only.
 
@@ -571,10 +625,13 @@ pushes below.
    later **delete-only** head cannot land (hello#15: 1 file,
    `mergeable: true`). Live `#30` is already that trap; draft is the lock.
 2. Fetch published design: `origin/cac-design-issue-30` (this ADR,
-   `docs/ARCHITECTURE.md`).
-3. Copy or cherry-pick those S0 paths onto `chore/remove-catchall-codeowners`
-   (keep the CODEOWNERS delete from `eb352b8`). Never reset the branch to a
-   design SHA. Never merge `eb352b8`.
+   `docs/ARCHITECTURE.md`) at the independently accepted SHA.
+3. Copy `docs/adr/0001-remove-catchall-codeowners.md` and
+   `docs/ARCHITECTURE.md` **byte-identical** from that SHA onto
+   `chore/remove-catchall-codeowners` (keep the CODEOWNERS delete from
+   `eb352b8`). Do not rewrite those files while combining. Never reset
+   the branch to a design SHA. Never merge `eb352b8`. Never merge
+   `cac-design-issue-30`.
 4. Add the README **Merge gate** paragraph as the Decision 3 body (do not
    stub the product README). Index ADR 0001 / **H30** in Docs for agents.
 5. Add **exactly** the quoted root `.woodpecker.yaml` (Decision 8 /
@@ -587,8 +644,12 @@ pushes below.
    that leftover number.
 7. Rebase onto current `origin/main` (`block_on_outdated_branch` is
    observed-true; do not PATCH it off). Push the product branch.
-8. Ready the PR only when `git diff origin/main...HEAD` is the product
-   diff and `ci/woodpecker/pr/woodpecker` has posted **success**. Then merge
+8. Confirm `git diff <accepted-sha> -- docs/adr/0001-remove-catchall-codeowners.md docs/ARCHITECTURE.md`
+   is empty, and `git diff origin/main...HEAD` contains **only**: CODEOWNERS
+   delete, those two docs files, README Merge-gate + docs index, quoted
+   root `.woodpecker.yaml`.
+9. Ready the PR only when that product diff is the tip and
+   `ci/woodpecker/pr/woodpecker` has posted **success**. Then merge
    with SHA-pinned `Do: merge`. If YAML is present and nothing posts:
    named unblock plus retrigger; do not fake a status.
 
@@ -598,7 +659,8 @@ In-repo CI cannot GET branch protection. Existing Cargo tests, frontend
 `npm test`, Playwright, SPA fallback, and GitLab gitleaks stay ungated
 and must not be rewritten for this ticket. The **#30 land bootstrap** does
 not run those suites. Any later real Forgejo CI extends the same root
-`.woodpecker.yaml`. Do not add a product test solely for file absence.
+`.woodpecker.yaml` (optional leftover; **not** a close gate for `#30`). Do
+not add a product test solely for file absence.
 
 1. **Absence** (on the product tip / after land). Scope to the four Forgejo
    CODEOWNERS paths; do not `git grep` the whole tree (this ADR quotes
@@ -642,17 +704,25 @@ not run those suites. Any later real Forgejo CI extends the same root
 4. **No new plant** (leftover-complete; **not** a #30 close gate). After
    S1+S2+WP-pre are on `main`:
 
-   - Open a **non-WIP** PR **into `main`** from a tip that does **not**
-     contain `CODEOWNERS` and that **changes at least one file**.
+   - Open a **non-WIP** PR **into `main`** whose `git diff origin/main...HEAD`
+     is **exactly** the added throwaway `docs/h30-plant-check.md` (one
+     line, e.g. `H30 plant-check; do not merge.`). The tip **must not**
+     contain `CODEOWNERS`.
+   - `{n}` **must not** change `ledger/`, `operator-voting/`, `frontend/`,
+     `deploy/`, or any of the four CODEOWNERS paths.
    - Do not request users or teams in the UI.
    - `GET /api/v1/repos/code/voting/pulls/{n}` and
      `GET .../pulls/{n}/reviews` immediately after open, then wait 30s
      and re-GET.
    - Pass = Observability fail-closed pair on both GET pairs.
+   - **Close `{n}` without merging it.** Then paste the record on the
+     leftover tracker and close that **issue** (issue close, not via
+     merge). Those are two different contracts.
    - **Disqualify** leftover `pulls/30` and leftover `pulls/29`. A
-     draft/WIP or empty-diff follow-up is not proof.
+     draft/WIP, empty-diff, product-path, or **merged** follow-up is not
+     proof.
    - Operator attestation may record those GETs; it is not a substitute
-     for this PR.
+     for this PR and does not authorize merging `{n}`.
 
 5. **Reject still blocks (doc-level).** Do not turn off
    `block_on_rejected_reviews` to “make autoland easier.”
@@ -663,27 +733,34 @@ not run those suites. Any later real Forgejo CI extends the same root
    not live only there. Close-keyword contract: PR #30 / issue #30 text
    has no `Fixes` / `Closes` / `Resolves` for the leftover tracker iid.
 
-7. **Product untouched.** `git diff origin/main...HEAD` on the implement PR
-   has no `ledger/` / `operator-voting/` / `frontend/` / `deploy/` /
-   `skills/` / `.gitlab-ci.yml` / `.gitleaks.toml` / `.githooks/` /
-   `docs/LEDGER_INVARIANTS.md` / `docs/OPERATOR_VOTING.md` /
-   `docs/FRONTEND.md` / `docs/OPS.md` / `docs/HANDOFF.md` edits.
+7. **Product untouched + byte-identity.** `git diff origin/main...HEAD` on
+   the implement PR has no `ledger/` / `operator-voting/` / `frontend/` /
+   `deploy/` / `skills/` / `.gitlab-ci.yml` / `.gitleaks.toml` /
+   `.githooks/` / `docs/LEDGER_INVARIANTS.md` / `docs/OPERATOR_VOTING.md` /
+   `docs/FRONTEND.md` / `docs/OPS.md` / `docs/HANDOFF.md` edits. The two
+   standing docs files match the independently accepted SHA
+   (`git diff <accepted-sha> -- docs/adr/0001-remove-catchall-codeowners.md docs/ARCHITECTURE.md`
+   is empty). The only extra diffs versus that SHA plus `origin/main` are
+   `CODEOWNERS` delete, README Merge-gate + docs index, and the quoted
+   root `.woodpecker.yaml`.
 
 ## Rollout
 
 - Merge vehicle: **one** PR, existing
   [#30](https://git.cl8y.com/code/voting/pulls/30), after the combine
-  step. Diff must be delete + ADR 0001 + architecture + README pointer
-  (Decision 3) + root `.woodpecker.yaml` (Decision 8). Design-only
-  `cac-design-issue-30` must not be opened or merged as the product PR.
-  Successor only with `Closes #30` in the body and the S3 leftover issue
-  already open.
+  step. Diff versus `origin/main` must be **only** CODEOWNERS delete +
+  ADR 0001 + architecture **byte-identical** to the independently
+  accepted SHA + README pointer (Decision 3) + root `.woodpecker.yaml`
+  (Decision 8). Design-only `cac-design-issue-30` must not be opened or
+  merged as the product PR. Successor only with `Closes #30` in the body
+  and the S3 leftover issue already open.
 - Order: protection already live (re-GET at close) → **WP-enable**
   preflight → convert #30 to draft → combine S1+S2+WP-pre on
   `chore/remove-catchall-codeowners` → leftover issue remains open →
   rebase → Woodpecker **success** on the combined head (or named unblock
   plus retrigger) → `Do: merge` → **#30 closes**. Then leftover-complete
-  test 4 on a dedicated post-merge non-WIP non-empty plant-check PR.
+  test 4 on a dedicated post-merge non-WIP plant-check PR `{n}` whose
+  only path is `docs/h30-plant-check.md`. **Close `{n}` without merge.**
   Operator attestation may record that PR’s GETs; it is not
   leftover-complete.
 - Other `code/*` catch-all deletions may copy this pattern; this ADR does
@@ -721,12 +798,16 @@ stay untouched. Do **not** delete `.gitlab-ci.yml` as part of rollback.
 All must be true on the merged tip. This is what merging `#30` completes. It
 does **not** wait for S3.
 
-1. `main` has no CODEOWNERS file at the four Forgejo paths: `test -f` fails
-   on `CODEOWNERS`, `docs/CODEOWNERS`, `.gitea/CODEOWNERS`,
+1. `main` has no CODEOWNERS file at the four Forgejo paths: `test ! -e`
+   is true on `CODEOWNERS`, `docs/CODEOWNERS`, `.gitea/CODEOWNERS`,
    `.forgejo/CODEOWNERS` (**H30-1**).
-2. Standing docs on `main`: ADR 0001 + architecture **H30**, **and** root
-   README pointer (Decision 3 body; product tables kept). Architecture-only
-   is not sufficient.
+2. Product tip `docs/adr/0001-remove-catchall-codeowners.md` and
+   `docs/ARCHITECTURE.md` are **byte-identical** to the independently
+   accepted SHA (this SHA or a successor after independent review). The
+   only extra diffs versus that SHA plus `origin/main` are `CODEOWNERS`
+   delete, README Merge-gate + docs index, and the quoted root
+   `.woodpecker.yaml`. Architecture-only is not sufficient. Do not
+   rewrite **H30** while combining.
 3. The deletion-PR head has a real **success** `ci/woodpecker/pr/woodpecker`
    status from Woodpecker / `ci.cl8y.com` (**WP-pre** / **H30-3**); no
    deploy secrets ran on that PR event; mergeable under **H30-4**
@@ -748,20 +829,24 @@ is not land. A successor without `Closes #30` is not land of `#30`.
 
 ### Leftover-complete (S3) — follow-up issue; survives merge of `#30`
 
-1. A **dedicated** PR opened **after** the delete landed, **non-WIP**, with
-   a **non-empty diff** (at least one file changed vs `main`): Observability
-   three fail-closed clauses. Record `{n}`, the two JSON bodies used for
-   the pass decision, and four-path `test ! -e` on `main`, then close the
-   leftover **issue** (issue close, not via merge). `#30`’s leftover plant
-   does not count. `#29`’s plant does not count. “The next natural PR”
-   does not count. An empty-diff or WIP dedicated PR does not count.
-   Operator attestation of those GETs is not leftover-complete without
-   this PR.
+1. A **dedicated** PR `{n}` opened **after** the delete landed, **non-WIP**,
+   whose `git diff origin/main...HEAD` is **exactly** the added throwaway
+   `docs/h30-plant-check.md`: Observability three fail-closed clauses.
+   `{n}` **must not** change `ledger/`, `operator-voting/`, `frontend/`,
+   `deploy/`, or any CODEOWNERS path. Record `{n}`, the two JSON bodies used
+   for the pass decision, and four-path `test ! -e` on `main`. **Close `{n}`
+   without merging it.** Then close the leftover **issue** (issue close,
+   not via merge). Closing the leftover issue is not permission to merge
+   `{n}`. `#30`’s leftover plant does not count. `#29`’s plant does not
+   count. “The next natural PR” does not count. An empty-diff, WIP,
+   product-path, or **merged** dedicated PR does not count. Operator
+   attestation of those GETs is not leftover-complete without this PR.
 
 Forgejo#48 leftovers, CAC#429, and voting #29 (Renovate) may stay open;
 they are not land or leftover gates for this tree. Enablement/repair
 needed so **WP-pre** can post **is** a land gate (owned above), not a
-leftover.
+leftover. A later leftover to extend root `.woodpecker.yaml` with product
+CI is optional and is **not** a close gate for `#30`.
 
 ## Authority
 
