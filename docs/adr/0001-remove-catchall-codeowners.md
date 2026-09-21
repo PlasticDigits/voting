@@ -18,10 +18,11 @@ Design branch `cac-design-issue-30` is transport only; it is not the product
 PR. Do not open a design-only PR. Copy **the independently accepted SHA**
 (this SHA or a successor after independent review) onto the product tip.
 Land criterion: product tip `docs/adr/0001-remove-catchall-codeowners.md`
-and `docs/ARCHITECTURE.md` are **byte-identical** to that SHA. This
-revision of `01ddeaa` closes three holes: S3 plant-check **close without
-merge** on a named non-product path; that byte-identity gate; architecture
-**H30-1** as four-path **absence**, not “exists but not requesting.”
+and `docs/ARCHITECTURE.md` are **byte-identical** to that SHA. S3
+plant-check `{n}` is the named throwaway `docs/h30-plant-check.md`,
+**closed without merging** (`GET .../pulls/{n}` `merged == false`).
+Architecture **H30-1** is four-path **absence** (`test ! -e`), not “file
+exists but is not requesting reviewers.”
 
 This ADR does not authorize deploy, spend, custody rotation, Coolify
 `vote.cl8y.com` publish, Legal admin writes, or Forgejo protection PATCH
@@ -335,7 +336,8 @@ issue is a different contract and does not authorize merging `{n}`.
 ## Record
 
 - plant-check PR `{n}` (exactly `docs/h30-plant-check.md`; **closed without merge**):
-- `{n}` merged onto `main`? (must be **no**):
+- `{n}` GET `merged` (must be `false`):
+- `{n}` GET `state` (must be `closed`):
 - `GET /api/v1/repos/code/voting/pulls/{n}` body (the
   JSON used for the pass decision):
 - `GET /api/v1/repos/code/voting/pulls/{n}/reviews` body
@@ -543,7 +545,8 @@ is present, fail. If all clauses hold, wait once 30 seconds and re-GET
 both before pass; pass only if the second pair still satisfies all
 clauses. Record `{n}` and the two JSON bodies (the pair used for the
 pass decision) plus the four-path `test ! -e` check on `main` on the leftover
-tracker. **Close `{n}` without merging it.** Then close the leftover
+tracker. **Close `{n}` without merging it.** After close, `GET .../pulls/{n}`
+has `merged == false` and `state == "closed"`. Then close the leftover
 **issue** (issue close, not via merge). Closing the leftover issue is not
 permission to merge `{n}`. PR #30’s own official
 request does not pass. PR #29’s plant does not pass. “The next
@@ -576,7 +579,7 @@ still SHA-pins `Do: merge` (**H30-4**).
 | Operator attestation without the dedicated PR | False-pass. Fail S3; open the dedicated non-WIP `{n}` on `docs/h30-plant-check.md`. Attestation may only record its GETs. |
 | Plant-check PR has empty diff | False-pass: Forgejo does not plant on a no-op even if `CODEOWNERS` remains. Fail S3; open a new dedicated PR whose only path is `docs/h30-plant-check.md`. |
 | Plant-check `{n}` touches `ledger/`, `operator-voting/`, `frontend/`, `deploy/`, or a CODEOWNERS path | Invalid. Open a new `{n}` whose only path is `docs/h30-plant-check.md`. |
-| Merging the plant-check PR `{n}` | Lands a throwaway docs note (or a product edit if the path constraint was ignored). **Close `{n}` without merge.** Closing the leftover issue is a different contract. |
+| Merging the plant-check PR | Lands a throwaway docs note (or a product edit if the path constraint was ignored). Hello failure mode of the same name. **Close `{n}` without merge.** After close, `GET .../pulls/{n}` has `merged == false` and `state == "closed"`. Closing the leftover issue is a different contract. |
 | WIP/draft follow-up used as “no new plant” | Forgejo skips CODEOWNERS on WIP. Invalid. Use a non-WIP PR into `main`. |
 | Pass-iff ignores `requested_reviewers` | User plant would pass; live #30 has `[]` so teams-only looks green while Tests say fail if users were requested. |
 | Pass-iff matches `@code/maintainers` | Misses live team `maintainers` / `id: 4`; use the fail-closed pair. |
@@ -715,9 +718,10 @@ not add a product test solely for file absence.
      `GET .../pulls/{n}/reviews` immediately after open, then wait 30s
      and re-GET.
    - Pass = Observability fail-closed pair on both GET pairs.
-   - **Close `{n}` without merging it.** Then paste the record on the
-     leftover tracker and close that **issue** (issue close, not via
-     merge). Those are two different contracts.
+   - **Close `{n}` without merging it.** After close, `GET .../pulls/{n}`
+     has `merged == false` and `state == "closed"`. Then paste the
+     record on the leftover tracker and close that **issue** (issue
+     close, not via merge). Those are two different contracts.
    - **Disqualify** leftover `pulls/30` and leftover `pulls/29`. A
      draft/WIP, empty-diff, product-path, or **merged** follow-up is not
      proof.
@@ -834,13 +838,14 @@ is not land. A successor without `Closes #30` is not land of `#30`.
    `docs/h30-plant-check.md`: Observability three fail-closed clauses.
    `{n}` **must not** change `ledger/`, `operator-voting/`, `frontend/`,
    `deploy/`, or any CODEOWNERS path. Record `{n}`, the two JSON bodies used
-   for the pass decision, and four-path `test ! -e` on `main`. **Close `{n}`
-   without merging it.** Then close the leftover **issue** (issue close,
-   not via merge). Closing the leftover issue is not permission to merge
-   `{n}`. `#30`’s leftover plant does not count. `#29`’s plant does not
-   count. “The next natural PR” does not count. An empty-diff, WIP,
-   product-path, or **merged** dedicated PR does not count. Operator
-   attestation of those GETs is not leftover-complete without this PR.
+   for the pass decision, four-path `test ! -e` on `main`, and the close GET
+   (`merged == false`, `state == "closed"`). **Close `{n}` without merging
+   it.** Then close the leftover **issue** (issue close, not via merge).
+   Closing the leftover issue is not permission to merge `{n}`. `#30`’s
+   leftover plant does not count. `#29`’s plant does not count. “The next
+   natural PR” does not count. An empty-diff, WIP, product-path, or
+   **merged** dedicated PR does not count. Operator attestation of those
+   GETs is not leftover-complete without this PR.
 
 Forgejo#48 leftovers, CAC#429, and voting #29 (Renovate) may stay open;
 they are not land or leftover gates for this tree. Enablement/repair
