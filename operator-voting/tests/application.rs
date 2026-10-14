@@ -8,11 +8,14 @@ use http_body_util::BodyExt;
 use operator_voting::{api::AppState, application::application, VotingConfig};
 use tower::ServiceExt;
 fn app(burst: u32) -> axum::Router {
+    let mut cfg = VotingConfig::for_tests("unused", "");
+    cfg.rate_limit_post_burst = burst;
+    app_with_config(cfg)
+}
+fn app_with_config(cfg: VotingConfig) -> axum::Router {
     let pool = sqlx::postgres::PgPoolOptions::new()
         .connect_lazy("postgres://unused:unused@127.0.0.1:1/unused")
         .unwrap();
-    let mut cfg = VotingConfig::for_tests("unused", "");
-    cfg.rate_limit_post_burst = burst;
     application(AppState { pool, cfg }).unwrap()
 }
 fn req(method: &str, origin: &str) -> Request<Body> {
@@ -142,6 +145,143 @@ async fn configured_metadata_and_canonicalization_are_real_routes() {
         value["body_hash"],
         operator_voting::payload::body_hash(value["body_html"].as_str().unwrap())
     );
+}
+
+#[tokio::test]
+async fn metadata_reports_distinctive_configured_threshold_in_production() {
+    let mut cfg = VotingConfig::for_tests("unused", "");
+    cfg.run_mode = "production".into();
+    cfg.apply_migrations = false;
+    cfg.cors_origins = vec!["https://vote.cl8y.com".into()];
+    cfg.min_proposal_raw =
+        num_bigint::BigInt::from(4321u64) * num_bigint::BigInt::from(10u64).pow(18);
+    let expected = cfg.min_proposal_raw.to_string();
+    let response = app_with_config(cfg)
+        .oneshot(Request::get("/v1/metadata").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let value: serde_json::Value =
+        serde_json::from_slice(&response.into_body().collect().await.unwrap().to_bytes()).unwrap();
+    assert_eq!(value["min_proposal_raw"], expected);
+    assert_eq!(value["decimals"], 18);
+    assert_eq!(value["protocol_version"], 2);
+    capture_response("GET", "/v1/metadata", StatusCode::OK, &value);
+}
+
+/// Public fixture key; genuine chain-specific signatures over the exact request bytes.
+fn signed_registration(chain: &str, chain_id: &str, version: Option<u32>) -> serde_json::Value {
+    use base64::Engine;
+    use k256::ecdsa::{signature::hazmat::PrehashSigner, Signature, SigningKey};
+    use operator_voting::crypto::{
+        adr36_sign_doc_json, cosmos_address_from_pubkey, eip191_hash, recover_evm_address,
+        verify_adr36, verify_eip191,
+    };
+    use sha2::{Digest, Sha256};
+
+    let key = SigningKey::from_slice(&[0x11u8; 32]).unwrap();
+    let pubkey = key.verifying_key().to_encoded_point(true);
+    let address = if chain == "terra" {
+        cosmos_address_from_pubkey(pubkey.as_bytes(), "terra").unwrap()
+    } else {
+        let (signature, recovery) = key.sign_prehash_recoverable(&eip191_hash("actor")).unwrap();
+        let mut bytes = signature.to_bytes().to_vec();
+        bytes.push(recovery.to_byte() + 27);
+        recover_evm_address("actor", &hex::encode(bytes)).unwrap()
+    };
+    let now = chrono::Utc::now().timestamp();
+    let mut payload = serde_json::json!({
+        "nonce": uuid::Uuid::new_v4().to_string(),
+        "app": "cl8y-voting", "chain": chain, "chain_id": chain_id,
+        "purpose": "register", "address": address,
+        "issued_at": now, "expires_at": now + 180,
+    });
+    if let Some(version) = version {
+        payload["version"] = serde_json::json!(version);
+    }
+    let raw = payload.to_string();
+    let mut request = serde_json::json!({"chain":chain,"address":address,"payload":raw});
+    if chain == "terra" {
+        let hash = Sha256::digest(adr36_sign_doc_json(&address, &raw).as_bytes());
+        let signature: Signature = key.sign_prehash(&hash).unwrap();
+        let signature = base64::engine::general_purpose::STANDARD.encode(signature.to_bytes());
+        let pubkey = base64::engine::general_purpose::STANDARD.encode(pubkey.as_bytes());
+        verify_adr36(&address, &raw, &signature, &pubkey).unwrap();
+        request["pubkey"] = serde_json::json!(pubkey);
+        request["signature"] = serde_json::json!(signature);
+    } else {
+        let (signature, recovery) = key.sign_prehash_recoverable(&eip191_hash(&raw)).unwrap();
+        let mut bytes = signature.to_bytes().to_vec();
+        bytes.push(recovery.to_byte() + 27);
+        let signature = format!("0x{}", hex::encode(bytes));
+        verify_eip191(&address, &raw, &signature).unwrap();
+        request["signature"] = serde_json::json!(signature);
+    }
+    request
+}
+
+#[tokio::test]
+async fn production_factory_rejects_signed_development_domains_and_unsupported_versions() {
+    // An unreachable lazy pool ensures rejection occurs before any transaction starts.
+    for mode in ["prod", "production"] {
+        let mut cfg = VotingConfig::for_tests("unused", "");
+        cfg.run_mode = mode.into();
+        cfg.apply_migrations = false;
+        cfg.cors_origins = vec!["https://vote.cl8y.com".into()];
+        let router = app_with_config(cfg);
+        for (chain, development, mainnet) in [
+            ("terra", "localterra", "columbus-5"),
+            ("bsc", "31337", "56"),
+        ] {
+            let cases = [
+                (
+                    development,
+                    Some(2),
+                    StatusCode::UNAUTHORIZED,
+                    "unauthorized",
+                ),
+                (mainnet, Some(1), StatusCode::BAD_REQUEST, "bad_request"),
+                (mainnet, Some(99), StatusCode::BAD_REQUEST, "bad_request"),
+                (mainnet, None, StatusCode::BAD_REQUEST, "bad_request"),
+            ];
+            for (chain_id, version, status, code) in cases {
+                let body = signed_registration(chain, chain_id, version);
+                let response = tokio::time::timeout(
+                    std::time::Duration::from_secs(2),
+                    router.clone().oneshot(
+                        Request::post("/v1/register")
+                            .header("origin", "https://vote.cl8y.com")
+                            .header("content-type", "application/json")
+                            .body(Body::from(body.to_string()))
+                            .unwrap(),
+                    ),
+                )
+                .await
+                .expect("domain/version rejection must not wait on the database")
+                .unwrap();
+                assert_eq!(
+                    response.status(),
+                    status,
+                    "{mode} {chain} {chain_id} {version:?}"
+                );
+                let request_id = response.headers()["x-request-id"]
+                    .to_str()
+                    .unwrap()
+                    .to_owned();
+                assert_eq!(
+                    response.headers()["access-control-allow-origin"],
+                    "https://vote.cl8y.com"
+                );
+                let value: serde_json::Value = serde_json::from_slice(
+                    &response.into_body().collect().await.unwrap().to_bytes(),
+                )
+                .unwrap();
+                assert_eq!(value["code"], code);
+                assert_eq!(value["request_id"], request_id);
+                capture_response("POST", "/v1/register", status, &value);
+            }
+        }
+    }
 }
 #[tokio::test]
 async fn sentinel_database_errors_are_never_public() {
