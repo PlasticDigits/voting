@@ -1,3 +1,4 @@
+import SafeHtml from './SafeHtml'
 import {
   SECTION_DISPLAY_ORDER,
   SECTION_HELP,
@@ -38,7 +39,6 @@ export default function ProposalSectionFields({ values, errors, disabled, onChan
               onChange={(e) => onChange(key, e.target.value)}
               disabled={disabled}
               rows={key === 'summary' ? 3 : 5}
-              maxLength={key === 'summary' ? MAX_SUMMARY_VISIBLE_CHARS + 80 : undefined}
               data-testid={`proposal-section-${key}`}
             />
             <span className="field-count" data-testid={`section-count-${key}`}>
@@ -83,7 +83,7 @@ export function ProposalSectionView({
           return (
             <section key={key} data-testid={`proposal-section-view-${key}`}>
               <h2>{SECTION_LABELS[key as SectionKey] ?? key}</h2>
-              <div dangerouslySetInnerHTML={{ __html: html }} />
+              <SafeHtml html={html} />
             </section>
           )
         })}
@@ -92,10 +92,10 @@ export function ProposalSectionView({
   }
   if (fallbackHtml) {
     return (
-      <article
+      <SafeHtml
         className="proposal-body"
         data-testid="proposal-legacy-body"
-        dangerouslySetInnerHTML={{ __html: fallbackHtml }}
+        html={fallbackHtml}
       />
     )
   }

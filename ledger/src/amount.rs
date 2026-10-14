@@ -1,5 +1,4 @@
 use num_bigint::BigInt;
-use num_traits::Zero;
 
 use crate::error::{LedgerError, LedgerResult};
 
@@ -11,26 +10,34 @@ pub const CL8Y_DECIMALS: u32 = 18;
 /// Parse a decimal-integer string (no exponent, no fraction).
 pub fn parse_raw_amount(raw: &str) -> LedgerResult<Amount> {
     let trimmed = raw.trim();
-    if trimmed.is_empty() {
-        return Err(LedgerError::Amount("empty amount".into()));
+    if trimmed.is_empty() || trimmed.len() > 78 {
+        return Err(LedgerError::Amount("empty or oversized amount".into()));
     }
     if !trimmed.chars().all(|c| c.is_ascii_digit()) {
         return Err(LedgerError::Amount(format!(
-            "amount must be an unsigned integer string: {trimmed}"
+            "amount must be an unsigned integer string"
         )));
     }
-    trimmed
+    let amount = trimmed
         .parse::<BigInt>()
-        .map_err(|e| LedgerError::Amount(e.to_string()))
+        .map_err(|_| LedgerError::Amount("invalid integer".into()))?;
+    if amount >= (BigInt::from(1) << 256) {
+        return Err(LedgerError::Amount("uint256 overflow".into()));
+    }
+    Ok(amount)
 }
 
 pub fn parse_hex_uint256(data: &str) -> LedgerResult<Amount> {
-    let hex = data.trim().trim_start_matches("0x");
-    if hex.is_empty() {
-        return Ok(BigInt::zero());
+    let hex = data
+        .strip_prefix("0x")
+        .ok_or_else(|| LedgerError::Amount("uint256 needs 0x prefix".into()))?;
+    if hex.is_empty() || hex.len() > 64 || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err(LedgerError::Amount(
+            "invalid uint256 width or encoding".into(),
+        ));
     }
     BigInt::parse_bytes(hex.as_bytes(), 16)
-        .ok_or_else(|| LedgerError::Amount(format!("invalid hex amount: {data}")))
+        .ok_or_else(|| LedgerError::Amount("invalid hex amount".into()))
 }
 
 pub fn human_to_raw(human: u64) -> Amount {
@@ -56,8 +63,9 @@ mod tests {
 
     #[test]
     fn hex_uint256_roundtrip() {
-        let a = parse_hex_uint256("0x0000000000000000000000000000000000000000000000000de0b6b3a7640000")
-            .unwrap();
+        let a =
+            parse_hex_uint256("0x0000000000000000000000000000000000000000000000000de0b6b3a7640000")
+                .unwrap();
         assert_eq!(a, human_to_raw(1));
     }
 }

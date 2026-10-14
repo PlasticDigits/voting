@@ -46,7 +46,13 @@ export const CANONICAL_SECTION_KEYS = SECTION_KEYS_SORTED
 export const MIN_SECTION_VISIBLE = MIN_SECTION_VISIBLE_CHARS
 export const MAX_SUMMARY_VISIBLE = MAX_SUMMARY_VISIBLE_CHARS
 
-export const CANONICAL_ANALYSIS_KEYS = ['benefits', 'long_term', 'risks', 'short_term', 'what'] as const
+export const CANONICAL_ANALYSIS_KEYS = [
+  'benefits',
+  'long_term',
+  'risks',
+  'short_term',
+  'what',
+] as const
 export type AnalysisKey = (typeof CANONICAL_ANALYSIS_KEYS)[number]
 export type AnalysisSections = Record<AnalysisKey, string>
 
@@ -93,26 +99,31 @@ export function stripTags(html: string): string {
 }
 
 function decodeEntities(raw: string): string {
-  return raw
-    .replace(/&nbsp;/gi, '\u00A0')
-    .replace(/&#x([0-9a-f]+);/gi, (_, hex: string) => {
-      const cp = Number.parseInt(hex, 16)
-      return Number.isFinite(cp) && cp >= 0 ? String.fromCodePoint(cp) : ''
-    })
-    .replace(/&#(\d+);/g, (_, dec: string) => {
-      const cp = Number.parseInt(dec, 10)
-      return Number.isFinite(cp) && cp >= 0 ? String.fromCodePoint(cp) : ''
-    })
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&apos;/g, "'")
+  const named: Record<string, string> = {
+    nbsp: '\u00a0',
+    amp: '&',
+    lt: '<',
+    gt: '>',
+    quot: '"',
+    apos: "'",
+  }
+  // One pass matches Rust: &amp;lt; becomes literal &lt;, never a second decoded entity.
+  return raw.replace(
+    /&(#(?:[xX][0-9a-fA-F]+|[0-9]+)|nbsp|amp|lt|gt|quot|apos);/g,
+    (entity, code: string) => {
+      if (!code.startsWith('#')) return named[code]
+      const hex = code[1] === 'x' || code[1] === 'X'
+      const cp = Number.parseInt(code.slice(hex ? 2 : 1), hex ? 16 : 10)
+      return Number.isInteger(cp) && cp >= 0 && cp <= 0x10ffff && !(cp >= 0xd800 && cp <= 0xdfff)
+        ? String.fromCodePoint(cp)
+        : entity
+    },
+  )
 }
 
 export function visibleText(html: string): string {
   const decoded = decodeEntities(stripTags(html)).replace(ZERO_WIDTH, '')
-  return decoded.replace(/\s+/g, ' ').trim()
+  return decoded.replace(/[\s\u0085]+/g, ' ').trim()
 }
 
 export function visibleLen(html: string): number {
@@ -145,7 +156,9 @@ export function sanitizeSectionHtml(raw: string): string {
   return visibleLen(clean) === 0 ? '' : clean
 }
 
-export function sanitizeSectionObject(input: Partial<ProposalSections> | Record<string, string>): ProposalSections {
+export function sanitizeSectionObject(
+  input: Partial<ProposalSections> | Record<string, string>,
+): ProposalSections {
   const out = emptySections()
   for (const key of SECTION_KEYS_SORTED) {
     out[key] = sanitizeSectionHtml(input[key] ?? '')
@@ -206,9 +219,12 @@ export function validateSections(sections: ProposalSections): SectionValidation 
   const errors: Partial<Record<SectionKey, string>> = {}
   let combined = 0
   for (const key of SECTION_KEYS_SORTED) {
-    combined += sections[key].length
+    combined += new TextEncoder().encode(sections[key]).length
   }
-  if (combined > MAX_BODY_BYTES || canonicalizeSections(sections).length > MAX_BODY_BYTES) {
+  if (
+    combined > MAX_BODY_BYTES ||
+    new TextEncoder().encode(canonicalizeSections(sections)).length > MAX_BODY_BYTES
+  ) {
     errors.problem = 'Proposal is too large'
     return { ok: false, errors }
   }

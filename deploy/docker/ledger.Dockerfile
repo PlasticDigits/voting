@@ -4,7 +4,7 @@
 # Coolify: apply sqlx migrations on first boot, then run deploy/grants.sql
 # as the DB owner. See docs/OPS.md.
 
-FROM rust:1.88-bookworm AS builder
+FROM rust:1.88.0-bookworm AS builder
 
 WORKDIR /build
 RUN apt-get update \
@@ -14,7 +14,7 @@ RUN apt-get update \
 COPY Cargo.toml Cargo.lock ./
 COPY ledger/ ./ledger/
 COPY operator-voting/ ./operator-voting/
-RUN cargo build --release -p voting-ledger \
+RUN cargo build --locked --release -p voting-ledger \
   && strip target/release/voting-ledger
 
 FROM debian:bookworm-slim AS runtime

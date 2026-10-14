@@ -14,9 +14,10 @@ describe('voting payload', () => {
       purpose: 'register',
       address: 'terra1abc',
       now: 1_700_000_000,
+      nonce: 'golden-nonce',
     })
     expect(canonicalizePayload(payload)).toBe(
-      '{"app":"cl8y-voting","chain":"terra","chain_id":"columbus-5","purpose":"register","address":"terra1abc","issued_at":1700000000,"expires_at":1700000600}'
+      '{"version":2,"nonce":"golden-nonce","app":"cl8y-voting","chain":"terra","chain_id":"columbus-5","purpose":"register","address":"terra1abc","issued_at":1700000000,"expires_at":1700000600}'
     )
   })
 
@@ -26,11 +27,12 @@ describe('voting payload', () => {
       purpose: 'propose',
       address: '0xabc',
       now: 1_700_000_000,
+      nonce: 'golden-nonce',
       title: 'Hello',
       body_hash: 'deadbeef',
     })
     expect(canonicalizePayload(payload)).toBe(
-      '{"app":"cl8y-voting","chain":"bsc","chain_id":"56","purpose":"propose","address":"0xabc","issued_at":1700000000,"expires_at":1700000600,"title":"Hello","body_hash":"deadbeef"}'
+      '{"version":2,"nonce":"golden-nonce","app":"cl8y-voting","chain":"bsc","chain_id":"56","purpose":"propose","address":"0xabc","issued_at":1700000000,"expires_at":1700000600,"title":"Hello","body_hash":"deadbeef"}'
     )
   })
 

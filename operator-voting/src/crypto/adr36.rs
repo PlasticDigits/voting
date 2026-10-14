@@ -42,6 +42,11 @@ pub fn verify_adr36(
         .split_once('1')
         .map(|(p, _)| p)
         .ok_or_else(|| VotingError::BadRequest("invalid bech32 address".into()))?;
+    if hrp != "terra" {
+        return Err(VotingError::Unauthorized(
+            "native Terra address prefix required".into(),
+        ));
+    }
     let sig_bytes = base64::engine::general_purpose::STANDARD
         .decode(signature_b64)
         .map_err(|_| VotingError::BadRequest("invalid terra signature base64".into()))?;
@@ -105,10 +110,7 @@ pub fn verify_terra(
     signature_b64: &str,
     pubkey_b64: &str,
 ) -> VotingResult<()> {
-    match verify_adr36(expected_address, message, signature_b64, pubkey_b64) {
-        Ok(()) => Ok(()),
-        Err(_) => verify_terra_raw_fallback(expected_address, message, signature_b64, pubkey_b64),
-    }
+    verify_adr36(expected_address, message, signature_b64, pubkey_b64)
 }
 
 #[cfg(test)]
@@ -141,13 +143,27 @@ mod tests {
     }
 
     #[test]
+    fn rejects_valid_foreign_hrp_wallet_as_terra_actor() {
+        let sk = key();
+        let pubkey = sk.verifying_key().to_encoded_point(true);
+        let address = cosmos_address_from_pubkey(pubkey.as_bytes(), "osmo").unwrap();
+        let encoded = base64::engine::general_purpose::STANDARD.encode(pubkey.as_bytes());
+        let message = "valid signature, wrong native chain identity";
+        let hash = Sha256::digest(adr36_sign_doc_json(&address, message).as_bytes());
+        let signature: Signature = sk.sign_prehash(&hash).unwrap();
+        let signature = base64::engine::general_purpose::STANDARD.encode(signature.to_bytes());
+        assert!(verify_adr36(&address, message, &signature, &encoded).is_err());
+    }
+
+    #[test]
     fn raw_fallback_roundtrip() {
         let sk = key();
         let (address, pubkey_b64) = address_of(&sk);
         let message = "CL8Y Terra test";
         let sig: Signature = sk.sign(message.as_bytes());
         let sig_b64 = base64::engine::general_purpose::STANDARD.encode(sig.to_bytes());
-        verify_terra(&address, message, &sig_b64, &pubkey_b64).unwrap();
+        verify_terra_raw_fallback(&address, message, &sig_b64, &pubkey_b64).unwrap();
+        assert!(verify_terra(&address, message, &sig_b64, &pubkey_b64).is_err());
     }
 
     #[test]

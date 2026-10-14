@@ -16,7 +16,9 @@ pub fn recover_evm_address(message: &str, signature_hex: &str) -> VotingResult<S
     let sig_bytes = hex::decode(signature_hex.trim_start_matches("0x"))
         .map_err(|_| VotingError::BadRequest("invalid EVM signature encoding".into()))?;
     if sig_bytes.len() != 65 {
-        return Err(VotingError::BadRequest("EVM signature must be 65 bytes".into()));
+        return Err(VotingError::BadRequest(
+            "EVM signature must be 65 bytes".into(),
+        ));
     }
     let v = sig_bytes[64];
     let rec_id = if v >= 27 {
@@ -27,6 +29,11 @@ pub fn recover_evm_address(message: &str, signature_hex: &str) -> VotingResult<S
     .ok_or_else(|| VotingError::BadRequest("invalid recovery id".into()))?;
     let sig = Signature::from_slice(&sig_bytes[..64])
         .map_err(|_| VotingError::Unauthorized("invalid signature".into()))?;
+    if sig.normalize_s().is_some() {
+        return Err(VotingError::Unauthorized(
+            "noncanonical high-s signature".into(),
+        ));
+    }
     let hash = eip191_hash(message);
     let vk = VerifyingKey::recover_from_prehash(&hash, &sig, rec_id)
         .map_err(|_| VotingError::Unauthorized("signature recovery failed".into()))?;
@@ -38,7 +45,11 @@ pub fn recover_evm_address(message: &str, signature_hex: &str) -> VotingResult<S
     Ok(format!("0x{}", hex::encode(&digest[12..])))
 }
 
-pub fn verify_eip191(expected_address: &str, message: &str, signature_hex: &str) -> VotingResult<()> {
+pub fn verify_eip191(
+    expected_address: &str,
+    message: &str,
+    signature_hex: &str,
+) -> VotingResult<()> {
     let recovered = recover_evm_address(message, signature_hex)?;
     if recovered != normalize_address(expected_address) {
         return Err(VotingError::Unauthorized(

@@ -7,6 +7,7 @@ import {
   isRegistrationPending,
   registerWallet,
   waitForLedgerRegistration,
+  REGISTER_POLL_TIMEOUT_MS,
   type BalanceResponse,
   type SignedRequest,
 } from '@/services/operatorVoting'
@@ -19,6 +20,7 @@ export type VotingSnapshot = {
   status: SnapshotStatus
   balance: string | null
   asOfHeight: number | null
+  snapshotEligible: boolean | null
   error: string | null
   loading: boolean
   polling: boolean
@@ -29,9 +31,17 @@ export type VotingSnapshot = {
   completeRegister: (signed: SignedRequest) => Promise<void>
 }
 
-export function useVotingSnapshot(address: string | null, chain: VotingChain | null): VotingSnapshot {
+export function useVotingSnapshot(
+  address: string | null,
+  chain: VotingChain | null,
+): VotingSnapshot {
+  const identityKey = address && chain ? `${chain}:${address.trim().toLowerCase()}` : null
+  const currentIdentity = useRef(identityKey)
+  currentIdentity.current = identityKey
+  const [dataIdentity, setDataIdentity] = useState<string | null>(null)
   const [status, setStatus] = useState<SnapshotStatus>('idle')
   const [balance, setBalance] = useState<string | null>(null)
+  const [snapshotEligible, setSnapshotEligible] = useState<boolean | null>(null)
   const [asOfHeight, setAsOfHeight] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -40,17 +50,22 @@ export function useVotingSnapshot(address: string | null, chain: VotingChain | n
   const abortRef = useRef<AbortController | null>(null)
   const resumeOnPending = useRef(true)
 
-  const applyBalance = useCallback((bal: BalanceResponse, registered: boolean, pending: boolean) => {
-    if (registered) {
-      setStatus('registered')
-      setBalance(snapshotBalanceRaw({ ...bal, registered: true }))
-      setAsOfHeight(bal.as_of_height ?? bal.height)
-      return
-    }
-    setBalance(null)
-    setAsOfHeight(null)
-    setStatus(pending ? 'pending' : 'unregistered')
-  }, [])
+  const applyBalance = useCallback(
+    (bal: BalanceResponse, registered: boolean, pending: boolean) => {
+      if (registered) {
+        setStatus('registered')
+        setSnapshotEligible(bal.snapshot_eligible === true)
+        setBalance(snapshotBalanceRaw({ ...bal, registered: true }))
+        setAsOfHeight(bal.as_of_height ?? bal.height)
+        return
+      }
+      setSnapshotEligible(null)
+      setBalance(null)
+      setAsOfHeight(null)
+      setStatus(pending ? 'pending' : 'unregistered')
+    },
+    [],
+  )
 
   const stopPoll = useCallback(() => {
     abortRef.current?.abort()
@@ -59,9 +74,13 @@ export function useVotingSnapshot(address: string | null, chain: VotingChain | n
   }, [])
 
   const refresh = useCallback(async () => {
+    const requestedIdentity = address && chain ? `${chain}:${address.trim().toLowerCase()}` : null
     if (!address || !chain) {
       stopPoll()
       setStatus('idle')
+      setLoading(false)
+      setDataIdentity(null)
+      setSnapshotEligible(null)
       setBalance(null)
       setAsOfHeight(null)
       setError(null)
@@ -71,17 +90,22 @@ export function useVotingSnapshot(address: string | null, chain: VotingChain | n
     setLoading(true)
     try {
       const [reg, bal] = await Promise.all([getRegistration(address), getBalance(address, chain)])
+      if (currentIdentity.current !== requestedIdentity) return
+      setDataIdentity(requestedIdentity)
       const registered = Boolean(chainRegistration(reg, chain) || bal.registered === true)
       const pending = !registered && (isRegistrationPending(reg, chain) || bal.pending === true)
       applyBalance(bal, registered, pending)
       setError(null)
     } catch (err) {
+      if (currentIdentity.current !== requestedIdentity) return
+      setDataIdentity(requestedIdentity)
       setStatus('unregistered')
+      setSnapshotEligible(null)
       setBalance(null)
       setAsOfHeight(null)
       setError(err instanceof Error ? err.message : 'Failed to load registration')
     } finally {
-      setLoading(false)
+      if (currentIdentity.current === requestedIdentity) setLoading(false)
     }
   }, [address, chain, applyBalance, stopPoll])
 
@@ -126,6 +150,26 @@ export function useVotingSnapshot(address: string | null, chain: VotingChain | n
     void waitUntilRegistered()
   }, [status, waitUntilRegistered])
 
+  // Registration can precede finalized/certified admission. Refresh that state
+  // without submitting another intent or changing an existing poll's weight.
+  useEffect(() => {
+    if (dataIdentity !== identityKey || status !== 'registered' || snapshotEligible !== false)
+      return
+    let stopped = false
+    let timer: ReturnType<typeof setTimeout>
+    const deadline = Date.now() + REGISTER_POLL_TIMEOUT_MS
+    const poll = async () => {
+      if (stopped) return
+      await refresh()
+      if (!stopped && Date.now() < deadline) timer = setTimeout(() => void poll(), 4_000)
+    }
+    timer = setTimeout(() => void poll(), 4_000)
+    return () => {
+      stopped = true
+      clearTimeout(timer)
+    }
+  }, [dataIdentity, identityKey, status, snapshotEligible, refresh])
+
   const retryPending = useCallback(async () => {
     resumeOnPending.current = false
     await waitUntilRegistered()
@@ -135,27 +179,32 @@ export function useVotingSnapshot(address: string | null, chain: VotingChain | n
     async (signed: SignedRequest) => {
       if (!address || !chain) return
       setError(null)
+      const requestedIdentity = `${chain}:${address.trim().toLowerCase()}`
+      if (currentIdentity.current !== requestedIdentity) return
       const res = await registerWallet(signed)
+      if (currentIdentity.current !== requestedIdentity) return
       const ledgerRow = Boolean(res.registration) && res.pending === false
       if (ledgerRow) {
         await refresh()
         return
       }
       setStatus('pending')
+      setSnapshotEligible(null)
       setBalance(null)
       resumeOnPending.current = false
       await waitUntilRegistered()
     },
-    [address, chain, refresh, waitUntilRegistered]
+    [address, chain, refresh, waitUntilRegistered],
   )
 
   const canRetry = status === 'pending' && !polling && Boolean(error)
 
   return {
-    status,
-    balance,
-    asOfHeight,
-    error,
+    status: dataIdentity === identityKey ? status : 'idle',
+    balance: dataIdentity === identityKey ? balance : null,
+    asOfHeight: dataIdentity === identityKey ? asOfHeight : null,
+    snapshotEligible: dataIdentity === identityKey ? snapshotEligible : null,
+    error: dataIdentity === identityKey ? error : null,
     loading,
     polling,
     lastPollAt,

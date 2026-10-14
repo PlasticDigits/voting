@@ -1,0 +1,3921 @@
+{
+  "components": {
+    "schemas": {
+      "ActionReceipt": {
+        "properties": {
+          "accepted_at": {
+            "type": "string"
+          },
+          "content": {},
+          "proposal_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "response": {},
+          "revision": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "signature_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "signature_id",
+          "response",
+          "accepted_at"
+        ],
+        "type": "object"
+      },
+      "AmendRequest": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/SignedRequest"
+          },
+          {
+            "properties": {
+              "body_sections": {
+                "$ref": "#/components/schemas/ProposalSections"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "title",
+              "body_sections"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "AmendResponse": {
+        "properties": {
+          "body_hash": {
+            "type": "string"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "receipt_id": {
+            "type": "string"
+          },
+          "revision": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ok",
+          "receipt_id",
+          "body_hash",
+          "revision"
+        ],
+        "type": "object"
+      },
+      "Analysis": {
+        "properties": {
+          "body_html": {
+            "type": "string"
+          },
+          "chain": {
+            "$ref": "#/components/schemas/VotingChain"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "machine_generated": {
+            "type": "boolean"
+          },
+          "revision": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "sections": {
+            "$ref": "#/components/schemas/AnalysisSections"
+          },
+          "source": {
+            "type": "string"
+          },
+          "wallet_address": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "chain",
+          "wallet_address",
+          "body_html",
+          "created_at",
+          "sections",
+          "source",
+          "machine_generated"
+        ],
+        "type": "object"
+      },
+      "AnalysisRequest": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/SignedRequest"
+          },
+          {
+            "properties": {
+              "sections": {
+                "$ref": "#/components/schemas/AnalysisSections"
+              }
+            },
+            "required": [
+              "sections"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "AnalysisResponse": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "receipt_id": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "receipt_id",
+          "source"
+        ],
+        "type": "object"
+      },
+      "AnalysisSections": {
+        "properties": {
+          "benefits": {
+            "type": "string"
+          },
+          "long_term": {
+            "type": "string"
+          },
+          "risks": {
+            "type": "string"
+          },
+          "short_term": {
+            "type": "string"
+          },
+          "what": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "BalanceResponse": {
+        "properties": {
+          "address": {
+            "type": "string"
+          },
+          "as_of_height": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "balance": {
+            "type": "string"
+          },
+          "chain": {
+            "$ref": "#/components/schemas/VotingChain"
+          },
+          "height": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "initial_balance": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "pending": {
+            "type": "boolean"
+          },
+          "registered": {
+            "type": "boolean"
+          },
+          "snapshot_eligible": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "chain",
+          "address",
+          "height",
+          "as_of_height",
+          "balance",
+          "registered",
+          "snapshot_eligible",
+          "pending"
+        ],
+        "type": "object"
+      },
+      "CanonicalRequest": {
+        "oneOf": [
+          {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "proposal"
+                ],
+                "type": "string"
+              },
+              "sections": {}
+            },
+            "required": [
+              "sections",
+              "kind"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "analysis"
+                ],
+                "type": "string"
+              },
+              "sections": {
+                "$ref": "#/components/schemas/AnalysisSections"
+              }
+            },
+            "required": [
+              "sections",
+              "kind"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "body_html": {
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "comment"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "body_html",
+              "kind"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "CanonicalResponse": {
+        "properties": {
+          "body_hash": {
+            "type": "string"
+          },
+          "body_html": {
+            "type": "string"
+          },
+          "canonical_json": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "protocol_version": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "sections": {}
+        },
+        "required": [
+          "protocol_version",
+          "body_hash",
+          "body_html"
+        ],
+        "type": "object"
+      },
+      "CastVoteRequest": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/SignedRequest"
+          },
+          {
+            "properties": {
+              "choice": {
+                "$ref": "#/components/schemas/VoteChoice"
+              }
+            },
+            "required": [
+              "choice"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "Comment": {
+        "properties": {
+          "body_html": {
+            "type": "string"
+          },
+          "chain": {
+            "$ref": "#/components/schemas/VotingChain"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "wallet_address": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "chain",
+          "wallet_address",
+          "body_html",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "CommentRequest": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/SignedRequest"
+          },
+          {
+            "properties": {
+              "body_html": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "body_html"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "CommentResponse": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "max_per_wallet": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "receipt_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "receipt_id",
+          "max_per_wallet"
+        ],
+        "type": "object"
+      },
+      "CreateDraftRequest": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/SignedRequest"
+          },
+          {
+            "properties": {
+              "body_html": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "body_sections": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ProposalSections"
+                  }
+                ]
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "title"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "DraftResponse": {
+        "properties": {
+          "bsc_block": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "receipt_id": {
+            "type": "string"
+          },
+          "revision": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ProposalStatus"
+          },
+          "terra_height": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "receipt_id",
+          "status",
+          "revision"
+        ],
+        "type": "object"
+      },
+      "ErrorBody": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "error",
+          "code"
+        ],
+        "type": "object"
+      },
+      "FreezeRecord": {
+        "properties": {
+          "bsc_block": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "bsc_block_hash": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "bsc_epoch": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "opened_at": {
+            "type": "string"
+          },
+          "terra_block_hash": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "terra_epoch": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "terra_height": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "terra_height",
+          "bsc_block",
+          "opened_at"
+        ],
+        "type": "object"
+      },
+      "FrozenWeightResponse": {
+        "description": "Immutable per-poll power. Future registration admission cannot change it.",
+        "properties": {
+          "address": {
+            "type": "string"
+          },
+          "chain": {
+            "$ref": "#/components/schemas/VotingChain"
+          },
+          "eligible": {
+            "type": "boolean"
+          },
+          "proposal_id": {
+            "type": "string"
+          },
+          "weight": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "proposal_id",
+          "chain",
+          "address",
+          "weight",
+          "eligible"
+        ],
+        "type": "object"
+      },
+      "Health": {
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "service": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "ok",
+          "service"
+        ],
+        "type": "object"
+      },
+      "Metadata": {
+        "properties": {
+          "capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "decimals": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "min_proposal_raw": {
+            "type": "string"
+          },
+          "protocol_version": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "protocol_version",
+          "min_proposal_raw",
+          "decimals",
+          "capabilities"
+        ],
+        "type": "object"
+      },
+      "OpenRequest": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/SignedRequest"
+          },
+          {
+            "properties": {
+              "bsc_block": {
+                "format": "int64",
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "terra_height": {
+                "description": "Ignored. Freeze heights come from indexer_state only.",
+                "format": "int64",
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            },
+            "type": "object"
+          }
+        ]
+      },
+      "OpenResponse": {
+        "properties": {
+          "bsc_block": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "receipt_id": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ProposalStatus"
+          },
+          "terra_height": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ok",
+          "receipt_id",
+          "status",
+          "terra_height",
+          "bsc_block"
+        ],
+        "type": "object"
+      },
+      "PendingChains": {
+        "properties": {
+          "bsc": {
+            "type": "boolean"
+          },
+          "terra": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "terra",
+          "bsc"
+        ],
+        "type": "object"
+      },
+      "ProposalDetail": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ProposalListItem"
+          },
+          {
+            "properties": {
+              "advisory": {
+                "type": "boolean"
+              },
+              "analysis": {
+                "items": {
+                  "$ref": "#/components/schemas/Analysis"
+                },
+                "type": "array"
+              },
+              "body_hash": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "body_html": {
+                "type": "string"
+              },
+              "body_sections": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ProposalSections"
+                  }
+                ]
+              },
+              "comments": {
+                "items": {
+                  "$ref": "#/components/schemas/Comment"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "body_html",
+              "comments",
+              "analysis",
+              "advisory"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "ProposalListItem": {
+        "properties": {
+          "bsc_block": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "chain": {
+            "$ref": "#/components/schemas/VotingChain"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "opened_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "proposer": {
+            "type": "string"
+          },
+          "revision": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "snapshot_incident": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "snapshot_validity": {
+            "$ref": "#/components/schemas/SnapshotValidity"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ProposalStatus"
+          },
+          "summary": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tally": {
+            "items": {
+              "$ref": "#/components/schemas/Tally"
+            },
+            "type": "array"
+          },
+          "terra_height": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "chain",
+          "proposer",
+          "title",
+          "revision",
+          "snapshot_validity",
+          "created_at",
+          "status",
+          "tally"
+        ],
+        "type": "object"
+      },
+      "ProposalSections": {
+        "description": "Typed compatibility view used by lifecycle tests and analysis code.\nValidation and hashing still flow through `prepare_sections`.",
+        "properties": {
+          "context": {
+            "type": "string"
+          },
+          "problem": {
+            "type": "string"
+          },
+          "pros_cons": {
+            "type": "string"
+          },
+          "solution": {
+            "type": "string"
+          },
+          "success_criteria": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ProposalStatus": {
+        "enum": [
+          "draft",
+          "open"
+        ],
+        "type": "string"
+      },
+      "Readiness": {
+        "properties": {
+          "ready": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "service": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "ready",
+          "service",
+          "reason"
+        ],
+        "type": "object"
+      },
+      "ReceiptExport": {
+        "properties": {
+          "freeze": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/FreezeRecord"
+              }
+            ]
+          },
+          "receipt": {
+            "$ref": "#/components/schemas/ActionReceipt"
+          },
+          "revision": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/RevisionRecord"
+              }
+            ]
+          },
+          "signature": {
+            "$ref": "#/components/schemas/SignatureRecord"
+          },
+          "snapshot": {
+            "items": {
+              "$ref": "#/components/schemas/SnapshotWeight"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "signature",
+          "receipt"
+        ],
+        "type": "object"
+      },
+      "RegisteredWallet": {
+        "properties": {
+          "address": {
+            "type": "string"
+          },
+          "chain": {
+            "$ref": "#/components/schemas/VotingChain"
+          },
+          "registered_at_height": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "chain",
+          "address",
+          "registered_at_height",
+          "status"
+        ],
+        "type": "object"
+      },
+      "RegistrationLookup": {
+        "properties": {
+          "bsc": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/RegistrationRow"
+              }
+            ]
+          },
+          "pending": {
+            "$ref": "#/components/schemas/PendingChains"
+          },
+          "terra": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/RegistrationRow"
+              }
+            ]
+          }
+        },
+        "required": [
+          "pending"
+        ],
+        "type": "object"
+      },
+      "RegistrationResponse": {
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "pending": {
+            "type": "boolean"
+          },
+          "receipt_id": {
+            "type": "string"
+          },
+          "registration": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/RegisteredWallet"
+              }
+            ]
+          },
+          "signature_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "ok",
+          "signature_id",
+          "receipt_id",
+          "pending"
+        ],
+        "type": "object"
+      },
+      "RegistrationRow": {
+        "properties": {
+          "chain": {
+            "$ref": "#/components/schemas/VotingChain"
+          },
+          "initial_balance": {
+            "type": "string"
+          },
+          "registered_at_height": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "status": {
+            "type": "string"
+          },
+          "wallet_address": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "chain",
+          "wallet_address",
+          "registered_at_height",
+          "initial_balance",
+          "status"
+        ],
+        "type": "object"
+      },
+      "RevisionRecord": {
+        "properties": {
+          "body_canonical": {
+            "type": "string"
+          },
+          "body_sections": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ProposalSections"
+              }
+            ]
+          },
+          "proposal_id": {
+            "type": "string"
+          },
+          "recorded_at": {
+            "type": "string"
+          },
+          "revision": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "signature_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "proposal_id",
+          "revision",
+          "title",
+          "body_canonical",
+          "recorded_at"
+        ],
+        "type": "object"
+      },
+      "SignatureRecord": {
+        "properties": {
+          "chain": {
+            "$ref": "#/components/schemas/VotingChain"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "domain": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "nonce": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "payload_hash": {
+            "type": "string"
+          },
+          "proposal_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "pubkey": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "purpose": {
+            "type": "string"
+          },
+          "revision": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "scheme": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "signature": {
+            "type": "string"
+          },
+          "signed_payload": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "wallet_address": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "chain",
+          "wallet_address",
+          "signature",
+          "payload_hash",
+          "purpose",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "SignedPayload": {
+        "properties": {
+          "address": {
+            "type": "string"
+          },
+          "app": {
+            "type": "string"
+          },
+          "body_hash": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "chain": {
+            "$ref": "#/components/schemas/VotingChain"
+          },
+          "chain_id": {
+            "type": "string"
+          },
+          "choice": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/VoteChoice"
+              }
+            ]
+          },
+          "expires_at": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "issued_at": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "nonce": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "prev_body_hash": {
+            "description": "Current canonical hash the signer last saw (amend optimistic lock).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "proposal_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "purpose": {
+            "type": "string"
+          },
+          "revision": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "version": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "app",
+          "chain",
+          "chain_id",
+          "purpose",
+          "address",
+          "issued_at",
+          "expires_at"
+        ],
+        "type": "object"
+      },
+      "SignedRequest": {
+        "properties": {
+          "address": {
+            "type": "string"
+          },
+          "chain": {
+            "$ref": "#/components/schemas/VotingChain"
+          },
+          "payload": {
+            "type": "string"
+          },
+          "pubkey": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "signature": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "chain",
+          "address",
+          "payload",
+          "signature"
+        ],
+        "type": "object"
+      },
+      "Snapshot": {
+        "properties": {
+          "bsc_block": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "terra_height": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "SnapshotValidity": {
+        "enum": [
+          "valid",
+          "invalid",
+          "legacy_unverified"
+        ],
+        "type": "string"
+      },
+      "SnapshotWeight": {
+        "properties": {
+          "chain": {
+            "$ref": "#/components/schemas/VotingChain"
+          },
+          "proposal_id": {
+            "type": "string"
+          },
+          "wallet_address": {
+            "type": "string"
+          },
+          "weight": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "proposal_id",
+          "chain",
+          "wallet_address",
+          "weight"
+        ],
+        "type": "object"
+      },
+      "Tally": {
+        "properties": {
+          "choice": {
+            "$ref": "#/components/schemas/VoteChoice"
+          },
+          "voters": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "weight": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "choice",
+          "weight",
+          "voters"
+        ],
+        "type": "object"
+      },
+      "Vote": {
+        "properties": {
+          "choice": {
+            "$ref": "#/components/schemas/VoteChoice"
+          },
+          "weight": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "choice",
+          "weight"
+        ],
+        "type": "object"
+      },
+      "VoteChoice": {
+        "enum": [
+          "for",
+          "against",
+          "abstain"
+        ],
+        "type": "string"
+      },
+      "VoteResponse": {
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "receipt_id": {
+            "type": "string"
+          },
+          "snapshot": {
+            "$ref": "#/components/schemas/Snapshot"
+          },
+          "weight": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "ok",
+          "receipt_id",
+          "weight",
+          "snapshot"
+        ],
+        "type": "object"
+      },
+      "VotingChain": {
+        "enum": [
+          "terra",
+          "bsc"
+        ],
+        "type": "string"
+      }
+    }
+  },
+  "info": {
+    "description": "Offchain CL8Y voting control plane (ADR-36 + EIP-191)",
+    "license": {
+      "identifier": "MIT",
+      "name": "MIT"
+    },
+    "title": "operator-voting",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/health": {
+      "get": {
+        "operationId": "health",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            },
+            "description": "Process liveness"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Origin policy rejected request"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Request body exceeds bounded limit"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unsupported request content type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Invalid typed request envelope"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Service temporarily unavailable"
+          }
+        },
+        "tags": []
+      }
+    },
+    "/openapi.json": {
+      "get": {
+        "operationId": "openapi",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Generated OpenAPI document"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Origin policy rejected request"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Request body exceeds bounded limit"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unsupported request content type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Invalid typed request envelope"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Service temporarily unavailable"
+          }
+        },
+        "tags": []
+      }
+    },
+    "/ready": {
+      "get": {
+        "operationId": "readiness",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Readiness"
+                }
+              }
+            },
+            "description": "Both canonical ledger chains ready"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Origin policy rejected request"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Request body exceeds bounded limit"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unsupported request content type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Invalid typed request envelope"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Service temporarily unavailable"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Readiness"
+                }
+              }
+            },
+            "description": "Ledger/database unavailable"
+          }
+        },
+        "tags": []
+      }
+    },
+    "/v1/balances/{addr}": {
+      "get": {
+        "operationId": "get_balance",
+        "parameters": [
+          {
+            "description": "Terra or EVM address",
+            "in": "path",
+            "name": "addr",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "terra or bsc",
+            "in": "query",
+            "name": "chain",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Requested ledger height",
+            "in": "query",
+            "name": "height",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BalanceResponse"
+                }
+              }
+            },
+            "description": "Accepted response, mutation responses include immutable receipt_id"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Invalid input"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Invalid signature/domain/time"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Actor, state, eligibility or quota forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Revision, state or nonce conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Request body exceeds bounded limit"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unsupported request content type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Invalid typed request envelope"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Rate limited"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Service temporarily unavailable"
+          }
+        },
+        "tags": []
+      }
+    },
+    "/v1/canonicalize": {
+      "post": {
+        "operationId": "canonicalize",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CanonicalRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CanonicalResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Origin policy rejected request"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": ""
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unsupported request content type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Invalid typed request envelope"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": ""
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Service temporarily unavailable"
+          }
+        },
+        "tags": []
+      }
+    },
+    "/v1/metadata": {
+      "get": {
+        "operationId": "metadata",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Metadata"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Origin policy rejected request"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Request body exceeds bounded limit"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unsupported request content type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Invalid typed request envelope"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Service temporarily unavailable"
+          }
+        },
+        "tags": []
+      }
+    },
+    "/v1/proposals": {
+      "get": {
+        "operationId": "list_proposals",
+        "parameters": [
+          {
+            "description": "draft or open",
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ProposalListItem"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Accepted response, mutation responses include immutable receipt_id"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Invalid input"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Invalid signature/domain/time"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Actor, state, eligibility or quota forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Revision, state or nonce conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Request body exceeds bounded limit"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unsupported request content type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Invalid typed request envelope"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Rate limited"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Service temporarily unavailable"
+          }
+        },
+        "tags": []
+      },
+      "post": {
+        "operationId": "create_draft",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateDraftRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DraftResponse"
+                }
+              }
+            },
+            "description": "Accepted response, mutation responses include immutable receipt_id"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Invalid input"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Invalid signature/domain/time"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Actor, state, eligibility or quota forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Revision, state or nonce conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Request body exceeds bounded limit"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unsupported request content type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Invalid typed request envelope"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Rate limited"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Service temporarily unavailable"
+          }
+        },
+        "tags": []
+      }
+    },
+    "/v1/proposals/{id}": {
+      "get": {
+        "operationId": "get_proposal",
+        "parameters": [
+          {
+            "description": "UUID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProposalDetail"
+                }
+              }
+            },
+            "description": "Accepted response, mutation responses include immutable receipt_id"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Invalid input"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Invalid signature/domain/time"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Actor, state, eligibility or quota forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Revision, state or nonce conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Request body exceeds bounded limit"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unsupported request content type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Invalid typed request envelope"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Rate limited"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Service temporarily unavailable"
+          }
+        },
+        "tags": []
+      }
+    },
+    "/v1/proposals/{id}/analysis": {
+      "get": {
+        "operationId": "list_analysis",
+        "parameters": [
+          {
+            "description": "UUID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Analysis"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Accepted response, mutation responses include immutable receipt_id"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Invalid input"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Invalid signature/domain/time"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Actor, state, eligibility or quota forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Revision, state or nonce conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Request body exceeds bounded limit"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unsupported request content type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Invalid typed request envelope"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Rate limited"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Service temporarily unavailable"
+          }
+        },
+        "tags": []
+      },
+      "post": {
+        "operationId": "attach_analysis",
+        "parameters": [
+          {
+            "description": "UUID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnalysisRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalysisResponse"
+                }
+              }
+            },
+            "description": "Accepted response, mutation responses include immutable receipt_id"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Invalid input"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Invalid signature/domain/time"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Actor, state, eligibility or quota forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Revision, state or nonce conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Request body exceeds bounded limit"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unsupported request content type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Invalid typed request envelope"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Rate limited"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Service temporarily unavailable"
+          }
+        },
+        "tags": []
+      }
+    },
+    "/v1/proposals/{id}/comments": {
+      "get": {
+        "operationId": "list_comments",
+        "parameters": [
+          {
+            "description": "UUID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Comment"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Accepted response, mutation responses include immutable receipt_id"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Invalid input"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Invalid signature/domain/time"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Actor, state, eligibility or quota forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Revision, state or nonce conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Request body exceeds bounded limit"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unsupported request content type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Invalid typed request envelope"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Rate limited"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Service temporarily unavailable"
+          }
+        },
+        "tags": []
+      },
+      "post": {
+        "operationId": "add_comment",
+        "parameters": [
+          {
+            "description": "UUID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentResponse"
+                }
+              }
+            },
+            "description": "Accepted response, mutation responses include immutable receipt_id"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Invalid input"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Invalid signature/domain/time"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Actor, state, eligibility or quota forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Revision, state or nonce conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Request body exceeds bounded limit"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unsupported request content type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Invalid typed request envelope"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Rate limited"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Service temporarily unavailable"
+          }
+        },
+        "tags": []
+      }
+    },
+    "/v1/proposals/{id}/open": {
+      "post": {
+        "operationId": "open_vote",
+        "parameters": [
+          {
+            "description": "UUID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OpenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenResponse"
+                }
+              }
+            },
+            "description": "Accepted response, mutation responses include immutable receipt_id"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Invalid input"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Invalid signature/domain/time"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Actor, state, eligibility or quota forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Revision, state or nonce conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Request body exceeds bounded limit"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unsupported request content type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Invalid typed request envelope"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Rate limited"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Service temporarily unavailable"
+          }
+        },
+        "tags": []
+      }
+    },
+    "/v1/proposals/{id}/sections": {
+      "put": {
+        "operationId": "amend_sections",
+        "parameters": [
+          {
+            "description": "UUID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AmendRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AmendResponse"
+                }
+              }
+            },
+            "description": "Accepted response, mutation responses include immutable receipt_id"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Invalid input"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Invalid signature/domain/time"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Actor, state, eligibility or quota forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Revision, state or nonce conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Request body exceeds bounded limit"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unsupported request content type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Invalid typed request envelope"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Rate limited"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Service temporarily unavailable"
+          }
+        },
+        "tags": []
+      }
+    },
+    "/v1/proposals/{id}/votes": {
+      "post": {
+        "operationId": "cast_vote",
+        "parameters": [
+          {
+            "description": "UUID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CastVoteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoteResponse"
+                }
+              }
+            },
+            "description": "Accepted response, mutation responses include immutable receipt_id"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Invalid input"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Invalid signature/domain/time"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Actor, state, eligibility or quota forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Revision, state or nonce conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Request body exceeds bounded limit"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unsupported request content type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Invalid typed request envelope"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Rate limited"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Service temporarily unavailable"
+          }
+        },
+        "tags": []
+      }
+    },
+    "/v1/proposals/{id}/votes/{addr}": {
+      "get": {
+        "operationId": "get_vote",
+        "parameters": [
+          {
+            "description": "UUID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Terra or EVM address",
+            "in": "path",
+            "name": "addr",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "terra or bsc",
+            "in": "query",
+            "name": "chain",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Vote"
+                }
+              }
+            },
+            "description": "Accepted response, mutation responses include immutable receipt_id"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Invalid input"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Invalid signature/domain/time"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Actor, state, eligibility or quota forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Revision, state or nonce conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Request body exceeds bounded limit"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unsupported request content type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Invalid typed request envelope"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Rate limited"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Service temporarily unavailable"
+          }
+        },
+        "tags": []
+      }
+    },
+    "/v1/proposals/{id}/weights/{addr}": {
+      "get": {
+        "operationId": "get_frozen_weight",
+        "parameters": [
+          {
+            "description": "Proposal UUID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Terra or EVM address",
+            "in": "path",
+            "name": "addr",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "terra or bsc",
+            "in": "query",
+            "name": "chain",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FrozenWeightResponse"
+                }
+              }
+            },
+            "description": "Stored immutable per-poll snapshot weight"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Origin policy rejected request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": ""
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Request body exceeds bounded limit"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unsupported request content type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Invalid typed request envelope"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": []
+      }
+    },
+    "/v1/receipts/{id}": {
+      "get": {
+        "operationId": "get_receipt",
+        "parameters": [
+          {
+            "description": "UUID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReceiptExport"
+                }
+              }
+            },
+            "description": "Accepted response, mutation responses include immutable receipt_id"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Invalid input"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Invalid signature/domain/time"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Actor, state, eligibility or quota forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Revision, state or nonce conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Request body exceeds bounded limit"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unsupported request content type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Invalid typed request envelope"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Rate limited"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Service temporarily unavailable"
+          }
+        },
+        "tags": []
+      }
+    },
+    "/v1/register": {
+      "post": {
+        "operationId": "register",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SignedRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegistrationResponse"
+                }
+              }
+            },
+            "description": "Accepted response, mutation responses include immutable receipt_id"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Invalid input"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Invalid signature/domain/time"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Actor, state, eligibility or quota forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Revision, state or nonce conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Request body exceeds bounded limit"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unsupported request content type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Invalid typed request envelope"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Rate limited"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Service temporarily unavailable"
+          }
+        },
+        "tags": []
+      }
+    },
+    "/v1/registration/{addr}": {
+      "get": {
+        "operationId": "registration",
+        "parameters": [
+          {
+            "description": "Terra or EVM address",
+            "in": "path",
+            "name": "addr",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegistrationLookup"
+                }
+              }
+            },
+            "description": "Accepted response, mutation responses include immutable receipt_id"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Invalid input"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Invalid signature/domain/time"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Actor, state, eligibility or quota forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Revision, state or nonce conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Request body exceeds bounded limit"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unsupported request content type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Invalid typed request envelope"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Rate limited"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Service temporarily unavailable"
+          }
+        },
+        "tags": []
+      }
+    }
+  }
+}

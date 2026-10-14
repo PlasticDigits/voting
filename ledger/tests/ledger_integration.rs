@@ -17,17 +17,30 @@ struct MockLive {
 
 #[async_trait]
 impl LiveBalanceSource for MockLive {
-    async fn terra_live_balance(&self, _address: &str) -> Result<(i64, BigInt), LedgerError> {
-        Ok(self.terra.clone())
+    async fn terra_live_balance(
+        &self,
+        _address: &str,
+    ) -> Result<voting_ledger::register::LiveBalanceSnapshot, LedgerError> {
+        Ok(voting_ledger::register::LiveBalanceSnapshot {
+            height: self.terra.0,
+            amount: self.terra.1.clone(),
+            block_hash: "A".repeat(64),
+        })
     }
-    async fn bsc_live_balance(&self, _address: &str) -> Result<(i64, BigInt), LedgerError> {
-        Ok(self.bsc.clone())
+    async fn bsc_live_balance(
+        &self,
+        _address: &str,
+    ) -> Result<voting_ledger::register::LiveBalanceSnapshot, LedgerError> {
+        Ok(voting_ledger::register::LiveBalanceSnapshot {
+            height: self.bsc.0,
+            amount: self.bsc.1.clone(),
+            block_hash: format!("0x{:064x}", self.bsc.0),
+        })
     }
 }
 
 fn test_db_url() -> Option<String> {
     std::env::var("LEDGER_TEST_DATABASE_URL")
-        .or_else(|_| std::env::var("DATABASE_URL"))
         .ok()
         .filter(|s| !s.is_empty())
 }
@@ -43,7 +56,7 @@ async fn setup() -> Option<(PgPool, voting_ledger::test_lock::IntegrationDbLock)
     db::migrate(&pool)
         .await
         .unwrap_or_else(|e| panic!("ledger migrate: {e}"));
-    sqlx::query("TRUNCATE voting_registrations, cl8y_cw20_transfers, cl8y_balances, cl8y_bep20_transfers, cl8y_bsc_balances, voting.registration_intents, voting.signatures CASCADE")
+    sqlx::query("TRUNCATE indexer_state,ledger_checkpoints,ledger_canonical_blocks,voting_registrations, cl8y_cw20_transfers, cl8y_balances, cl8y_bep20_transfers, cl8y_bsc_balances, voting.registration_intents, voting.signatures CASCADE")
         .execute(&pool)
         .await
         .unwrap_or_else(|e| panic!("truncate: {e}"));
@@ -183,10 +196,16 @@ struct FailLive;
 
 #[async_trait]
 impl LiveBalanceSource for FailLive {
-    async fn terra_live_balance(&self, _address: &str) -> Result<(i64, BigInt), LedgerError> {
+    async fn terra_live_balance(
+        &self,
+        _address: &str,
+    ) -> Result<voting_ledger::register::LiveBalanceSnapshot, LedgerError> {
         Err(LedgerError::Lcd("timeout".into()))
     }
-    async fn bsc_live_balance(&self, _address: &str) -> Result<(i64, BigInt), LedgerError> {
+    async fn bsc_live_balance(
+        &self,
+        _address: &str,
+    ) -> Result<voting_ledger::register::LiveBalanceSnapshot, LedgerError> {
         Err(LedgerError::BscRpc("timeout".into()))
     }
 }

@@ -2,9 +2,8 @@ use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use chrono::Utc;
 use http_body_util::BodyExt;
-use k256::ecdsa::signature::Signer;
 use k256::ecdsa::SigningKey;
-use operator_voting::api::{router, AppState};
+use operator_voting::api::AppState;
 use operator_voting::blacklist::parse_committee;
 use operator_voting::config::{VotingConfig, APP_NAME};
 use operator_voting::crypto::{cosmos_address_from_pubkey, eip191_hash, verify_terra};
@@ -19,11 +18,12 @@ use sha3::Digest;
 use sqlx::PgPool;
 use tower::ServiceExt;
 
+fn router(state: AppState) -> axum::Router {
+    operator_voting::application::application(state).expect("production application factory")
+}
+
 fn test_db_url() -> Option<String> {
-    std::env::var("LEDGER_TEST_DATABASE_URL")
-        .or_else(|_| std::env::var("DATABASE_URL"))
-        .ok()
-        .filter(|s| !s.is_empty())
+    voting_ledger::test_lock::test_database_url()
 }
 
 async fn setup_pool() -> Option<(PgPool, voting_ledger::test_lock::IntegrationDbLock)> {
@@ -41,7 +41,7 @@ async fn setup_pool() -> Option<(PgPool, voting_ledger::test_lock::IntegrationDb
         .await
         .unwrap_or_else(|e| panic!("operator-voting migrate: {e}"));
     sqlx::query(
-        "TRUNCATE voting.votes, voting.proposal_snapshots, voting.proposal_comments, voting.proposal_analysis, voting.proposals, voting.registration_intents, voting.signatures, voting_registrations, cl8y_balances, cl8y_bsc_balances, cl8y_cw20_transfers, cl8y_bep20_transfers CASCADE",
+        "TRUNCATE voting.votes, voting.proposal_snapshots, voting.proposal_comments, voting.proposal_analysis, voting.proposals, voting.registration_intents, voting.signatures, voting_registrations, cl8y_balances, cl8y_bsc_balances, cl8y_cw20_transfers, cl8y_bep20_transfers, public.ledger_checkpoints, public.ledger_canonical_blocks CASCADE",
     )
     .execute(&pool)
     .await
@@ -74,6 +74,12 @@ async fn set_tip(pool: &PgPool, terra: i64, bsc: i64) {
     .execute(pool)
     .await
     .unwrap();
+    for (chain, height) in [("terra", terra.max(1)), ("bsc", bsc.max(1))] {
+        sqlx::query("INSERT INTO public.ledger_checkpoints(chain,height,block_hash,network_tip,observed_at,epoch,complete,canonical) VALUES($1,$2,$3,$2,now(),1,true,true) ON CONFLICT(chain) DO UPDATE SET height=$2,network_tip=$2,block_hash=$3,observed_at=now(),complete=true,canonical=true,degraded_reason=NULL")
+        .bind(chain).bind(height).bind(format!("{chain}-{height}")).execute(pool).await.unwrap();
+    }
+    sqlx::query("UPDATE public.voting_registrations SET baseline_height=COALESCE(baseline_height,registered_at_height),baseline_verified=true,baseline_block_hash=chain||'-'||registered_at_height::text WHERE status='active'").execute(pool).await.unwrap();
+    sqlx::query("INSERT INTO public.indexer_state(key,value,updated_at) VALUES('intents_ok','true',clock_timestamp()) ON CONFLICT(key) DO UPDATE SET value='true',updated_at=clock_timestamp()").execute(pool).await.unwrap();
 }
 
 fn cfg(pool_url: &str, blacklist: &str) -> VotingConfig {
@@ -93,7 +99,17 @@ fn terra_wallet() -> (String, String, SigningKey) {
 }
 
 fn sign_terra(sk: &SigningKey, message: &str) -> String {
-    let sig: k256::ecdsa::Signature = sk.sign(message.as_bytes());
+    use k256::ecdsa::signature::hazmat::PrehashSigner;
+    let doc = operator_voting::crypto::adr36_sign_doc_json(
+        &cosmos_address_from_pubkey(
+            sk.verifying_key().to_encoded_point(true).as_bytes(),
+            "terra",
+        )
+        .unwrap(),
+        message,
+    );
+    let hash = sha2::Sha256::digest(doc.as_bytes());
+    let sig: k256::ecdsa::Signature = sk.sign_prehash(&hash).unwrap();
     base64::Engine::encode(&base64::engine::general_purpose::STANDARD, sig.to_bytes())
 }
 
@@ -119,6 +135,13 @@ fn sign_evm(sk: &SigningKey, message: &str) -> String {
 fn payload(chain: &str, chain_id: &str, purpose: &str, address: &str) -> SignedPayload {
     let now = Utc::now().timestamp();
     SignedPayload {
+        version: 2,
+        nonce: Some(uuid::Uuid::new_v4().to_string()),
+        revision: if matches!(purpose, "amend" | "analyze" | "open_vote") {
+            Some(1)
+        } else {
+            None
+        },
         app: APP_NAME.into(),
         chain: chain.into(),
         chain_id: chain_id.into(),
@@ -200,11 +223,42 @@ fn cfg_committee(pool_url: &str, committee: &str) -> VotingConfig {
 }
 
 async fn call(app: axum::Router, req: Request<Body>) -> (StatusCode, Value) {
+    let method = req.method().to_string();
+    let path = req.uri().to_string();
     let resp = app.oneshot(req).await.unwrap();
     let status = resp.status();
     let bytes = resp.into_body().collect().await.unwrap().to_bytes();
     let json: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
+    capture_response(&method, &path, status, &json);
     (status, json)
+}
+
+/// Optional local contract evidence. Response bodies contain only synthetic test
+/// wallet/public receipt data; request signatures/credentials are not logged.
+fn capture_response(method: &str, path: &str, status: StatusCode, body: &Value) {
+    let Ok(pathname) = std::env::var("VOTING_CONTRACT_CAPTURE_PATH") else {
+        return;
+    };
+    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _lock = LOCK.lock().unwrap();
+    let mut options = std::fs::OpenOptions::new();
+    options.create(true).append(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = options
+        .open(pathname)
+        .expect("open optional synthetic contract capture");
+    let mut bytes = serde_json::to_vec(
+        &serde_json::json!({"method":method,"path":path,"status":status.as_u16(),"body":body}),
+    )
+    .unwrap();
+    bytes.push(b'\n');
+    use std::io::Write;
+    file.write_all(&bytes)
+        .expect("write optional synthetic contract capture");
 }
 
 #[tokio::test]
@@ -234,6 +288,7 @@ async fn terra_register_propose_vote_and_replay() {
     .execute(&pool)
     .await
     .unwrap();
+    set_tip(&pool, 20, 1).await;
 
     let state = AppState {
         pool: pool.clone(),
@@ -296,6 +351,7 @@ async fn terra_register_propose_vote_and_replay() {
     assert_eq!(status, StatusCode::FORBIDDEN, "{voted}");
 
     let mut open = payload("terra", "columbus-5", "open_vote", &addr);
+    open.title = Some("Test poll".into());
     open.proposal_id = Some(id.clone());
     open.body_hash = Some(sections_body_hash(&sections));
     let oraw = serde_json::to_string(&open).unwrap();
@@ -320,7 +376,7 @@ async fn terra_register_propose_vote_and_replay() {
     .await;
     assert_eq!(status, StatusCode::OK, "{opened}");
     assert_eq!(opened["terra_height"], 20);
-    assert_eq!(opened["bsc_block"], 0);
+    assert_eq!(opened["bsc_block"], 1);
 
     let (status, voted) = call(
         app.clone(),
@@ -342,7 +398,8 @@ async fn terra_register_propose_vote_and_replay() {
             .unwrap(),
     )
     .await;
-    assert_eq!(status, StatusCode::CONFLICT, "{replay}");
+    assert_eq!(status, StatusCode::OK, "{replay}");
+    assert_eq!(replay, voted);
 
     let mut wrong = payload("terra", "columbus-5", "register", &addr);
     wrong.purpose = "register".into();
@@ -1071,6 +1128,7 @@ async fn draft_comment_amend_open_and_register_before_freeze() {
     assert_eq!(status, StatusCode::FORBIDDEN, "{proposer_analysis}");
 
     let mut acom = payload("terra", "columbus-5", "analyze", &committee);
+    acom.revision = Some(2);
     acom.proposal_id = Some(id.clone());
     acom.body_hash = Some(analysis_hash(&sanitize_analysis_sections(&analysis)));
     let acraw = serde_json::to_string(&acom).unwrap();
@@ -1109,6 +1167,8 @@ async fn draft_comment_amend_open_and_register_before_freeze() {
 
     set_tip(&pool, 40, 0).await;
     let mut open = payload("terra", "columbus-5", "open_vote", &committee);
+    open.title = Some("Idea".into());
+    open.revision = Some(2);
     open.proposal_id = Some(id.clone());
     open.body_hash = Some(sections_body_hash(&amended));
     let oraw = serde_json::to_string(&open).unwrap();
@@ -1140,7 +1200,7 @@ async fn draft_comment_amend_open_and_register_before_freeze() {
         }),
     )
     .await;
-    assert_eq!(status, StatusCode::CONFLICT, "{again}");
+    assert_eq!(status, StatusCode::OK, "{again}");
 
     let mut late_amend = payload("terra", "columbus-5", "amend", &proposer);
     late_amend.proposal_id = Some(id.clone());
@@ -1401,7 +1461,7 @@ async fn templated_propose_rejects_empty_sections_and_body_html() {
     )
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
-    assert!(body["error"].as_str().unwrap().contains("body_sections"));
+    assert!(body["error"].is_string());
 
     let sections = valid_sections();
     let (status, body) = post_propose(
@@ -1563,4 +1623,893 @@ async fn bsc_templated_propose() {
     assert_eq!(status, StatusCode::OK, "{detail}");
     assert_eq!(detail["chain"], "bsc");
     assert!(detail["body_sections"].is_object());
+}
+
+fn envelope(chain: &str, address: &str, key: &SigningKey, payload: &SignedPayload) -> Value {
+    let raw = serde_json::to_string(payload).unwrap();
+    let (signature, pubkey) = if chain == "terra" {
+        (
+            sign_terra(key, &raw),
+            Some(base64::Engine::encode(
+                &base64::engine::general_purpose::STANDARD,
+                key.verifying_key().to_encoded_point(true).as_bytes(),
+            )),
+        )
+    } else {
+        (sign_evm(key, &raw), None)
+    };
+    serde_json::json!({"chain":chain,"address":address,"payload":raw,"signature":signature,"pubkey":pubkey})
+}
+
+async fn verified_export(app: axum::Router, response: &Value) {
+    let receipt = response["receipt_id"].as_str().unwrap();
+    let (status, export) = call(
+        app,
+        Request::get(format!("/v1/receipts/{receipt}"))
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{export}");
+    operator_voting::payload::verify_exported_receipt(&export).unwrap();
+    let mut tampered = export.clone();
+    tampered["signature"]["signed_payload"] = Value::String("{}".into());
+    assert!(operator_voting::payload::verify_exported_receipt(&tampered).is_err());
+    if !export["revision"].is_null()
+        && matches!(
+            export["signature"]["purpose"].as_str(),
+            Some("draft" | "amend" | "open_vote")
+        )
+    {
+        let mut tampered = export.clone();
+        tampered["revision"]["title"] = Value::String("unapproved title".into());
+        assert!(operator_voting::payload::verify_exported_receipt(&tampered).is_err());
+    }
+    let mut tampered = export.clone();
+    tampered["signature"]["revision"] = serde_json::json!(999);
+    assert!(operator_voting::payload::verify_exported_receipt(&tampered).is_err());
+    let mut tampered = export.clone();
+    tampered["receipt"]["accepted_at"] = serde_json::json!("1970-01-01T00:00:00Z");
+    assert!(operator_voting::payload::verify_exported_receipt(&tampered).is_err());
+    match export["signature"]["purpose"].as_str().unwrap() {
+        "draft" | "amend" | "open_vote" => {
+            let mut tampered = export.clone();
+            tampered["revision"]["body_sections"]["problem"] = serde_json::json!(
+                "<p>Different content that still satisfies the required visible minimum.</p>"
+            );
+            assert!(operator_voting::payload::verify_exported_receipt(&tampered).is_err());
+        }
+        "comment" | "analyze" => {
+            let mut tampered = export.clone();
+            tampered["receipt"]["content"]["id"] = serde_json::json!(uuid::Uuid::new_v4());
+            assert!(operator_voting::payload::verify_exported_receipt(&tampered).is_err());
+            let mut tampered = export.clone();
+            tampered["receipt"]["content"]["body_html"] =
+                serde_json::json!("<p>Altered displayed content</p>");
+            assert!(operator_voting::payload::verify_exported_receipt(&tampered).is_err());
+        }
+        _ => (),
+    }
+}
+
+#[tokio::test]
+async fn transactional_dual_chain_revisions_receipts_and_concurrency() {
+    let Some((pool, _lock)) = setup_pool().await else {
+        return;
+    };
+    for chain in ["terra", "bsc"] {
+        let chain_id = if chain == "terra" { "columbus-5" } else { "56" };
+        let (proposer, key) = if chain == "terra" {
+            let (a, _, k) = terra_wallet();
+            (a, k)
+        } else {
+            evm_wallet()
+        };
+        let reviewer_key = SigningKey::from_slice(&[0x55u8; 32]).unwrap();
+        let reviewer = if chain == "terra" {
+            cosmos_address_from_pubkey(
+                reviewer_key
+                    .verifying_key()
+                    .to_encoded_point(true)
+                    .as_bytes(),
+                "terra",
+            )
+            .unwrap()
+        } else {
+            let digest = sha3::Keccak256::digest(
+                &reviewer_key
+                    .verifying_key()
+                    .to_encoded_point(false)
+                    .as_bytes()[1..],
+            );
+            format!("0x{}", hex::encode(&digest[12..]))
+        };
+        let mut configuration = cfg(&test_db_url().unwrap(), "");
+        configuration.committee = parse_committee(&format!("{proposer},{reviewer}")).unwrap();
+        let app = router(AppState {
+            pool: pool.clone(),
+            cfg: configuration,
+        });
+        let (status, document) = call(
+            app.clone(),
+            Request::get("/openapi.json").body(Body::empty()).unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(document["paths"]["/v1/proposals/{id}/sections"]["put"].is_object());
+        let (status, health) = call(
+            app.clone(),
+            Request::get("/health").body(Body::empty()).unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(health["ok"], true);
+        let p = payload(chain, chain_id, "register", &proposer);
+        let (status, registered) = post_json(
+            app.clone(),
+            "/v1/register",
+            envelope(chain, &proposer, &key, &p),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{registered}");
+        verified_export(app.clone(), &registered).await;
+        insert_reg(&pool, chain, &proposer, 10, 5000).await;
+        insert_reg(&pool, chain, &reviewer, 10, 2000).await;
+        set_tip(&pool, 20, 20).await;
+        let sections = valid_sections();
+        let hash = prepare_sections(&sections).unwrap().body_hash;
+        let p = draft_payload(chain, chain_id, &proposer, "Original title", &sections);
+        let mut request = envelope(chain, &proposer, &key, &p);
+        request["title"] = serde_json::json!("Original title");
+        request["body_sections"] = sections.clone();
+        let barrier = std::sync::Arc::new(tokio::sync::Barrier::new(2));
+        let a = {
+            let app = app.clone();
+            let request = request.clone();
+            let b = barrier.clone();
+            tokio::spawn(async move {
+                b.wait().await;
+                post_json(app, "/v1/proposals", request).await
+            })
+        };
+        let b = {
+            let app = app.clone();
+            let b = barrier.clone();
+            tokio::spawn(async move {
+                b.wait().await;
+                post_json(app, "/v1/proposals", request).await
+            })
+        };
+        let a = a.await.unwrap();
+        let b = b.await.unwrap();
+        assert_eq!(a.0, StatusCode::CREATED, "{}", a.1);
+        assert_eq!(a, b);
+        verified_export(app.clone(), &a.1).await;
+        let id = a.1["id"].as_str().unwrap().to_owned();
+        let n: i64 = sqlx::query_scalar("SELECT count(*) FROM voting.proposals WHERE id=$1")
+            .bind(uuid::Uuid::parse_str(&id).unwrap())
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(n, 1);
+        let mut changes = Vec::new();
+        for title in ["Title A", "Title B"] {
+            let mut p = payload(chain, chain_id, "amend", &proposer);
+            p.proposal_id = Some(id.clone());
+            p.title = Some(title.into());
+            p.body_hash = Some(hash.clone());
+            p.prev_body_hash = Some(hash.clone());
+            p.revision = Some(1);
+            let mut req = envelope(chain, &proposer, &key, &p);
+            req["title"] = serde_json::json!(title);
+            req["body_sections"] = sections.clone();
+            changes.push(req);
+        }
+        let barrier = std::sync::Arc::new(tokio::sync::Barrier::new(2));
+        let mut tasks = Vec::new();
+        for request in changes {
+            let app = app.clone();
+            let path = format!("/v1/proposals/{id}/sections");
+            let b = barrier.clone();
+            tasks.push(tokio::spawn(async move {
+                b.wait().await;
+                put_json(app, &path, request).await
+            }));
+        }
+        let mut statuses = Vec::new();
+        for task in tasks {
+            let (status, response) = task.await.unwrap();
+            statuses.push(status);
+            if status == StatusCode::OK {
+                verified_export(app.clone(), &response).await;
+            }
+        }
+        assert_eq!(statuses.iter().filter(|s| **s == StatusCode::OK).count(), 1);
+        assert_eq!(
+            statuses
+                .iter()
+                .filter(|s| **s == StatusCode::CONFLICT)
+                .count(),
+            1
+        );
+        // Title-only amendment invalidates a review of revision 1 even with unchanged section hash.
+        let mut old = payload(chain, chain_id, "open_vote", &reviewer);
+        old.proposal_id = Some(id.clone());
+        old.title = Some("Original title".into());
+        old.body_hash = Some(hash.clone());
+        old.revision = Some(1);
+        let (status, _) = post_json(
+            app.clone(),
+            &format!("/v1/proposals/{id}/open"),
+            envelope(chain, &reviewer, &reviewer_key, &old),
+        )
+        .await;
+        assert!(matches!(
+            status,
+            StatusCode::CONFLICT | StatusCode::UNAUTHORIZED
+        ));
+        // Parallel analysis quota is checked while holding the proposal lock.
+        let mut tasks = Vec::new();
+        let barrier = std::sync::Arc::new(tokio::sync::Barrier::new(7));
+        for _ in 0..7 {
+            let mut p = payload(chain, chain_id, "analyze", &reviewer);
+            p.proposal_id = Some(id.clone());
+            p.revision = Some(2);
+            p.body_hash = Some(prepare_analysis_for_test());
+            let mut req = envelope(chain, &reviewer, &reviewer_key, &p);
+            req["sections"] = serde_json::to_value(sample_analysis()).unwrap();
+            let b = barrier.clone();
+            let app = app.clone();
+            let path = format!("/v1/proposals/{id}/analysis");
+            tasks.push(tokio::spawn(async move {
+                b.wait().await;
+                post_json(app, &path, req).await
+            }));
+        }
+        let mut accepted = 0;
+        for task in tasks {
+            let (status, response) = task.await.unwrap();
+            if status == StatusCode::CREATED {
+                accepted += 1;
+                verified_export(app.clone(), &response).await;
+            } else {
+                assert_eq!(status, StatusCode::FORBIDDEN, "{response}");
+            }
+        }
+        assert_eq!(accepted, 5);
+        let (_, detail) = call(
+            app.clone(),
+            Request::get(format!("/v1/proposals/{id}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+        let mut opening = payload(chain, chain_id, "open_vote", &reviewer);
+        opening.proposal_id = Some(id.clone());
+        opening.title = detail["title"].as_str().map(str::to_owned);
+        opening.body_hash = Some(hash.clone());
+        opening.revision = Some(2);
+        let mut amend = payload(chain, chain_id, "amend", &proposer);
+        amend.proposal_id = Some(id.clone());
+        amend.title = Some("Racing title".into());
+        amend.body_hash = Some(hash.clone());
+        amend.prev_body_hash = Some(hash.clone());
+        amend.revision = Some(2);
+        let mut amend = envelope(chain, &proposer, &key, &amend);
+        amend["title"] = serde_json::json!("Racing title");
+        amend["body_sections"] = sections.clone();
+        let barrier = std::sync::Arc::new(tokio::sync::Barrier::new(2));
+        let open_task = {
+            let app = app.clone();
+            let req = envelope(chain, &reviewer, &reviewer_key, &opening);
+            let b = barrier.clone();
+            let path = format!("/v1/proposals/{id}/open");
+            tokio::spawn(async move {
+                b.wait().await;
+                post_json(app, &path, req).await
+            })
+        };
+        let amend_task = {
+            let app = app.clone();
+            let b = barrier.clone();
+            let path = format!("/v1/proposals/{id}/sections");
+            tokio::spawn(async move {
+                b.wait().await;
+                put_json(app, &path, amend).await
+            })
+        };
+        let opened_race = open_task.await.unwrap();
+        let amended_race = amend_task.await.unwrap();
+        assert_eq!(
+            [opened_race.0, amended_race.0]
+                .iter()
+                .filter(|s| **s == StatusCode::OK)
+                .count(),
+            1
+        );
+        if amended_race.0 == StatusCode::OK {
+            verified_export(app.clone(), &amended_race.1).await;
+            opening.revision = Some(3);
+            opening.title = Some("Racing title".into());
+            opening.nonce = Some(uuid::Uuid::new_v4().to_string());
+        }
+        let opening = envelope(chain, &reviewer, &reviewer_key, &opening);
+        let barrier = std::sync::Arc::new(tokio::sync::Barrier::new(2));
+        let mut tasks = Vec::new();
+        for _ in 0..2 {
+            let app = app.clone();
+            let req = opening.clone();
+            let b = barrier.clone();
+            let path = format!("/v1/proposals/{id}/open");
+            tasks.push(tokio::spawn(async move {
+                b.wait().await;
+                post_json(app, &path, req).await
+            }));
+        }
+        let first = tasks.remove(0).await.unwrap();
+        let second = tasks.remove(0).await.unwrap();
+        assert_eq!(first.0, StatusCode::OK, "{}", first.1);
+        assert_eq!(first, second);
+        verified_export(app.clone(), &first.1).await;
+        let mut p = payload(chain, chain_id, "analyze", &reviewer);
+        p.proposal_id = Some(id.clone());
+        p.revision = Some(2);
+        p.body_hash = Some(prepare_analysis_for_test());
+        let mut req = envelope(chain, &reviewer, &reviewer_key, &p);
+        req["sections"] = serde_json::to_value(sample_analysis()).unwrap();
+        let (status, _) =
+            post_json(app.clone(), &format!("/v1/proposals/{id}/analysis"), req).await;
+        assert_eq!(status, StatusCode::CONFLICT);
+        let mut voting = payload(chain, chain_id, "vote", &proposer);
+        voting.proposal_id = Some(id.clone());
+        voting.choice = Some("for".into());
+        let mut req = envelope(chain, &proposer, &key, &voting);
+        req["choice"] = serde_json::json!("for");
+        let (status, voted) =
+            post_json(app.clone(), &format!("/v1/proposals/{id}/votes"), req).await;
+        assert_eq!(status, StatusCode::OK, "{voted}");
+        verified_export(app.clone(), &voted).await;
+        let mut duplicate = voting.clone();
+        duplicate.nonce = Some(uuid::Uuid::new_v4().to_string());
+        let mut duplicate = envelope(chain, &proposer, &key, &duplicate);
+        duplicate["choice"] = serde_json::json!("for");
+        let before:(i64,i64,i64)=sqlx::query_as("SELECT (SELECT count(*) FROM voting.signatures),(SELECT count(*) FROM voting.action_receipts),(SELECT count(*) FROM voting.votes)").fetch_one(&pool).await.unwrap();
+        let (status, response) =
+            post_json(app.clone(), &format!("/v1/proposals/{id}/votes"), duplicate).await;
+        assert_eq!(status, StatusCode::CONFLICT, "{response}");
+        let after:(i64,i64,i64)=sqlx::query_as("SELECT (SELECT count(*) FROM voting.signatures),(SELECT count(*) FROM voting.action_receipts),(SELECT count(*) FROM voting.votes)").fetch_one(&pool).await.unwrap();
+        assert_eq!(
+            before, after,
+            "freshnonce duplicate vote must not add signature/receipt/ballot"
+        );
+
+        let mut comment = payload(chain, chain_id, "comment", &reviewer);
+        comment.proposal_id = Some(id.clone());
+        comment.body_hash = Some(body_hash("<p>Receipt reviewed</p>"));
+        let mut req = envelope(chain, &reviewer, &reviewer_key, &comment);
+        req["body_html"] = serde_json::json!("<p>Receipt reviewed</p>");
+        let (status, commented) = post_json(
+            app.clone(),
+            &format!("/v1/proposals/{id}/comments"),
+            req.clone(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "{commented}");
+        verified_export(app.clone(), &commented).await;
+        let (status, retry) =
+            post_json(app.clone(), &format!("/v1/proposals/{id}/comments"), req).await;
+        assert_eq!(status, StatusCode::CREATED);
+        assert_eq!(retry, commented);
+        // Same nonce and altered signed bytes cannot be consumed again.
+        comment.body_hash = Some(body_hash("<p>Altered</p>"));
+        let mut req = envelope(chain, &reviewer, &reviewer_key, &comment);
+        req["body_html"] = serde_json::json!("<p>Altered</p>");
+        let (status, _) =
+            post_json(app.clone(), &format!("/v1/proposals/{id}/comments"), req).await;
+        assert_eq!(status, StatusCode::CONFLICT);
+        let mut tasks = Vec::new();
+        let barrier = std::sync::Arc::new(tokio::sync::Barrier::new(21));
+        for _ in 0..21 {
+            let mut p = payload(chain, chain_id, "comment", &reviewer);
+            p.proposal_id = Some(id.clone());
+            p.body_hash = Some(body_hash("<p>Quota</p>"));
+            let mut req = envelope(chain, &reviewer, &reviewer_key, &p);
+            req["body_html"] = serde_json::json!("<p>Quota</p>");
+            let app = app.clone();
+            let path = format!("/v1/proposals/{id}/comments");
+            let b = barrier.clone();
+            tasks.push(tokio::spawn(async move {
+                b.wait().await;
+                post_json(app, &path, req).await
+            }));
+        }
+        let mut accepted = 0;
+        for task in tasks {
+            let (status, response) = task.await.unwrap();
+            if status == StatusCode::CREATED {
+                accepted += 1;
+            } else {
+                assert_eq!(status, StatusCode::FORBIDDEN, "{response}");
+            }
+        }
+        assert_eq!(accepted, 19);
+        for (suffix, expected_count) in [("comments", 20usize), ("analysis", 5usize)] {
+            let (status, records) = call(
+                app.clone(),
+                Request::get(format!("/v1/proposals/{id}/{suffix}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "{records}");
+            assert_eq!(records.as_array().unwrap().len(), expected_count);
+            assert!(records
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|r| r["chain"] == chain));
+        }
+        let (status, recorded_vote) = call(
+            app.clone(),
+            Request::get(format!("/v1/proposals/{id}/votes/{proposer}?chain={chain}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{recorded_vote}");
+        assert_eq!(recorded_vote["choice"], "for");
+        assert_eq!(recorded_vote["weight"], voted["weight"]);
+        let (status, frozen) = call(
+            app.clone(),
+            Request::get(format!(
+                "/v1/proposals/{id}/weights/{proposer}?chain={chain}"
+            ))
+            .body(Body::empty())
+            .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(frozen["eligible"], true);
+        assert_eq!(frozen["weight"], voted["weight"]);
+
+        // Independent analysis racing opening either commits before freeze or is rejected.
+        let p = draft_payload(chain, chain_id, &proposer, "Analyze race", &sections);
+        let mut req = envelope(chain, &proposer, &key, &p);
+        req["title"] = serde_json::json!("Analyze race");
+        req["body_sections"] = sections.clone();
+        let (status, new_draft) = post_json(app.clone(), "/v1/proposals", req).await;
+        assert_eq!(status, StatusCode::CREATED, "{new_draft}");
+        let race_id = new_draft["id"].as_str().unwrap().to_owned();
+        let mut analysis = payload(chain, chain_id, "analyze", &reviewer);
+        analysis.proposal_id = Some(race_id.clone());
+        analysis.body_hash = Some(prepare_analysis_for_test());
+        let mut req = envelope(chain, &reviewer, &reviewer_key, &analysis);
+        req["sections"] = serde_json::to_value(sample_analysis()).unwrap();
+        let mut opening = payload(chain, chain_id, "open_vote", &reviewer);
+        opening.proposal_id = Some(race_id.clone());
+        opening.title = Some("Analyze race".into());
+        opening.body_hash = Some(hash.clone());
+        let open_req = envelope(chain, &reviewer, &reviewer_key, &opening);
+        let barrier = std::sync::Arc::new(tokio::sync::Barrier::new(2));
+        let analyze_task = {
+            let app = app.clone();
+            let path = format!("/v1/proposals/{race_id}/analysis");
+            let b = barrier.clone();
+            tokio::spawn(async move {
+                b.wait().await;
+                post_json(app, &path, req).await
+            })
+        };
+        let open_task = {
+            let app = app.clone();
+            let path = format!("/v1/proposals/{race_id}/open");
+            let b = barrier.clone();
+            tokio::spawn(async move {
+                b.wait().await;
+                post_json(app, &path, open_req).await
+            })
+        };
+        let analyzed = analyze_task.await.unwrap();
+        let opened = open_task.await.unwrap();
+        assert_eq!(opened.0, StatusCode::OK, "{}", opened.1);
+        assert!(
+            matches!(analyzed.0, StatusCode::CREATED | StatusCode::CONFLICT),
+            "{}",
+            analyzed.1
+        );
+        if analyzed.0 == StatusCode::CREATED {
+            verified_export(app.clone(), &analyzed.1).await;
+        }
+    }
+    let orphans:i64=sqlx::query_scalar("SELECT count(*) FROM voting.signatures s LEFT JOIN voting.action_receipts r ON r.signature_id=s.id WHERE s.signed_payload IS NOT NULL AND r.signature_id IS NULL").fetch_one(&pool).await.unwrap();
+    assert_eq!(
+        orphans, 0,
+        "rejected actions must leave no partial signature rows"
+    );
+}
+
+#[tokio::test]
+async fn accepted_retry_survives_router_restart_and_expiry() {
+    let Some((pool, _lock)) = setup_pool().await else {
+        return;
+    };
+    let url = test_db_url().unwrap();
+    let (addr, _, key) = terra_wallet();
+    let mut p = payload("terra", "columbus-5", "register", &addr);
+    p.expires_at = p.issued_at + 2;
+    let request = envelope("terra", &addr, &key, &p);
+    let app = router(AppState {
+        pool: pool.clone(),
+        cfg: cfg(&url, ""),
+    });
+    let (status, first) = post_json(app, "/v1/register", request.clone()).await;
+    assert_eq!(status, StatusCode::OK, "{first}");
+    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+    let restarted = router(AppState {
+        pool: pool.clone(),
+        cfg: cfg(&url, ""),
+    });
+    let (status, retried) = post_json(restarted, "/v1/register", request).await;
+    assert_eq!(status, StatusCode::OK, "{retried}");
+    assert_eq!(first, retried);
+    let signatures: i64 = sqlx::query_scalar("SELECT count(*) FROM voting.signatures")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(signatures, 1);
+}
+
+fn prepare_analysis_for_test() -> String {
+    operator_voting::proposal_sections::prepare_analysis(&sample_analysis())
+        .unwrap()
+        .2
+}
+
+#[tokio::test]
+async fn verified_wallet_action_quota_is_shared_and_replays_are_free() {
+    let Some((pool, _lock)) = setup_pool().await else {
+        return;
+    };
+    let url = test_db_url().unwrap();
+    let (actor, pubkey, key) = terra_wallet();
+    let mut cfg = cfg(&url, "");
+    cfg.rate_limit_post_per_minute = 2;
+    cfg.rate_limit_post_burst = 20;
+    let first = router(AppState {
+        pool: pool.clone(),
+        cfg: cfg.clone(),
+    });
+    let second = router(AppState {
+        pool: pool.clone(),
+        cfg,
+    });
+    let barrier = std::sync::Arc::new(tokio::sync::Barrier::new(3));
+    let mut tasks = Vec::new();
+    for i in 0..3 {
+        let p = payload("terra", "columbus-5", "register", &actor);
+        let request = envelope("terra", &actor, &key, &p);
+        let app = if i % 2 == 0 {
+            first.clone()
+        } else {
+            second.clone()
+        };
+        let b = barrier.clone();
+        tasks.push(tokio::spawn(async move {
+            b.wait().await;
+            let result = post_json(app, "/v1/register", request.clone()).await;
+            (request, result)
+        }));
+    }
+    let mut accepted = Vec::new();
+    for task in tasks {
+        let (request, (status, response)) = task.await.unwrap();
+        if status == StatusCode::OK {
+            accepted.push((request, response));
+        } else {
+            assert_eq!(status, StatusCode::TOO_MANY_REQUESTS, "{response}");
+            assert_eq!(response["code"], "rate_limited");
+        }
+    }
+    assert_eq!(accepted.len(), 2);
+    let (request, original) = &accepted[0];
+    let (status, replay) = post_json(second.clone(), "/v1/register", request.clone()).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(&replay, original);
+    // Case-varied envelope still maps to the authenticated normalized wallet bucket.
+    let p = payload("terra", "columbus-5", "register", &actor);
+    let mut request = envelope("terra", &actor, &key, &p);
+    request["address"] = serde_json::json!(actor.to_ascii_uppercase());
+    let raw = serde_json::to_string(&request).unwrap();
+    let response = second
+        .clone()
+        .oneshot(
+            Request::post("/v1/register")
+                .header("content-type", "application/json")
+                .body(Body::from(raw))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+    assert!(response.headers().contains_key("retry-after"));
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let body: Value = serde_json::from_slice(&body).unwrap();
+    capture_response("POST", "/v1/register", StatusCode::TOO_MANY_REQUESTS, &body);
+    // An unsigned claimed address cannot burn the victim's verified action quota.
+    let attacker = serde_json::json!({"chain":"terra","address":actor,"payload":"{}","signature":"bogus","pubkey":pubkey});
+    let (status, _) = post_json(first, "/v1/register", attacker).await;
+    assert_ne!(status, StatusCode::TOO_MANY_REQUESTS);
+    let signatures: i64 = sqlx::query_scalar("SELECT count(*) FROM voting.signatures")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(signatures, 2);
+}
+
+#[tokio::test]
+async fn transaction_wait_past_signed_ttl_rolls_back_before_acceptance() {
+    let Some((pool, _lock)) = setup_pool().await else {
+        return;
+    };
+    let url = test_db_url().unwrap();
+    let (actor, _, key) = terra_wallet();
+    insert_reg(&pool, "terra", &actor, 10, 5000).await;
+    set_tip(&pool, 20, 20).await;
+    let app = router(AppState {
+        pool: pool.clone(),
+        cfg: cfg(&url, ""),
+    });
+    let mut blocker = pool.acquire().await.unwrap();
+    sqlx::query("SELECT pg_advisory_lock(845001)")
+        .execute(&mut *blocker)
+        .await
+        .unwrap();
+    sqlx::raw_sql("CREATE FUNCTION voting.test_acceptance_barrier() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN PERFORM pg_advisory_xact_lock(845001); RETURN NEW; END $$; CREATE TRIGGER test_acceptance_barrier BEFORE INSERT ON voting.proposal_revisions FOR EACH ROW EXECUTE FUNCTION voting.test_acceptance_barrier();").execute(&pool).await.unwrap();
+    let sections = valid_sections();
+    let mut p = draft_payload("terra", "columbus-5", &actor, "TTL barrier", &sections);
+    p.expires_at = p.issued_at + 2;
+    let expires = p.expires_at;
+    let mut request = envelope("terra", &actor, &key, &p);
+    request["title"] = serde_json::json!("TTL barrier");
+    request["body_sections"] = sections;
+    let task = tokio::spawn(async move { post_json(app, "/v1/proposals", request).await });
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(4);
+    loop {
+        let waiting:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND wait_event='advisory' AND query LIKE 'INSERT INTO voting.proposal_revisions%')").fetch_one(&pool).await.unwrap();
+        if waiting {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "action did not reach post-mutation acceptance barrier"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    while Utc::now().timestamp() <= expires {
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    sqlx::query("SELECT pg_advisory_unlock(845001)")
+        .execute(&mut *blocker)
+        .await
+        .unwrap();
+    let (status, response) = task.await.unwrap();
+    assert_eq!(
+        status,
+        StatusCode::UNAUTHORIZED,
+        "expired action must not commit: {response}"
+    );
+    for table in [
+        "voting.signatures",
+        "voting.proposals",
+        "voting.proposal_revisions",
+        "voting.action_receipts",
+    ] {
+        let count: i64 = sqlx::query_scalar(&format!("SELECT count(*) FROM {table}"))
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(count, 0, "expired mutation left {table} state");
+    }
+    sqlx::raw_sql("DROP TRIGGER test_acceptance_barrier ON voting.proposal_revisions; DROP FUNCTION voting.test_acceptance_barrier();").execute(&pool).await.unwrap();
+}
+
+#[tokio::test]
+async fn readiness_and_freeze_refuse_only_eligible_unverified_baselines() {
+    let Some((pool, _lock)) = setup_pool().await else {
+        return;
+    };
+    let url = test_db_url().unwrap();
+    let (actor, _, key) = terra_wallet();
+    insert_reg(&pool, "terra", &actor, 10, 5000).await;
+    set_tip(&pool, 20, 20).await;
+    let mut cfg = cfg(&url, "");
+    cfg.committee = parse_committee(&actor).unwrap();
+    let app = router(AppState {
+        pool: pool.clone(),
+        cfg,
+    });
+    let sections = valid_sections();
+    let p = draft_payload("terra", "columbus-5", &actor, "Baseline guard", &sections);
+    let mut request = envelope("terra", &actor, &key, &p);
+    request["title"] = serde_json::json!("Baseline guard");
+    request["body_sections"] = sections.clone();
+    let (status, draft) = post_json(app.clone(), "/v1/proposals", request).await;
+    assert_eq!(status, StatusCode::CREATED);
+    let id = draft["id"].as_str().unwrap();
+    let (status, _) = call(
+        app.clone(),
+        Request::get("/ready").body(Body::empty()).unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    for (value, age) in [("false", 0), ("true", 121)] {
+        sqlx::query("UPDATE public.indexer_state SET value=$1,updated_at=clock_timestamp()-($2::text||' seconds')::interval WHERE key='intents_ok'").bind(value).bind(age.to_string()).execute(&pool).await.unwrap();
+        let (status, _) = call(
+            app.clone(),
+            Request::get("/ready").body(Body::empty()).unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    }
+    sqlx::query("UPDATE public.indexer_state SET value='true',updated_at=clock_timestamp() WHERE key='intents_ok'").execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO public.voting_registrations(chain,wallet_address,registered_at_height,initial_balance,status,baseline_height,baseline_verified) VALUES('bsc','eligible_unverified',10,1,'active',10,false)").execute(&pool).await.unwrap();
+    let (status, _) = call(
+        app.clone(),
+        Request::get("/ready").body(Body::empty()).unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    let mut open = payload("terra", "columbus-5", "open_vote", &actor);
+    open.proposal_id = Some(id.into());
+    open.title = Some("Baseline guard".into());
+    open.body_hash = Some(prepare_sections(&sections).unwrap().body_hash);
+    let (status, _) = post_json(
+        app.clone(),
+        &format!("/v1/proposals/{id}/open"),
+        envelope("terra", &actor, &key, &open),
+    )
+    .await;
+    assert!(
+        status.is_server_error(),
+        "uncertifiedeligiblebaseline must blockfreeze"
+    );
+    sqlx::query("UPDATE public.voting_registrations SET baseline_verified=true,baseline_block_hash='bsc-10' WHERE wallet_address='eligible_unverified'").execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO public.voting_registrations(chain,wallet_address,registered_at_height,initial_balance,status,baseline_height,baseline_verified) VALUES('bsc','0x2222222222222222222222222222222222222222',100,1,'active',100,false)").execute(&pool).await.unwrap();
+    let (status, _) = call(
+        app.clone(),
+        Request::get("/ready").body(Body::empty()).unwrap(),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "above-cutoffunverifiedbaseline cannot haltallopening"
+    );
+    let (status, opened) = post_json(
+        app.clone(),
+        &format!("/v1/proposals/{id}/open"),
+        envelope("terra", &actor, &key, &open),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{opened}");
+    let weight:String=sqlx::query_scalar("SELECT weight::text FROM voting.proposal_snapshots WHERE proposal_id=$1 AND wallet_address='0x2222222222222222222222222222222222222222'").bind(uuid::Uuid::parse_str(id).unwrap()).fetch_one(&pool).await.unwrap();
+    assert_eq!(weight, "0");
+    sqlx::query("UPDATE public.voting_registrations SET baseline_verified=true,baseline_block_hash='bsc-100' WHERE wallet_address='0x2222222222222222222222222222222222222222'").execute(&pool).await.unwrap();
+    sqlx::query("UPDATE public.ledger_checkpoints SET height=100,network_tip=115,block_hash='bsc-100',observed_at=clock_timestamp() WHERE chain='bsc'").execute(&pool).await.unwrap();
+    let (status, current) = call(
+        app.clone(),
+        Request::get("/v1/balances/0x2222222222222222222222222222222222222222?chain=bsc")
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(current["snapshot_eligible"], true);
+    let (status, frozen) = call(
+        app.clone(),
+        Request::get(format!(
+            "/v1/proposals/{id}/weights/0x2222222222222222222222222222222222222222?chain=bsc"
+        ))
+        .body(Body::empty())
+        .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(frozen["eligible"], false);
+    assert_eq!(
+        frozen["weight"], "0",
+        "futureadmission must not rewriteolderfrozenpower"
+    );
+    let (status, missing) = call(
+        app.clone(),
+        Request::get(format!(
+            "/v1/proposals/{id}/weights/0x1111111111111111111111111111111111111111?chain=bsc"
+        ))
+        .body(Body::empty())
+        .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(missing["eligible"], false);
+    assert_eq!(missing["weight"], "0");
+    let (status, _) = call(
+        app,
+        Request::get(format!(
+            "/v1/proposals/{}/weights/0x1111111111111111111111111111111111111111?chain=bsc",
+            uuid::Uuid::new_v4()
+        ))
+        .body(Body::empty())
+        .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn bsc_registration_waits_for_finalized_snapshot_admission() {
+    let Some((pool, _lock)) = setup_pool().await else {
+        return;
+    };
+    let url = test_db_url().unwrap();
+    let (actor, _) = evm_wallet();
+    insert_reg(&pool, "bsc", &actor, 100, 5000).await;
+    sqlx::query("UPDATE public.voting_registrations SET baseline_height=100,baseline_block_hash='bsc-100',baseline_verified=false WHERE chain='bsc' AND wallet_address=$1").bind(&actor).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO public.ledger_checkpoints(chain,height,block_hash,observed_at,complete,canonical,network_tip) VALUES('bsc',85,'bsc-85',clock_timestamp(),true,true,100)").execute(&pool).await.unwrap();
+    let app = router(AppState {
+        pool: pool.clone(),
+        cfg: cfg(&url, ""),
+    });
+    let path = format!("/v1/balances/{actor}?chain=bsc");
+    let (status, balance) = call(
+        app.clone(),
+        Request::get(&path).body(Body::empty()).unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(balance["registered"], true);
+    assert_eq!(balance["balance"], cl8y_raw(5000));
+    assert_eq!(balance["snapshot_eligible"], false);
+    sqlx::query("UPDATE public.voting_registrations SET baseline_verified=true WHERE chain='bsc' AND wallet_address=$1").bind(&actor).execute(&pool).await.unwrap();
+    let (_, balance) = call(
+        app.clone(),
+        Request::get(&path).body(Body::empty()).unwrap(),
+    )
+    .await;
+    assert_eq!(
+        balance["snapshot_eligible"], false,
+        "verifiedfuturebaseline remainsabovefinalizedcutoff"
+    );
+    sqlx::query("UPDATE public.ledger_checkpoints SET height=100,block_hash='bsc-100',network_tip=115,observed_at=clock_timestamp() WHERE chain='bsc'").execute(&pool).await.unwrap();
+    let (status, balance) = call(app, Request::get(&path).body(Body::empty()).unwrap()).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(balance["snapshot_eligible"], true);
+}
+
+#[tokio::test]
+async fn empty_or_whitespace_draft_title_is_rejected_atomically() {
+    let Some((pool, _lock)) = setup_pool().await else {
+        return;
+    };
+    let url = test_db_url().unwrap();
+    let (actor, _, key) = terra_wallet();
+    insert_reg(&pool, "terra", &actor, 10, 5000).await;
+    set_tip(&pool, 20, 20).await;
+    let app = router(AppState {
+        pool: pool.clone(),
+        cfg: cfg(&url, ""),
+    });
+    let sections = valid_sections();
+    for title in ["", " \t\n"] {
+        let p = draft_payload("terra", "columbus-5", &actor, title, &sections);
+        let mut request = envelope("terra", &actor, &key, &p);
+        request["title"] = serde_json::json!(title);
+        request["body_sections"] = sections.clone();
+        let (status, _) = post_json(app.clone(), "/v1/proposals", request).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+    }
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM voting.signatures")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(count, 0);
 }

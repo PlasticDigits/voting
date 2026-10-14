@@ -12,6 +12,7 @@ const identity = {
 const snapshot = {
   status: 'unregistered' as 'idle' | 'unregistered' | 'pending' | 'registered',
   balance: null as string | null,
+  snapshotEligible: null as boolean | null,
   asOfHeight: null as number | null,
   error: null as string | null,
   loading: false,
@@ -58,7 +59,7 @@ describe('list page snapshot copy', () => {
     render(
       <MemoryRouter>
         <VoteListPage />
-      </MemoryRouter>
+      </MemoryRouter>,
     )
     const connected = await screen.findByTestId('connected-chain')
     expect(connected).toHaveTextContent('Terra Classic')
@@ -76,7 +77,7 @@ describe('list page snapshot copy', () => {
     render(
       <MemoryRouter>
         <VoteListPage />
-      </MemoryRouter>
+      </MemoryRouter>,
     )
     expect(await screen.findByTestId('registration-pending')).toHaveTextContent('Registering')
     expect(screen.queryByTestId('registration-status')).toBeNull()
@@ -94,7 +95,7 @@ describe('list page snapshot copy', () => {
     render(
       <MemoryRouter>
         <VoteListPage />
-      </MemoryRouter>
+      </MemoryRouter>,
     )
     expect(await screen.findByTestId('register-retry')).toBeEnabled()
     expect(screen.queryByTestId('registration-pending')).toBeNull()
@@ -114,7 +115,7 @@ describe('list page snapshot copy', () => {
     render(
       <MemoryRouter>
         <VoteListPage />
-      </MemoryRouter>
+      </MemoryRouter>,
     )
     expect(await screen.findByTestId('registration-status')).toHaveTextContent('Registered')
     expect(screen.getByTestId('connected-chain')).toHaveTextContent('3540 CL8Y')
@@ -126,10 +127,29 @@ describe('list page snapshot copy', () => {
     render(
       <MemoryRouter>
         <VoteListPage />
-      </MemoryRouter>
+      </MemoryRouter>,
     )
     const summary = await screen.findByTestId('proposal-summary')
     expect(summary).toHaveTextContent('Scan this TL;DR')
     expect(summary.innerHTML).not.toMatch(/script/i)
   })
+})
+
+it('explains registered but uncertified admission while retaining the ordinary balance', async () => {
+  snapshot.status = 'registered'
+  snapshot.balance = '1000000000000000000000'
+  snapshot.snapshotEligible = false
+  snapshot.error = null
+  render(
+    <MemoryRouter>
+      <VoteListPage />
+    </MemoryRouter>,
+  )
+  expect(await screen.findByTestId('registration-status')).toHaveTextContent(
+    'awaiting snapshot eligibility',
+  )
+  expect(screen.getByTestId('connected-chain')).toHaveTextContent('1000 CL8Y')
+  expect(screen.getByTestId('snapshot-eligibility-hint')).toHaveTextContent(
+    'Existing polls keep their original frozen weights',
+  )
 })

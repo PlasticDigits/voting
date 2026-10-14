@@ -1,0 +1,89 @@
+{
+  "protocol_version": 2,
+  "vectors": [
+    {
+      "body_hash": "a1374c1663b33a2420d5d89c61d899df0ca63d49e4d710584699b1a054ff3494",
+      "canonical_json": "{\"context\":\"<p>Unicode 🚀 é 한국어 has enough readable information for a proposal section.</p>\",\"problem\":\"<p>Unicode 🚀 é 한국어 has enough readable information for a proposal section.</p>\",\"pros_cons\":\"<p>Unicode 🚀 é 한국어 has enough readable information for a proposal section.</p>\",\"solution\":\"<p>Unicode 🚀 é 한국어 has enough readable information for a proposal section.</p>\",\"success_criteria\":\"<p>Unicode 🚀 é 한국어 has enough readable information for a proposal section.</p>\",\"summary\":\"<p>Unicode 🚀 é 한국어 has enough readable information for a proposal section.</p>\"}",
+      "raw": {
+        "context": "<p>Unicode 🚀 é 한국어 has enough readable information for a proposal section.</p>",
+        "problem": "<p>Unicode 🚀 é 한국어 has enough readable information for a proposal section.</p>",
+        "pros_cons": "<p>Unicode 🚀 é 한국어 has enough readable information for a proposal section.</p>",
+        "solution": "<p>Unicode 🚀 é 한국어 has enough readable information for a proposal section.</p>",
+        "success_criteria": "<p>Unicode 🚀 é 한국어 has enough readable information for a proposal section.</p>",
+        "summary": "<p>Unicode 🚀 é 한국어 has enough readable information for a proposal section.</p>"
+      },
+      "sections": {
+        "context": "<p>Unicode 🚀 é 한국어 has enough readable information for a proposal section.</p>",
+        "problem": "<p>Unicode 🚀 é 한국어 has enough readable information for a proposal section.</p>",
+        "pros_cons": "<p>Unicode 🚀 é 한국어 has enough readable information for a proposal section.</p>",
+        "solution": "<p>Unicode 🚀 é 한국어 has enough readable information for a proposal section.</p>",
+        "success_criteria": "<p>Unicode 🚀 é 한국어 has enough readable information for a proposal section.</p>",
+        "summary": "<p>Unicode 🚀 é 한국어 has enough readable information for a proposal section.</p>"
+      },
+      "visible_length": 72
+    },
+    {
+      "body_hash": "baecb40f39d8224275c331dfded9590c6fdcd2517c8e32cb13002bb8c023df8d",
+      "canonical_json": "{\"context\":\"<p>Entities &amp;lt; &amp; &amp; &lt; \\\" 🚀 � � has enough readable information for a proposal section.</p>\",\"problem\":\"<p>Entities &amp;lt; &amp; &amp; &lt; \\\" 🚀 � � has enough readable information for a proposal section.</p>\",\"pros_cons\":\"<p>Entities &amp;lt; &amp; &amp; &lt; \\\" 🚀 � � has enough readable information for a proposal section.</p>\",\"solution\":\"<p>Entities &amp;lt; &amp; &amp; &lt; \\\" 🚀 � � has enough readable information for a proposal section.</p>\",\"success_criteria\":\"<p>Entities &amp;lt; &amp; &amp; &lt; \\\" 🚀 � � has enough readable information for a proposal section.</p>\",\"summary\":\"<p>Entities &amp;lt; &amp; &amp; &lt; \\\" 🚀 � � has enough readable information for a proposal section.</p>\"}",
+      "raw": {
+        "context": "<p>Entities &amp;lt; &AMP; &amp; &lt; &quot; &#x1F680; &#1114112; &#55296; has enough readable information for a proposal section.</p>",
+        "problem": "<p>Entities &amp;lt; &AMP; &amp; &lt; &quot; &#x1F680; &#1114112; &#55296; has enough readable information for a proposal section.</p>",
+        "pros_cons": "<p>Entities &amp;lt; &AMP; &amp; &lt; &quot; &#x1F680; &#1114112; &#55296; has enough readable information for a proposal section.</p>",
+        "solution": "<p>Entities &amp;lt; &AMP; &amp; &lt; &quot; &#x1F680; &#1114112; &#55296; has enough readable information for a proposal section.</p>",
+        "success_criteria": "<p>Entities &amp;lt; &AMP; &amp; &lt; &quot; &#x1F680; &#1114112; &#55296; has enough readable information for a proposal section.</p>",
+        "summary": "<p>Entities &amp;lt; &AMP; &amp; &lt; &quot; &#x1F680; &#1114112; &#55296; has enough readable information for a proposal section.</p>"
+      },
+      "sections": {
+        "context": "<p>Entities &amp;lt; &amp; &amp; &lt; \" 🚀 � � has enough readable information for a proposal section.</p>",
+        "problem": "<p>Entities &amp;lt; &amp; &amp; &lt; \" 🚀 � � has enough readable information for a proposal section.</p>",
+        "pros_cons": "<p>Entities &amp;lt; &amp; &amp; &lt; \" 🚀 � � has enough readable information for a proposal section.</p>",
+        "solution": "<p>Entities &amp;lt; &amp; &amp; &lt; \" 🚀 � � has enough readable information for a proposal section.</p>",
+        "success_criteria": "<p>Entities &amp;lt; &amp; &amp; &lt; \" 🚀 � � has enough readable information for a proposal section.</p>",
+        "summary": "<p>Entities &amp;lt; &amp; &amp; &lt; \" 🚀 � � has enough readable information for a proposal section.</p>"
+      },
+      "visible_length": 83
+    },
+    {
+      "body_hash": "3f041d247b16bb36ad4d3abafc7db81faed9558f78741ed20ea333fb02651774",
+      "canonical_json": "{\"context\":\"<p><a href=\\\"https://example.com/?a=1&amp;b=2\\\" rel=\\\"noopener noreferrer\\\">HTTPS link</a> has enough readable information for a proposal section.</p>\",\"problem\":\"<p><a href=\\\"https://example.com/?a=1&amp;b=2\\\" rel=\\\"noopener noreferrer\\\">HTTPS link</a> has enough readable information for a proposal section.</p>\",\"pros_cons\":\"<p><a href=\\\"https://example.com/?a=1&amp;b=2\\\" rel=\\\"noopener noreferrer\\\">HTTPS link</a> has enough readable information for a proposal section.</p>\",\"solution\":\"<p><a href=\\\"https://example.com/?a=1&amp;b=2\\\" rel=\\\"noopener noreferrer\\\">HTTPS link</a> has enough readable information for a proposal section.</p>\",\"success_criteria\":\"<p><a href=\\\"https://example.com/?a=1&amp;b=2\\\" rel=\\\"noopener noreferrer\\\">HTTPS link</a> has enough readable information for a proposal section.</p>\",\"summary\":\"<p><a href=\\\"https://example.com/?a=1&amp;b=2\\\" rel=\\\"noopener noreferrer\\\">HTTPS link</a> has enough readable information for a proposal section.</p>\"}",
+      "raw": {
+        "context": "<p><a href=\"https://example.com/?a=1&amp;b=2\">HTTPS link</a> has enough readable information for a proposal section.</p>",
+        "problem": "<p><a href=\"https://example.com/?a=1&amp;b=2\">HTTPS link</a> has enough readable information for a proposal section.</p>",
+        "pros_cons": "<p><a href=\"https://example.com/?a=1&amp;b=2\">HTTPS link</a> has enough readable information for a proposal section.</p>",
+        "solution": "<p><a href=\"https://example.com/?a=1&amp;b=2\">HTTPS link</a> has enough readable information for a proposal section.</p>",
+        "success_criteria": "<p><a href=\"https://example.com/?a=1&amp;b=2\">HTTPS link</a> has enough readable information for a proposal section.</p>",
+        "summary": "<p><a href=\"https://example.com/?a=1&amp;b=2\">HTTPS link</a> has enough readable information for a proposal section.</p>"
+      },
+      "sections": {
+        "context": "<p><a href=\"https://example.com/?a=1&amp;b=2\" rel=\"noopener noreferrer\">HTTPS link</a> has enough readable information for a proposal section.</p>",
+        "problem": "<p><a href=\"https://example.com/?a=1&amp;b=2\" rel=\"noopener noreferrer\">HTTPS link</a> has enough readable information for a proposal section.</p>",
+        "pros_cons": "<p><a href=\"https://example.com/?a=1&amp;b=2\" rel=\"noopener noreferrer\">HTTPS link</a> has enough readable information for a proposal section.</p>",
+        "solution": "<p><a href=\"https://example.com/?a=1&amp;b=2\" rel=\"noopener noreferrer\">HTTPS link</a> has enough readable information for a proposal section.</p>",
+        "success_criteria": "<p><a href=\"https://example.com/?a=1&amp;b=2\" rel=\"noopener noreferrer\">HTTPS link</a> has enough readable information for a proposal section.</p>",
+        "summary": "<p><a href=\"https://example.com/?a=1&amp;b=2\" rel=\"noopener noreferrer\">HTTPS link</a> has enough readable information for a proposal section.</p>"
+      },
+      "visible_length": 66
+    },
+    {
+      "body_hash": "d4207f4eefd6e30c3c4a221a321d0e098d832e569ba378c8761e960ed594ceb9",
+      "canonical_json": "{\"context\":\"<p>Multiline\\ntext\\nwith tabs\\tand apostrophe ' has enough readable information for a proposal section.</p>\",\"problem\":\"<p>Multiline\\ntext\\nwith tabs\\tand apostrophe ' has enough readable information for a proposal section.</p>\",\"pros_cons\":\"<p>Multiline\\ntext\\nwith tabs\\tand apostrophe ' has enough readable information for a proposal section.</p>\",\"solution\":\"<p>Multiline\\ntext\\nwith tabs\\tand apostrophe ' has enough readable information for a proposal section.</p>\",\"success_criteria\":\"<p>Multiline\\ntext\\nwith tabs\\tand apostrophe ' has enough readable information for a proposal section.</p>\",\"summary\":\"<p>Multiline\\ntext\\nwith tabs\\tand apostrophe ' has enough readable information for a proposal section.</p>\"}",
+      "raw": {
+        "context": "<p>Multiline\ntext\r\nwith tabs\tand apostrophe ' has enough readable information for a proposal section.</p>",
+        "problem": "<p>Multiline\ntext\r\nwith tabs\tand apostrophe ' has enough readable information for a proposal section.</p>",
+        "pros_cons": "<p>Multiline\ntext\r\nwith tabs\tand apostrophe ' has enough readable information for a proposal section.</p>",
+        "solution": "<p>Multiline\ntext\r\nwith tabs\tand apostrophe ' has enough readable information for a proposal section.</p>",
+        "success_criteria": "<p>Multiline\ntext\r\nwith tabs\tand apostrophe ' has enough readable information for a proposal section.</p>",
+        "summary": "<p>Multiline\ntext\r\nwith tabs\tand apostrophe ' has enough readable information for a proposal section.</p>"
+      },
+      "sections": {
+        "context": "<p>Multiline\ntext\nwith tabs\tand apostrophe ' has enough readable information for a proposal section.</p>",
+        "problem": "<p>Multiline\ntext\nwith tabs\tand apostrophe ' has enough readable information for a proposal section.</p>",
+        "pros_cons": "<p>Multiline\ntext\nwith tabs\tand apostrophe ' has enough readable information for a proposal section.</p>",
+        "solution": "<p>Multiline\ntext\nwith tabs\tand apostrophe ' has enough readable information for a proposal section.</p>",
+        "success_criteria": "<p>Multiline\ntext\nwith tabs\tand apostrophe ' has enough readable information for a proposal section.</p>",
+        "summary": "<p>Multiline\ntext\nwith tabs\tand apostrophe ' has enough readable information for a proposal section.</p>"
+      },
+      "visible_length": 97
+    }
+  ]
+}

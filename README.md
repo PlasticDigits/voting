@@ -2,7 +2,7 @@
 
 Offchain **CL8Y snapshot voting** for Terra Classic CW20 holders and BNB Smart Chain BEP-20 holders. This is a standalone repo. It is not part of the DEX indexer or dApp.
 
-**GitLab:** [PlasticDigits/voting](https://gitlab.com/PlasticDigits/voting)
+**Forgejo:** [code/voting](https://git.cl8y.com/code/voting) · historical GitLab: [PlasticDigits/voting](https://gitlab.com/PlasticDigits/voting)
 
 Voting used to be tracked as issues **#509 / #510 / #511 / #588** on [cl8y-dex-terraclassic](https://gitlab.com/PlasticDigits/cl8y-dex-terraclassic). Those issues live here now. Mapping: [`docs/ISSUE_MIGRATION.md`](docs/ISSUE_MIGRATION.md).
 
@@ -38,11 +38,16 @@ Packages: `ledger/` (data plane), `operator-voting/` (control plane), `frontend/
 
 ## Local verify
 
+The pinned Rust toolchain is 1.88.0. Run `scripts/verify-release.sh` for a fresh
+marked, disposable database and the full release suite. Never use an application
+`DATABASE_URL` for integration tests. Manual compose also initializes the required
+`cl8y-voting-ephemeral-test` database comment.
+
 ```bash
 cargo test --workspace --lib
-docker compose -f docker-compose.test.yml up -d
+docker compose -p voting-tests -f docker-compose.test.yml up -d
 # Host-network Postgres on 5433 (bypasses docker-proxy handshake hangs).
-LEDGER_TEST_DATABASE_URL=postgres://voting:voting@127.0.0.1:5433/voting cargo test --workspace --tests --jobs 1 -- --test-threads=1
+LEDGER_TEST_ALLOW_DESTRUCTIVE=1 LEDGER_TEST_DATABASE_URL=postgres://voting:voting@127.0.0.1:5433/voting_test_local cargo test --workspace --tests --jobs 1 -- --test-threads=1
 cd frontend && npm test && npm run test:e2e
 sh deploy/docker/test-frontend-spa-fallback.sh
 ```
@@ -78,3 +83,8 @@ Merge to `main` is a pull request, Woodpecker context
 is not a merge gate. Do not re-add catch-all `CODEOWNERS`
 (`.* @code/maintainers`); see
 [ADR 0001](docs/adr/0001-remove-catchall-codeowners.md).
+
+Hardening release: [issues 36–43](https://git.cl8y.com/code/voting/issues/35),
+[transactional actions skill](skills/AGENTS_TRANSACTIONAL_VOTING.md),
+[protocol security skill](skills/AGENTS_PROTOCOL_SECURITY.md),
+and [current rollout runbook](docs/OPS.md#hardening-release-for-forgejo-issues-3643).

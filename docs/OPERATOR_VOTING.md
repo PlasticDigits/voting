@@ -182,3 +182,166 @@ sqlx migrations live in the ledger crate. `operator-voting` applies them only wh
 ## Env
 
 See [../.env.example](../.env.example) and [../deploy/coolify.env.example](../deploy/coolify.env.example). Production compose **must not** reuse the ledger writer `DATABASE_URL`.
+
+## Transactional signed actions (issues #40 and #42)
+
+Protocol **v2** is required for new writes. Signed JSON includes `version: 2`, a unique
+`nonce` (1–128 bytes), the existing app/chain/network/purpose/address/time fields,
+and action fields. `amend`, `analyze`, and `open_vote` additionally sign the complete
+current numeric `revision`; opening also signs the exact current `title` and
+canonical section `body_hash`. See [transactional agent instructions](../skills/AGENTS_TRANSACTIONAL_VOTING.md)
+and [governance doctrine](GOVERNANCE_RESEARCH.md). Configured chain IDs are exact;
+local network IDs receive no exception on a mainnet API.
+
+- **OV-T1 — atomic acceptance:** signature, mutation, revision history, and receipt
+  share one database transaction. A rejected action leaves no signature or state.
+  Per-address nonce advisory locks serialize retries. The same accepted signed
+  bytes return the same persisted response, including after expiration or API
+  restart; altered bytes with a consumed nonce conflict. Current blacklist/role
+  checks still apply to retries. Nonces never merge Terra and BSC identities.
+- **OV-T2 — complete revisions:** drafts start at revision 1. Every amendment,
+  including title-only changes, increments the revision. A proposal row lock
+  checks the signed expected revision before changing content or opening. One
+  concurrent stale amendment succeeds. Historical title/canonical sections are
+  retained in `proposal_revisions`; `analyze` records the reviewed revision.
+- **OV-T3 — race-safe quotas/state:** the same proposal lock serializes comments,
+  analysis, amendments, opening and votes. Comments remain limited to 20 per
+  address/chain/proposal; committee analyses are limited to 5. Analyses require
+  draft state and an independent address. Database guards also reject analysis
+  after opening, stale analysis revisions and forged frozen vote weights.
+  `FOR NO KEY UPDATE` deliberately permits foreign-key key-share locks: using
+  `FOR UPDATE` here deadlocks parallel action inserts.
+- **OV-T4 — safe times:** timestamps require a positive checked TTL, expiry after
+  now, bounded issuance skew (at most 60 seconds future), and configured maximum
+  TTL plus the existing 30-second allowance. The injectable clock validator
+  rejects reversed/equal/extreme integers in debug and release.
+- **OV-T5 — freeze evidence:** opening acquires Terra then BSC ledger locks and
+  requires both positive, complete, canonical, nondegraded checkpoints, observed
+  within 120 seconds (future skew at most 60), and head lag at most 2 Terra / 17
+  BSC blocks. Client heights are ignored. The mediated freeze stores hash/epoch
+  identities and materializes registered electorate weights exactly once. A
+  reorg marks snapshot validity invalid without rewriting frozen weights.
+  Legacy opened snapshots become `legacy_unverified`; their history/tallies
+  remain readable, but new votes require a valid snapshot. `/health` is liveness;
+  `/ready` returns 503 unless the dual-chain ledger and database are ready.
+- **OV-T6 — verifiable receipts:** mutation responses include `receipt_id`.
+  `GET /v1/receipts/{receipt_id}` exports exact signed payload bytes, original
+  signature/public key, scheme/domain, nonce, purpose/actor, proposal/revision
+  linkage, historical content and opening snapshot/hash/epoch metadata.
+  `payload::verify_exported_receipt` verifies the disclosed wallet signatures
+  and signed content offline; it rejects altered signed bytes or title/history.
+  Terra uses ADR-36 only; raw simulated-message signatures are no production
+  fallback. EIP-191 rejects noncanonical high-S signatures.
+
+Receipts prove what a wallet signed. Frozen heights and power are **operator
+ledger evidence**, not wallet-signed chain attestations or a secret ballot.
+Hash-only historical signatures have no recoverable original signed bytes:
+there is no synthetic backfill claim of cryptographic verification. Immutable
+receipt/history/vote/snapshot tables reject UPDATE/DELETE and the API role has no
+TRUNCATE or snapshot INSERT privilege. Only the writer can reconcile old ledger
+state; do not silently promote legacy snapshots to valid.
+
+The forward migrations are `20261014000100_transactional_actions.sql` and
+`20261014000101_restrict_existing_api_role.sql`, after the ledger checkpoint
+migration. The latter revokes existing blanket/default grants atomically when
+an API role exists. Fresh roles have no usable default password; provision
+credentials using the authorized OpenBao workflow. Existing secure credentials
+are preserved and must be rotated if an installation retained the historical
+default. Production startup validates effective privileges, including inherited
+and PUBLIC rights. The API receives SELECT/INSERT on named control-plane tables,
+column-only draft INSERT/UPDATE, and EXECUTE on qualified balance/freeze routines;
+no blanket future-table or schema CREATE/database TEMP privileges.
+
+Destructive integration helpers require `LEDGER_TEST_DATABASE_URL`, a loopback
+host and `voting_test_*` database name, plus `LEDGER_TEST_ALLOW_DESTRUCTIVE=1`.
+They refuse unsafe configuration before connecting and check database identity
+before migrations/TRUNCATE/role DDL. `DATABASE_URL` is never a fallback.
+`LEDGER_TEST_REQUIRED=1` makes absent test configuration fatal. CI may use the
+exact `postgres` service hostname only with `CI=true` and
+`LEDGER_TEST_ALLOW_CI_SERVICE=1`. Use an ephemeral database; see [OPS.md](OPS.md).
+
+The runtime test database catalog comment must equal `cl8y-voting-ephemeral-test`.
+Provision this marker only on a new disposable database; an absent/wrong marker
+fails before migration or destructive SQL. Never mark an application database.
+
+### Review followup: shared quotas, actual acceptance and field-level evidence
+
+- **OV-T7 — authenticated aggregate quota:** after signature/domain/actor checks
+  and accepted-receipt replay lookup, a database wallet/chain/purpose advisory
+  lock serializes the last-60-second accepted-action count. The configured
+  `RATE_LIMIT_POST_PER_MINUTE` cap is shared across API processes; accepted exact
+  retries and rejected unsigned envelopes do not charge it. Addresses use the
+  same normalization as authentication. Exhaustion returns safe 429 JSON plus
+  `Retry-After`. Peer-IP protection still belongs to the production middleware;
+  multi-replica IP limits require a shared edge limiter. Transactions explicitly
+  use READ COMMITTED so the post-lock count sees prior accepted commits.
+- **OV-T8 — acceptance clock:** receipt `accepted_at` is the exact timestamp used
+  for the final signed TTL check after mutation and lock waits. Expiry at this
+  point rolls back all signature/content/history changes. The offline verifier
+  checks that persisted timestamp against the signed bounds; receipt retries
+  use the original accepted record. Freeze freshness and `opened_at` use
+  `clock_timestamp()` after obtaining chain locks.
+- **OV-T9 — complete receipt content:** verification binds stored sanitized
+  sections to canonical JSON/hash, displayed analysis HTML to the canonical
+  sections, content IDs to responses, and stored signature revision to signed
+  revision. Mutating any of these fields or the acceptance time fails verification.
+- **OV-T10 — eligible certified baselines:** opening and readiness refuse active
+  unverified/missing-hash baselines at or below the chosen chain checkpoint.
+  Unconfirmed registrations above that cutoff remain zero-weight and cannot
+  globally halt opening. List/detail responses disclose `snapshot_incident`.
+
+`20261014000102_verified_action_guards.sql` upgrades actual-time freeze/default
+receipt clocks and revokes column-level privileges before restoring the explicit
+matrix. Table-level REVOKE alone does not remove column grants. Startup checks
+both table and effective column permissions, including inherited/PUBLIC grants,
+comments/analysis TRUNCATE and ledger-owned registration processing metadata.
+API registration intent INSERT is limited to chain/address/signature columns.
+Unsafe inherited role membership is detected and must be removed by operations.
+
+The isolated `process_restart` regression launches the real API binary, accepts a
+signed draft, sends SIGKILL, restarts against the same marked database, and retries
+the exact bytes after expiry. It verifies exactly one signature, receipt and draft,
+and rejects unaccepted signatures prepared before committee/blacklist rotation.
+`api_flow` now uses the production application factory; optional
+`VOTING_CONTRACT_CAPTURE_PATH` writes synthetic response JSONL for independent
+OpenAPI response validation. Never enable this fixture capture against live data.
+
+`GET /v1/balances/:addr` always emits `snapshot_eligible`: certified per-chain
+registration admission at the current complete canonical checkpoint. A BSC
+registration at live head H can show a positive initial balance while admission
+remains false at the finalized cutoff H-15. Later admission does not change old
+polls. `GET /v1/proposals/:id/weights/:addr?chain=terra|bsc` returns the exact stored
+snapshot weight and eligibility (open, valid snapshot, positive weight), without
+recomputing live balances. Missing snapshot addresses return weight `"0"` and
+false; unknown proposals return 404. The UI checks this per-poll endpoint before
+vote signing, and displays future registration admission separately.
+
+The canonical v2 payload field order is `version`, `nonce`, `app`, `chain`,
+`chain_id`, `purpose`, `address`, `issued_at`, `expires_at`, optional `revision`,
+then optional title/body/proposal/choice/previous-body fields. This matches the
+client canonical builder; verification still uses original stored bytes and
+never rewrites previously accepted signatures. New draft/amend titles must have
+non-whitespace content and fit the existing 200-byte UTF-8 limit. Terra ADR-36
+actors must use the native `terra` address prefix.
+
+API startup also rejects parent-role memberships, including NOINHERIT roles
+that allow SET ROLE, ownership of protected balance/freeze routines, and
+writer-authenticated sessions disguised by SET ROLE. Authenticate directly as
+the dedicated restricted role; ledger owners retain routine ownership. Restricted
+REGISTER creates only unprocessed intent metadata; direct processed/retry/attempt
+metadata INSERT is denied as well as UPDATE.
+
+`20261014000103_intent_pass_readiness.sql` aligns opening with the ledger worker:
+`indexer_state.intents_ok` must equal `true` with `updated_at` age 0–120 seconds.
+A fresh successful bounded pass is required; the age/count of individual pending
+or failed intents is not a global veto. Fresh-nonce duplicate ballots retain the
+existing database 409 conflict behavior and roll back their signature/receipt;
+exact accepted-nonce retries continue to return the persisted successful response.
+
+`20261014000104_complete_proposal_immutability.sql` seals the complete opened
+content/freeze tuple, including displayed `body_html`, block hashes and epochs.
+Proposal id/chain/proposer/created_at remain immutable even while draft; only
+snapshot incident/validity are deliberately writer-mutable. API startup rejects
+UPDATE grants on identity columns while retaining their required draft INSERT
+rights. Cargo tracks the migration directory through `ledger/build.rs`, so an
+incremental build cannot silently omit a newly added forward migration.

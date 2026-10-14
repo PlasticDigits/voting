@@ -35,6 +35,13 @@ vi.mock('@/hooks/useVotingSnapshot', () => ({
 
 vi.mock('@/services/operatorVoting', () => ({
   createProposal: vi.fn(),
+  canonicalizeForSigning: vi.fn(),
+  getMetadata: vi.fn().mockResolvedValue({
+    protocol_version: 2,
+    min_proposal_raw: '1000000000000000000000',
+    decimals: 18,
+    capabilities: [],
+  }),
 }))
 
 const SECTION = 'This draft section has forty visible characters.'
@@ -54,13 +61,15 @@ describe('propose gate', () => {
     render(
       <MemoryRouter>
         <VoteNewPage />
-      </MemoryRouter>
+      </MemoryRouter>,
     )
     const button = await screen.findByTestId('submit-proposal')
     fireEvent.change(screen.getByTestId('proposal-title'), { target: { value: 'Title' } })
     fillRequiredSections()
     expect(button).toBeDisabled()
-    expect(screen.getByTestId('propose-balance')).toHaveTextContent('need 1000')
+    await waitFor(() =>
+      expect(screen.getByTestId('propose-balance')).toHaveTextContent('need 1000'),
+    )
   })
 
   it('enables submit at the 1000 CL8Y boundary once titled and templated', async () => {
@@ -70,7 +79,7 @@ describe('propose gate', () => {
     render(
       <MemoryRouter>
         <VoteNewPage />
-      </MemoryRouter>
+      </MemoryRouter>,
     )
     const input = await screen.findByTestId('proposal-title')
     fireEvent.change(input, { target: { value: 'Boundary' } })
@@ -88,7 +97,7 @@ describe('propose gate', () => {
     render(
       <MemoryRouter>
         <VoteNewPage />
-      </MemoryRouter>
+      </MemoryRouter>,
     )
     fireEvent.change(await screen.findByTestId('proposal-title'), { target: { value: 'Ctx' } })
     fillRequiredSections()
@@ -105,7 +114,7 @@ describe('propose gate', () => {
     render(
       <MemoryRouter>
         <VoteNewPage />
-      </MemoryRouter>
+      </MemoryRouter>,
     )
     expect(await screen.findByText('The idea or problem to be solved')).toBeInTheDocument()
     expect(screen.getByText('Pros and cons / trade-offs')).toBeInTheDocument()
@@ -120,7 +129,7 @@ describe('propose gate', () => {
     render(
       <MemoryRouter>
         <VoteNewPage />
-      </MemoryRouter>
+      </MemoryRouter>,
     )
     expect(screen.queryByTestId('propose-balance')).toBeNull()
     expect(screen.getByTestId('propose-register-hint')).toBeInTheDocument()
@@ -134,7 +143,7 @@ describe('propose gate', () => {
     render(
       <MemoryRouter>
         <VoteNewPage />
-      </MemoryRouter>
+      </MemoryRouter>,
     )
     expect(screen.getByRole('alert')).toHaveTextContent('operator down')
     expect(await screen.findByTestId('submit-proposal')).toBeDisabled()
@@ -149,10 +158,49 @@ describe('propose gate', () => {
     render(
       <MemoryRouter>
         <VoteNewPage />
-      </MemoryRouter>
+      </MemoryRouter>,
     )
     expect(screen.getByTestId('propose-pending')).toBeInTheDocument()
     expect(await screen.findByTestId('submit-proposal')).toBeDisabled()
     expect(screen.queryByTestId('propose-balance')).toBeNull()
   })
+})
+
+it('rejects a title beyond the server UTF8 byte boundary before signing', async () => {
+  snapshot.status = 'registered'
+  snapshot.balance = MIN_PROPOSAL_RAW.toString()
+  snapshot.error = null
+  render(
+    <MemoryRouter>
+      <VoteNewPage />
+    </MemoryRouter>,
+  )
+  fireEvent.change(await screen.findByTestId('proposal-title'), {
+    target: { value: '🚀'.repeat(51) },
+  })
+  fillRequiredSections()
+  expect(await screen.findByTestId('title-too-long')).toHaveTextContent('Shorten it before signing')
+  expect(screen.getByTestId('submit-proposal')).toBeDisabled()
+  fireEvent.change(screen.getByTestId('proposal-title'), { target: { value: '🚀'.repeat(50) } })
+  await waitFor(() => expect(screen.getByTestId('submit-proposal')).toBeEnabled())
+})
+
+it('allows a valid Unicode summary without an unrelated UTF16 input cap', async () => {
+  snapshot.status = 'registered'
+  snapshot.balance = MIN_PROPOSAL_RAW.toString()
+  snapshot.error = null
+  render(
+    <MemoryRouter>
+      <VoteNewPage />
+    </MemoryRouter>,
+  )
+  fireEvent.change(await screen.findByTestId('proposal-title'), {
+    target: { value: 'Unicode summary' },
+  })
+  fillRequiredSections()
+  const summary = screen.getByTestId('proposal-section-summary')
+  expect(summary).not.toHaveAttribute('maxlength')
+  fireEvent.change(summary, { target: { value: '🚀'.repeat(400) } })
+  await waitFor(() => expect(screen.getByTestId('submit-proposal')).toBeEnabled())
+  expect(screen.getByTestId('section-count-summary')).toHaveTextContent('400')
 })

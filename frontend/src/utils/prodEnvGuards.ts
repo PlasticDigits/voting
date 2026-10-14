@@ -6,10 +6,39 @@
  * `import.meta.env` so Node (Vite config) and Vitest can both import it.
  */
 
-export function productionEnvViolations(
-  env: Record<string, string | undefined>,
-): string[] {
+export function productionEnvViolations(env: Record<string, string | undefined>): string[] {
   const violations: string[] = []
+  try {
+    const api = new URL(env.VITE_OPERATOR_VOTING_URL ?? '')
+    if (
+      api.protocol !== 'https:' ||
+      api.username ||
+      api.password ||
+      api.search ||
+      api.hash ||
+      /^(localhost|127\.|\[?::1\]?$)/.test(api.hostname)
+    ) {
+      violations.push(
+        'VITE_OPERATOR_VOTING_URL must be a public HTTPS URL without credentials, query or fragment.',
+      )
+    }
+  } catch {
+    violations.push('VITE_OPERATOR_VOTING_URL is required and must be an absolute HTTPS URL.')
+  }
+  if (env.VITE_NETWORK && env.VITE_NETWORK !== 'mainnet')
+    violations.push('VITE_NETWORK must be mainnet for production builds.')
+  if (env.VITE_EVM_CHAIN_ID && env.VITE_EVM_CHAIN_ID !== '56')
+    violations.push('VITE_EVM_CHAIN_ID must be 56 for production builds.')
+  if (env.VITE_TERRA_CHAIN_ID && env.VITE_TERRA_CHAIN_ID !== 'columbus-5')
+    violations.push('VITE_TERRA_CHAIN_ID must be columbus-5 for production builds.')
+  for (const key of [
+    'VITE_DEV_MODE',
+    'VITE_DEV_WALLET',
+    'VITE_SIMULATED_WALLET',
+    'VITE_USE_DEV_WALLET',
+  ]) {
+    if (env[key]?.trim()) violations.push(`${key} must be unset for production builds.`)
+  }
 
   if (env.VITE_PLAYWRIGHT_E2E?.trim()) {
     violations.push('VITE_PLAYWRIGHT_E2E must be unset for production builds (O3).')

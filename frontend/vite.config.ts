@@ -3,9 +3,9 @@ import react from '@vitejs/plugin-react'
 import path from 'path'
 import { assertProductionVotingEnv } from './src/utils/prodEnvGuards'
 
-export default defineConfig(({ mode }) => {
+export default defineConfig(({ mode, command }) => {
   const env = loadEnv(mode, __dirname, 'VITE_')
-  if (mode === 'production') {
+  if (command === 'build') {
     assertProductionVotingEnv(env)
   }
 

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { buildSignUrl } from '@/vendor/cl8y-clickwrap'
 import ConnectedTermsGate from '@/components/legal/ConnectedTermsGate'
 import { useWalletStore } from '@/hooks/useWallet'
 import { useEvmWalletStore } from '@/stores/evmWallet'
@@ -39,6 +40,11 @@ const TERMS_LATEST = {
     solana: 'https://terms.cl8y.com/sign/solana',
   },
 }
+
+vi.mock('@/vendor/cl8y-clickwrap', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/vendor/cl8y-clickwrap')>()
+  return { ...actual, buildSignUrl: vi.fn(actual.buildSignUrl) }
+})
 
 vi.mock('@plasticdigits/cl8y-clickwrap', async () => {
   const vendor = await import('@/vendor/cl8y-clickwrap')
@@ -238,8 +244,6 @@ describe('ConnectedTermsGate', () => {
   })
 
   it('Accept URL includes property, redirect_uri, app_name, and the connected account', async () => {
-    const loc = { href: 'http://localhost:5176/' }
-    vi.stubGlobal('location', loc)
     connectUnsignedEvm('mock')
 
     render(
@@ -249,12 +253,13 @@ describe('ConnectedTermsGate', () => {
     )
 
     const accept = await screen.findByRole('button', { name: /accept terms/i })
+    await waitFor(() => expect(accept).toBeEnabled())
+    // jsdom cannot navigate. Verify the URL built by the actual Accept handler instead.
+    const urlBuilder = vi.mocked(buildSignUrl)
+    urlBuilder.mockClear()
     fireEvent.click(accept)
-
-    await waitFor(() => {
-      expect(loc.href).toContain('sign/evm')
-    })
-    const href = loc.href
+    expect(urlBuilder).toHaveBeenCalledOnce()
+    const href = urlBuilder.mock.results[0].value as string
     expect(href).toContain('sign/evm')
     expect(href).toContain('property=vote.cl8y.com')
     expect(href).toContain('app_name=CL8Y+Voting')

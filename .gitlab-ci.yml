@@ -15,7 +15,7 @@ lint:gitleaks:
 
 test:rust:
   stage: test
-  image: rust:1.88
+  image: rust:1.88.0
   script:
     - cargo test --workspace --lib --bins
   rules:
@@ -24,24 +24,32 @@ test:rust:
 
 test:rust-integration:
   stage: test
-  image: rust:1.88
+  image: rust:1.88.0
   services:
     - name: postgres:16-alpine
       alias: postgres
   variables:
     POSTGRES_USER: voting
     POSTGRES_PASSWORD: voting
-    POSTGRES_DB: voting
-    LEDGER_TEST_DATABASE_URL: postgres://voting:voting@postgres:5432/voting
+    POSTGRES_DB: voting_test_ci
+    LEDGER_TEST_DATABASE_URL: postgres://voting:voting@postgres:5432/voting_test_ci
+    LEDGER_TEST_ALLOW_DESTRUCTIVE: "1"
+    LEDGER_TEST_REQUIRED: "1"
+    LEDGER_TEST_ALLOW_CI_SERVICE: "1"
+    VOTING_CONTRACT_CAPTURE_PATH: /tmp/voting-contracts.jsonl
   before_script:
-    - apt-get update && apt-get install -y --no-install-recommends pkg-config libssl-dev postgresql-client
+    - apt-get update && apt-get install -y --no-install-recommends pkg-config libssl-dev postgresql-client python3-venv
+    - python3 -m venv /tmp/voting-validator
+    - /tmp/voting-validator/bin/pip install --disable-pip-version-check -r scripts/requirements-verify.txt
     - |
       for i in $(seq 1 30); do
-        pg_isready -h postgres -U voting -d voting && break
+        pg_isready -h postgres -U voting -d voting_test_ci && break
         sleep 2
       done
+    - PGPASSWORD="$POSTGRES_PASSWORD" psql -h postgres -U voting -d voting_test_ci -v ON_ERROR_STOP=1 -c "COMMENT ON DATABASE voting_test_ci IS 'cl8y-voting-ephemeral-test'"
   script:
     - cargo test --workspace --tests --jobs 1 -- --test-threads=1
+    - /tmp/voting-validator/bin/python scripts/verify-api-contracts.py /tmp/voting-contracts.jsonl --require-success
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
@@ -56,6 +64,7 @@ test:frontend:
   script:
     - cd frontend
     - npm ci
+    - npm exec patch-package
     - npm test
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"

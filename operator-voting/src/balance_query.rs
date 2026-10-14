@@ -102,7 +102,10 @@ mod tests {
 
     #[test]
     fn freeze_clamps_only_the_proposer_chain() {
-        assert_eq!(freeze_heights("terra", 50, 9_000_000, 100), (100, 9_000_000));
+        assert_eq!(
+            freeze_heights("terra", 50, 9_000_000, 100),
+            (100, 9_000_000)
+        );
         assert_eq!(freeze_heights("bsc", 15_000_000, 40, 80), (15_000_000, 80));
     }
 }

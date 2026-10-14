@@ -31,7 +31,11 @@ pub struct Registration {
 }
 
 pub async fn migrate(pool: &PgPool) -> LedgerResult<()> {
-    sqlx::migrate!("./migrations").run(pool).await?;
+    let mut connection = pool.acquire().await?;
+    sqlx::query("SET search_path TO public, pg_temp")
+        .execute(&mut *connection)
+        .await?;
+    sqlx::migrate!("./migrations").run(&mut *connection).await?;
     Ok(())
 }
 
@@ -55,6 +59,12 @@ pub async fn insert_registration(
     signature_id: Option<uuid::Uuid>,
 ) -> LedgerResult<bool> {
     let wallet = normalize_wallet(chain, wallet)?;
+    validate_amount(initial_balance)?;
+    if height <= 0 {
+        return Err(LedgerError::Conflict("invalid registration height".into()));
+    }
+    let mut tx = pool.begin().await?;
+    lock_chain(&mut tx, chain).await?;
     let result = sqlx::query(
         r#"
         INSERT INTO voting_registrations
@@ -68,8 +78,9 @@ pub async fn insert_registration(
     .bind(height)
     .bind(initial_balance.to_string())
     .bind(signature_id)
-    .execute(pool)
+    .execute(&mut *tx)
     .await?;
+    tx.commit().await?;
     Ok(result.rows_affected() > 0)
 }
 
@@ -104,7 +115,7 @@ pub async fn get_registration(
 pub async fn max_registered_height(pool: &PgPool, chain: Chain) -> LedgerResult<i64> {
     let v: Option<i64> = sqlx::query_scalar(
         r#"
-        SELECT MAX(registered_at_height)
+        SELECT MAX(COALESCE(baseline_height,registered_at_height))
         FROM voting_registrations
         WHERE chain = $1 AND status = 'active'
         "#,
@@ -155,6 +166,7 @@ pub async fn apply_cw20_transfers(
         return Ok(());
     }
     let mut tx = pool.begin().await?;
+    lock_chain(&mut tx, Chain::Terra).await?;
     for (i, t) in transfers.iter().enumerate() {
         persist_terra_leg(&mut tx, t, height, tx_hash, i as i32).await?;
     }
@@ -162,19 +174,23 @@ pub async fn apply_cw20_transfers(
     Ok(())
 }
 
-async fn persist_terra_leg(
+pub async fn persist_terra_leg(
     tx: &mut Transaction<'_, Postgres>,
     t: &Cw20Transfer,
     height: i64,
     tx_hash: &str,
     msg_index: i32,
 ) -> LedgerResult<()> {
-    sqlx::query(
+    validate_amount(&t.amount)?;
+    if height <= 0 || tx_hash.is_empty() {
+        return Err(LedgerError::Conflict("invalid Terra event identity".into()));
+    }
+    let inserted = sqlx::query(
         r#"
         INSERT INTO cl8y_cw20_transfers
             (height, tx_hash, msg_index, from_address, to_address, amount, action)
         VALUES ($1, $2, $3, $4, $5, $6::numeric, $7)
-        ON CONFLICT (tx_hash, msg_index, from_address, to_address, amount) DO NOTHING
+        ON CONFLICT (tx_hash, msg_index) DO NOTHING
         "#,
     )
     .bind(height)
@@ -187,8 +203,18 @@ async fn persist_terra_leg(
     .execute(&mut **tx)
     .await?;
 
+    if inserted.rows_affected() == 0 {
+        let same: bool=sqlx::query_scalar("SELECT height=$3 AND from_address=$4 AND to_address=$5 AND amount=$6::numeric AND action=$7 FROM cl8y_cw20_transfers WHERE tx_hash=$1 AND msg_index=$2")
+            .bind(tx_hash).bind(msg_index).bind(height).bind(&t.from).bind(&t.to).bind(t.amount.to_string()).bind(&t.action).fetch_one(&mut **tx).await?;
+        if !same {
+            return Err(LedgerError::Conflict(
+                "conflicting Terra event identity".into(),
+            ));
+        }
+        return Ok(());
+    }
     for wallet in unique_nonempty(&[&t.from, &t.to]) {
-        if !is_registered_in_tx(tx, Chain::Terra, &wallet).await? {
+        if !is_registered_in_tx(tx, Chain::Terra, &wallet, height).await? {
             continue;
         }
         let prev = tip_balance_in_tx(tx, Chain::Terra, &wallet).await?;
@@ -203,6 +229,7 @@ pub async fn apply_bep20_transfers(pool: &PgPool, transfers: &[Bep20Transfer]) -
         return Ok(());
     }
     let mut tx = pool.begin().await?;
+    lock_chain(&mut tx, Chain::Bsc).await?;
     for t in transfers {
         persist_bsc_leg(&mut tx, t).await?;
     }
@@ -210,11 +237,15 @@ pub async fn apply_bep20_transfers(pool: &PgPool, transfers: &[Bep20Transfer]) -
     Ok(())
 }
 
-async fn persist_bsc_leg(
+pub async fn persist_bsc_leg(
     tx: &mut Transaction<'_, Postgres>,
     t: &Bep20Transfer,
 ) -> LedgerResult<()> {
-    sqlx::query(
+    validate_amount(&t.amount)?;
+    if t.bsc_block <= 0 || t.tx_hash.is_empty() || t.log_index < 0 {
+        return Err(LedgerError::Conflict("invalid BSC event identity".into()));
+    }
+    let inserted = sqlx::query(
         r#"
         INSERT INTO cl8y_bep20_transfers
             (bsc_block, tx_hash, log_index, from_address, to_address, amount)
@@ -231,8 +262,18 @@ async fn persist_bsc_leg(
     .execute(&mut **tx)
     .await?;
 
+    if inserted.rows_affected() == 0 {
+        let same: bool=sqlx::query_scalar("SELECT bsc_block=$3 AND from_address=$4 AND to_address=$5 AND amount=$6::numeric FROM cl8y_bep20_transfers WHERE tx_hash=$1 AND log_index=$2")
+            .bind(&t.tx_hash).bind(t.log_index).bind(t.bsc_block).bind(&t.from).bind(&t.to).bind(t.amount.to_string()).fetch_one(&mut **tx).await?;
+        if !same {
+            return Err(LedgerError::Conflict(
+                "conflicting BSC event identity".into(),
+            ));
+        }
+        return Ok(());
+    }
     for wallet in unique_nonempty(&[&t.from, &t.to]) {
-        if !is_registered_in_tx(tx, Chain::Bsc, &wallet).await? {
+        if !is_registered_in_tx(tx, Chain::Bsc, &wallet, t.bsc_block).await? {
             continue;
         }
         let prev = tip_balance_in_tx(tx, Chain::Bsc, &wallet).await?;
@@ -246,12 +287,14 @@ async fn is_registered_in_tx(
     tx: &mut Transaction<'_, Postgres>,
     chain: Chain,
     wallet: &str,
+    height: i64,
 ) -> LedgerResult<bool> {
     let found: Option<i32> = sqlx::query_scalar(
-        "SELECT 1 FROM voting_registrations WHERE chain = $1 AND wallet_address = $2 AND status = 'active'",
+        "SELECT 1 FROM voting_registrations WHERE chain = $1 AND wallet_address = $2 AND status = 'active' AND COALESCE(baseline_height,registered_at_height) < $3",
     )
     .bind(chain.as_str())
     .bind(wallet)
+    .bind(height)
     .fetch_optional(&mut **tx)
     .await?;
     Ok(found.is_some())
@@ -283,6 +326,27 @@ async fn upsert_checkpoint(
     height: i64,
     balance: &BigInt,
 ) -> LedgerResult<()> {
+    let (table, column) = match chain {
+        Chain::Terra => ("cl8y_balances", "height"),
+        Chain::Bsc => ("cl8y_bsc_balances", "bsc_block"),
+    };
+    let latest: Option<i64> = sqlx::query_scalar(&format!(
+        "SELECT MAX({column}) FROM {table} WHERE wallet_address=$1"
+    ))
+    .bind(wallet)
+    .fetch_one(&mut **tx)
+    .await?;
+    if latest.is_some_and(|h| h > height) {
+        return Err(LedgerError::Conflict(
+            "out-of-order accounting event".into(),
+        ));
+    }
+    if balance < &BigInt::from(0) {
+        return Err(LedgerError::Conflict(
+            "balance underflow; accounting degraded".into(),
+        ));
+    }
+    validate_amount(balance)?;
     match chain {
         Chain::Terra => {
             sqlx::query(
@@ -318,6 +382,7 @@ async fn upsert_checkpoint(
 
 pub async fn rewind_terra(pool: &PgPool, after_height: i64) -> LedgerResult<()> {
     let mut tx = pool.begin().await?;
+    lock_chain(&mut tx, Chain::Terra).await?;
     sqlx::query("DELETE FROM cl8y_cw20_transfers WHERE height > $1")
         .bind(after_height)
         .execute(&mut *tx)
@@ -333,6 +398,7 @@ pub async fn rewind_terra(pool: &PgPool, after_height: i64) -> LedgerResult<()> 
 
 pub async fn rewind_bsc(pool: &PgPool, after_block: i64) -> LedgerResult<()> {
     let mut tx = pool.begin().await?;
+    lock_chain(&mut tx, Chain::Bsc).await?;
     sqlx::query("DELETE FROM cl8y_bep20_transfers WHERE bsc_block > $1")
         .bind(after_block)
         .execute(&mut *tx)
@@ -369,7 +435,7 @@ pub async fn set_state(pool: &PgPool, key: &str, value: &str) -> LedgerResult<()
     Ok(())
 }
 
-async fn set_state_in_tx(
+pub async fn set_state_in_tx(
     tx: &mut Transaction<'_, Postgres>,
     key: &str,
     value: &str,
@@ -389,27 +455,21 @@ async fn set_state_in_tx(
 }
 
 pub async fn indexed_terra_height(pool: &PgPool) -> LedgerResult<i64> {
-    Ok(get_state(pool, "last_indexed_height")
-        .await?
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(0))
+    parse_cursor(get_state(pool, "last_indexed_height").await?)
 }
 
 pub async fn indexed_bsc_block(pool: &PgPool) -> LedgerResult<i64> {
-    Ok(get_state(pool, "last_indexed_bsc_block")
-        .await?
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(0))
+    parse_cursor(get_state(pool, "last_indexed_bsc_block").await?)
 }
 
 pub async fn mark_intent_processed(pool: &PgPool, id: uuid::Uuid) -> LedgerResult<()> {
-    sqlx::query("UPDATE voting.registration_intents SET processed_at = NOW() WHERE id = $1")
+    sqlx::query("UPDATE voting.registration_intents SET processed_at = NOW(),retry_after=NULL,last_error_class=NULL WHERE id = $1")
         .bind(id)
         .execute(pool)
         .await
         .map(|_| ())
         .map_err(|e| {
-            tracing::error!(error = %e, "mark_intent_processed failed (L12)");
+            tracing::error!(error_class="database", "mark_intent_processed failed (L12)");
             LedgerError::Database(e)
         })
 }
@@ -421,15 +481,16 @@ pub async fn pending_intents(
         r#"
         SELECT id, chain, wallet_address, signature_id
         FROM voting.registration_intents
-        WHERE processed_at IS NULL
-        ORDER BY created_at ASC
+        WHERE processed_at IS NULL AND (retry_after IS NULL OR retry_after<=NOW())
+        ORDER BY COALESCE(last_attempt_at, created_at) ASC
+        LIMIT 16
         "#,
     )
     .fetch_all(pool)
     .await
     .map_err(|e| {
         tracing::error!(
-            error = %e,
+            error_class = "database",
             "pending_intents query failed; not treating as an empty queue (L12)"
         );
         LedgerError::Database(e)
@@ -448,4 +509,83 @@ fn unique_nonempty(addrs: &[&str]) -> Vec<String> {
         }
     }
     out
+}
+
+/// Production discipline shared by registration, ingest, rewind and freeze.
+pub async fn lock_chain(tx: &mut Transaction<'_, Postgres>, chain: Chain) -> LedgerResult<()> {
+    sqlx::query("SELECT pg_advisory_xact_lock(8136, $1)")
+        .bind(match chain {
+            Chain::Terra => 1_i32,
+            Chain::Bsc => 2_i32,
+        })
+        .execute(&mut **tx)
+        .await?;
+    Ok(())
+}
+pub async fn publish_checkpoint(
+    tx: &mut Transaction<'_, Postgres>,
+    chain: Chain,
+    height: i64,
+    hash: &str,
+    tip: i64,
+) -> LedgerResult<()> {
+    let current: Option<i64> =
+        sqlx::query_scalar("SELECT height FROM ledger_checkpoints WHERE chain=$1")
+            .bind(chain.as_str())
+            .fetch_optional(&mut **tx)
+            .await?;
+    if current.is_some_and(|h| h > height) {
+        return Err(LedgerError::Provider("checkpoint_regression"));
+    }
+    sqlx::query("INSERT INTO ledger_canonical_blocks(chain,height,block_hash) VALUES($1,$2,$3) ON CONFLICT(chain,height) DO UPDATE SET block_hash=EXCLUDED.block_hash")
+        .bind(chain.as_str()).bind(height).bind(hash).execute(&mut **tx).await?;
+    sqlx::query("INSERT INTO ledger_checkpoints(chain,height,block_hash,observed_at,complete,canonical,network_tip) VALUES($1,$2,$3,NOW(),true,true,$4) ON CONFLICT(chain) DO UPDATE SET height=$2,block_hash=$3,observed_at=NOW(),complete=true,canonical=true,degraded_reason=NULL,network_tip=$4")
+        .bind(chain.as_str()).bind(height).bind(hash).bind(tip).execute(&mut **tx).await?;
+    set_state_in_tx(
+        tx,
+        match chain {
+            Chain::Terra => "last_indexed_height",
+            Chain::Bsc => "last_indexed_bsc_block",
+        },
+        &height.to_string(),
+    )
+    .await?;
+    set_state_in_tx(
+        tx,
+        match chain {
+            Chain::Terra => "last_indexed_block_hash",
+            Chain::Bsc => "last_indexed_bsc_block_hash",
+        },
+        hash,
+    )
+    .await?;
+    sqlx::query("DELETE FROM ledger_canonical_blocks WHERE chain=$1 AND height < $2")
+        .bind(chain.as_str())
+        .bind(height.saturating_sub(128))
+        .execute(&mut **tx)
+        .await?;
+    Ok(())
+}
+pub async fn degrade(pool: &PgPool, chain: Chain, reason: &str) -> LedgerResult<()> {
+    sqlx::query("INSERT INTO ledger_checkpoints(chain,degraded_reason) VALUES($1,$2) ON CONFLICT(chain) DO UPDATE SET complete=false,canonical=false,degraded_reason=CASE WHEN ledger_checkpoints.degraded_reason IN ('legacy_electorate_requires_reconciliation','missing_canonical_history','fork_beyond_horizon','registration_baseline_orphaned','lost_registered_history','baseline_recovery_requested','accounting_corruption','accounting_invalid_amount') THEN ledger_checkpoints.degraded_reason ELSE $2 END")
+        .bind(chain.as_str()).bind(reason).execute(pool).await?;
+    Ok(())
+}
+
+fn parse_cursor(value: Option<String>) -> LedgerResult<i64> {
+    match value {
+        None => Ok(0),
+        Some(raw) => raw
+            .parse::<i64>()
+            .ok()
+            .filter(|h| *h >= 0)
+            .ok_or(LedgerError::Provider("malformed_cursor")),
+    }
+}
+
+fn validate_amount(amount: &BigInt) -> LedgerResult<()> {
+    if amount < &BigInt::from(0) || amount >= &(BigInt::from(1) << 256) {
+        return Err(LedgerError::Amount("amount outside uint256 range".into()));
+    }
+    Ok(())
 }

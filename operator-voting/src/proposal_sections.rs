@@ -67,7 +67,7 @@ pub struct PreparedSections {
 
 /// Typed compatibility view used by lifecycle tests and analysis code.
 /// Validation and hashing still flow through `prepare_sections`.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct ProposalSections {
     #[serde(default)]
     pub problem: String,
@@ -83,7 +83,7 @@ pub struct ProposalSections {
     pub success_criteria: String,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct AnalysisSections {
     #[serde(default)]
     pub what: String,
@@ -306,6 +306,9 @@ pub fn prepare_analysis(
     }
     let canonical = serde_json::to_string(&Value::Object(canonical_map))
         .map_err(|e| VotingError::BadRequest(format!("canonicalize analysis: {e}")))?;
+    if canonical.len() > MAX_BODY_BYTES {
+        return Err(VotingError::BadRequest("analysis exceeds 64 KiB".into()));
+    }
     Ok((sanitized, canonical.clone(), body_hash(&canonical)))
 }
 

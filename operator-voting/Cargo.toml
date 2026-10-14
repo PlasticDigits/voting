@@ -7,6 +7,8 @@ publish.workspace = true
 description = "Offchain CL8Y voting control plane (ADR-36 + EIP-191)"
 
 [dependencies]
+ipnet = "2"
+url = "2"
 ammonia.workspace = true
 async-trait.workspace = true
 axum.workspace = true

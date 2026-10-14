@@ -7,7 +7,6 @@ pub use bep20::{
 pub use cw20::{parse_cw20_wasm_events, Cw20Attribute, Cw20Event, Cw20Transfer};
 
 use num_bigint::BigInt;
-use num_traits::Zero;
 
 /// Apply a single transfer to a registered wallet's running balance.
 /// Self-transfer (from == to) is a no-op. Mint credits `to`; burn debits `from`.
@@ -31,11 +30,7 @@ pub fn apply_transfer(
     if to_n == wallet_n {
         next += amount;
     }
-    if next < BigInt::zero() {
-        BigInt::zero()
-    } else {
-        next
-    }
+    next
 }
 
 #[cfg(test)]

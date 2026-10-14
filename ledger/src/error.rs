@@ -1,14 +1,16 @@
 use thiserror::Error;
 
-#[derive(Debug, Error)]
+#[derive(Error)]
 pub enum LedgerError {
+    #[error("provider: {0}")]
+    Provider(&'static str),
     #[error("missing required env {0}")]
     MissingEnv(&'static str),
     #[error("invalid config: {0}")]
     InvalidConfig(String),
-    #[error("database: {0}")]
+    #[error("database error")]
     Database(#[from] sqlx::Error),
-    #[error("migrate: {0}")]
+    #[error("migration error")]
     Migrate(#[from] sqlx::migrate::MigrateError),
     #[error("lcd: {0}")]
     Lcd(String),
@@ -26,8 +28,14 @@ pub enum LedgerError {
         expected: String,
         actual: String,
     },
-    #[error("io: {0}")]
+    #[error("I/O error")]
     Io(#[from] std::io::Error),
 }
 
 pub type LedgerResult<T> = Result<T, LedgerError>;
+
+impl std::fmt::Debug for LedgerError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(self, f)
+    }
+}

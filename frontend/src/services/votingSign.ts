@@ -19,6 +19,7 @@ export async function signVotingRequest(input: {
   proposal_id?: string
   choice?: VoteChoice
   prev_body_hash?: string
+  revision?: number
 }): Promise<SignedRequest> {
   const payload = buildSignedPayload(input)
   assertPurposeSeparation(payload, input.purpose)
