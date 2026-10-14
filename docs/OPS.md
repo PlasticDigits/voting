@@ -74,7 +74,8 @@ Wrong-chain MetaMask (not 56) and missing `signArbitrary` must show the existing
 
 ## 4. POST rate limits (in-tree, required before public expose)
 
-`operator-voting` uses `governor` keyed by client IP (equivalent to `tower-governor`).
+`operator-voting` uses a bounded token bucket keyed by verified client IP and
+transactional database quotas keyed by authenticated signed actors/actions.
 
 | Env | Prod default | Meaning |
 |-----|--------------|---------|
@@ -82,7 +83,7 @@ Wrong-chain MetaMask (not 56) and missing `signArbitrary` must show the existing
 | `RATE_LIMIT_POST_BURST` | `20` | Burst tokens |
 | `RATE_LIMIT_TRUST_FORWARDED` | `false` | Enable only with verified `RATE_LIMIT_TRUSTED_PROXY_CIDRS` |
 
-`RUN_MODE=prod` refuses to start if the quota is `0` **or** `APPLY_MIGRATIONS` is true. GET `/health` is unlimited. Quota is **per replica** (O-RL5). A 429 includes `Retry-After`.
+`RUN_MODE=prod` refuses to start if the quota is `0` **or** `APPLY_MIGRATIONS` is true. GET `/health` is unlimited. The peer quota is per process; production requires `VOTING_API_REPLICAS=1`. Authenticated actor quotas are shared through PostgreSQL. A 429 includes `Retry-After`.
 
 Staging 429 smoke must be a **parallel** burst. GCRA refills ~1 token/s at the prod default (60/min, burst 20), so 25 sequential curls over 20s never trip the limiter. Example that does:
 
@@ -105,7 +106,7 @@ print(sorted(set(codes)), '429 count', codes.count(429))
 PY
 ```
 
-Expect some `422` (invalid body), many `429` with `Retry-After`, and `GET /health` still 200. A few proxy `502`s under burst are not a fail by themselves.
+Expect some `422` (invalid body), many `429` with `Retry-After`, and `GET /health` still 200. Investigate proxy failures rather than treating them as successful API responses. Use a small isolated maintenance quota for release edge verification instead of a public abuse burst.
 
 ## 5. LocalTerra / LCD equality (optional)
 
@@ -203,6 +204,9 @@ Never emit provider credential URLs or raw secret-bearing deployment/environment
 Close an issue only after its body and all comments have been checked against actual
 results. Unavailable live checks remain unchecked and the issue remains open. Third-party
 agent guidance and release evidence must link each issue to its implementing commits.
+
+Combined issue 36–43 implementation and verification evidence is maintained in
+[`verification/2026-10-14-issues-36-43.md`](verification/2026-10-14-issues-36-43.md).
 
 
 Release control uses [`scripts/coolify-release.py`](../scripts/coolify-release.py)

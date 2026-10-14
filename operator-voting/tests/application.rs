@@ -60,6 +60,17 @@ async fn production_put_preflight_and_strict_cors() {
         app(5).oneshot(r).await.unwrap().status(),
         StatusCode::FORBIDDEN
     );
+    let mut r = req("OPTIONS", "http://127.0.0.1:5173");
+    r.headers_mut()
+        .insert("access-control-request-method", "PUT".parse().unwrap());
+    r.headers_mut().insert(
+        "access-control-request-headers",
+        "content-type,x-unapproved-header".parse().unwrap(),
+    );
+    assert_eq!(
+        app(5).oneshot(r).await.unwrap().status(),
+        StatusCode::FORBIDDEN
+    );
     let response = app(5)
         .oneshot(req("PUT", "http://127.0.0.1:5173"))
         .await
