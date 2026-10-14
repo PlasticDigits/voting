@@ -4298,3 +4298,450 @@ async fn reordered_new_ingest_blocks_reject_gaps_then_retry_canonical_order_both
     terra_server.abort();
     bsc_server.abort();
 }
+
+struct ArrivalSource {
+    state: TerraForkFixture,
+    poison_seen: Arc<tokio::sync::Notify>,
+}
+#[async_trait::async_trait]
+impl voting_ledger::register::LiveBalanceSource for ArrivalSource {
+    async fn terra_live_balance(
+        &self,
+        wallet: &str,
+    ) -> Result<voting_ledger::register::LiveBalanceSnapshot, LedgerError> {
+        if wallet == "terra1poisonarrivals" {
+            self.poison_seen.notify_one();
+            std::future::pending::<()>().await;
+        }
+        let height = self.state.tip.load(Ordering::Relaxed);
+        Ok(voting_ledger::register::LiveBalanceSnapshot {
+            height,
+            amount: BigInt::from(10),
+            block_hash: self.state.hash(height),
+        })
+    }
+    async fn bsc_live_balance(
+        &self,
+        _: &str,
+    ) -> Result<voting_ledger::register::LiveBalanceSnapshot, LedgerError> {
+        unreachable!()
+    }
+}
+async fn insert_test_intent(pool: &sqlx::PgPool, wallet: &str) {
+    let signature = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO voting.signatures(id,chain,wallet_address,signature,payload_hash,purpose) VALUES($1,'terra',$2,'synthetic','synthetic','register')").bind(signature).bind(wallet).execute(pool).await.unwrap();
+    sqlx::query("INSERT INTO voting.registration_intents(chain,wallet_address,signature_id) VALUES('terra',$1,$2)").bind(wallet).bind(signature).execute(pool).await.unwrap();
+}
+
+#[tokio::test]
+async fn sustained_registration_arrivals_during_poison_timeout_keep_both_chains_progressing() {
+    let Some((pool, _lock)) = setup().await else {
+        return;
+    };
+    let (terra, state, terra_server) = terra_fork_server(104).await;
+    let tip = Arc::new(std::sync::atomic::AtomicI64::new(120));
+    let app = Router::new()
+        .fallback(axum::routing::post(rpc_fixture))
+        .with_state(RpcFixture {
+            bad: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            tip: tip.clone(),
+        });
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let rpc = format!("http://{}", listener.local_addr().unwrap());
+    let bsc_server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let lcd = LcdClient::new(vec![terra.clone()]);
+    let bsc = voting_ledger::bsc::BscClient::new(vec![rpc]);
+    let cfg = config(&terra);
+    seed_terra_fork_electorate(&pool, &state, false).await;
+    insert_test_intent(&pool, "terra1poisonarrivals").await;
+    insert_test_intent(&pool, "terra1earlyarrival").await;
+    let source = Arc::new(ArrivalSource {
+        state: state.clone(),
+        poison_seen: Arc::new(tokio::sync::Notify::new()),
+    });
+    let work_pool = pool.clone();
+    let work_source = source.clone();
+    let intents = tokio::spawn(async move {
+        loop {
+            assert!(voting_ledger::register::supervised_intent_pass(
+                &work_pool,
+                work_source.as_ref(),
+                Duration::from_secs(20)
+            )
+            .await
+            .unwrap());
+            tokio::time::sleep(Duration::from_millis(40)).await;
+        }
+    });
+    tokio::time::timeout(Duration::from_secs(2), source.poison_seen.notified())
+        .await
+        .unwrap();
+    let mut workers = Vec::new();
+    for chain in [Chain::Terra, Chain::Bsc] {
+        let work_pool = pool.clone();
+        let work_lcd = lcd.clone();
+        let work_bsc = bsc.clone();
+        let work_cfg = cfg.clone();
+        workers.push(tokio::spawn(async move {
+            loop {
+                voting_ledger::worker::poll_chain(
+                    &work_pool,
+                    &Some(work_lcd.clone()),
+                    &work_bsc,
+                    &work_cfg,
+                    chain,
+                )
+                .await
+                .unwrap();
+                tokio::time::sleep(Duration::from_millis(40)).await;
+            }
+        }));
+    }
+    let producer_pool = pool.clone();
+    let producer_state = state.clone();
+    let producer_tip = tip.clone();
+    let producer = tokio::spawn(async move {
+        for n in 0..32 {
+            if n % 8 == 0 {
+                producer_state.tip.fetch_add(2, Ordering::Relaxed);
+                producer_tip.fetch_add(2, Ordering::Relaxed);
+            }
+            insert_test_intent(&producer_pool, &format!("terra1arrival{n}")).await;
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    });
+    tokio::time::timeout(Duration::from_secs(25),async{loop{
+        assert!(!intents.is_finished(),"intent worker exited under sustained arrivals");
+        assert!(workers.iter().all(|w|!w.is_finished()),"core worker exited under sustained arrivals");
+        let complete:i64=sqlx::query_scalar("SELECT COUNT(*) FROM voting.registration_intents WHERE wallet_address<>'terra1poisonarrivals' AND processed_at IS NOT NULL").fetch_one(&pool).await.unwrap();
+        if complete==33 && db::indexed_terra_height(&pool).await.unwrap()==112 && db::indexed_bsc_block(&pool).await.unwrap()==113 {break;}
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }}).await.unwrap();
+    producer.await.unwrap();
+    let poison:(i32,String,bool)=sqlx::query_as("SELECT attempts,last_error_class,processed_at IS NULL FROM voting.registration_intents WHERE wallet_address='terra1poisonarrivals'").fetch_one(&pool).await.unwrap();
+    assert_eq!(poison, (1, "deadline".into(), true));
+    assert_eq!(
+        voting_ledger::health::readiness(&pool).await.0,
+        axum::http::StatusCode::OK
+    );
+    assert_eq!(
+        db::balance_at(&pool, Chain::Terra, ALICE, 112)
+            .await
+            .unwrap(),
+        BigInt::from(988)
+    );
+    assert_eq!(
+        db::balance_at(&pool, Chain::Bsc, EVM, 113).await.unwrap(),
+        BigInt::from(987)
+    );
+    let registered: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM voting_registrations WHERE wallet_address LIKE 'terra1%arrival%'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(registered, 33);
+    intents.abort();
+    let _ = intents.await;
+    for worker in workers {
+        worker.abort();
+        let _ = worker.await;
+    }
+    terra_server.abort();
+    bsc_server.abort();
+}
+
+#[derive(Clone)]
+struct PendingRpc {
+    inner: RpcFixture,
+    pending: Arc<tokio::sync::Notify>,
+}
+async fn pending_rpc_http(
+    State(state): State<PendingRpc>,
+    Json(body): Json<serde_json::Value>,
+) -> Json<serde_json::Value> {
+    if body["method"] == "eth_getLogs" && state.inner.bad.load(Ordering::Relaxed) == 25 {
+        state.pending.notify_one();
+        std::future::pending::<()>().await;
+    }
+    rpc_fixture(State(state.inner), Json(body)).await
+}
+fn launch_test_ledger(
+    terra: &str,
+    rpc: &str,
+    bind: &str,
+    database_url: &str,
+) -> tokio::process::Child {
+    tokio::process::Command::new(env!("CARGO_BIN_EXE_voting-ledger"))
+        .kill_on_drop(true)
+        .env_clear()
+        .env("DATABASE_URL", database_url)
+        .env("RUN_MODE", "prod")
+        .env("TERRA_LCD_URL", terra)
+        .env("BSC_RPC_URLS", rpc)
+        .env("API_BIND", bind)
+        .env("POLL_INTERVAL_MS", "100")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap()
+}
+async fn wait_child_status(
+    child: &mut tokio::process::Child,
+    http: &reqwest::Client,
+    base: &str,
+    expected: reqwest::StatusCode,
+) {
+    tokio::time::timeout(Duration::from_secs(8), async {
+        loop {
+            assert!(child.try_wait().unwrap().is_none(), "ledger child exited");
+            if http
+                .get(format!("{base}/ready"))
+                .send()
+                .await
+                .is_ok_and(|r| r.status() == expected)
+            {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(30)).await;
+        }
+    })
+    .await
+    .unwrap();
+}
+async fn terminate_child(child: &mut tokio::process::Child) {
+    assert!(std::process::Command::new("kill")
+        .arg("-TERM")
+        .arg(child.id().unwrap().to_string())
+        .status()
+        .unwrap()
+        .success());
+    let exit = tokio::time::timeout(Duration::from_secs(6), child.wait())
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(exit.success());
+}
+
+#[tokio::test]
+async fn process_sigterm_during_pending_bsc_rpc_rolls_back_and_restart_retries_funded_delta() {
+    let Some((pool, _lock)) = setup().await else {
+        return;
+    };
+    let (terra, state, terra_server) = terra_fork_server(110).await;
+    seed_terra_fork_electorate(&pool, &state, false).await;
+    sqlx::query(
+        "UPDATE ledger_checkpoints SET network_tip=CASE chain WHEN 'terra' THEN 110 ELSE 120 END",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let mode = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let tip = Arc::new(std::sync::atomic::AtomicI64::new(120));
+    let pending = Arc::new(tokio::sync::Notify::new());
+    let app = Router::new()
+        .fallback(axum::routing::post(pending_rpc_http))
+        .with_state(PendingRpc {
+            inner: RpcFixture {
+                bad: mode.clone(),
+                tip: tip.clone(),
+            },
+            pending: pending.clone(),
+        });
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let rpc = format!("http://{}", listener.local_addr().unwrap());
+    let bsc_server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let reserve = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = reserve.local_addr().unwrap();
+    drop(reserve);
+    let base = format!("http://{address}");
+    let database = std::env::var("LEDGER_TEST_DATABASE_URL").unwrap();
+    let http = reqwest::Client::new();
+    let mut child = launch_test_ledger(&terra, &rpc, &address.to_string(), &database);
+    wait_child_status(&mut child, &http, &base, reqwest::StatusCode::OK).await;
+    assert_eq!(db::indexed_terra_height(&pool).await.unwrap(), 110);
+    assert_eq!(db::indexed_bsc_block(&pool).await.unwrap(), 105);
+    let epoch: i64 = sqlx::query_scalar("SELECT epoch FROM ledger_checkpoints WHERE chain='bsc'")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    mode.store(25, Ordering::Relaxed);
+    tip.store(121, Ordering::Relaxed);
+    tokio::time::timeout(Duration::from_secs(3), pending.notified())
+        .await
+        .unwrap();
+    terminate_child(&mut child).await;
+    assert_eq!(db::indexed_bsc_block(&pool).await.unwrap(), 105);
+    assert_eq!(
+        db::balance_at(&pool, Chain::Bsc, EVM, 106).await.unwrap(),
+        BigInt::from(995)
+    );
+    mode.store(0, Ordering::Relaxed);
+    let mut restarted = launch_test_ledger(&terra, &rpc, &address.to_string(), &database);
+    wait_child_status(&mut restarted, &http, &base, reqwest::StatusCode::OK).await;
+    tokio::time::timeout(Duration::from_secs(3), async {
+        while db::indexed_bsc_block(&pool).await.unwrap() != 106 {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(
+        db::balance_at(&pool, Chain::Bsc, EVM, 106).await.unwrap(),
+        BigInt::from(994)
+    );
+    let recovered: i64 =
+        sqlx::query_scalar("SELECT epoch FROM ledger_checkpoints WHERE chain='bsc'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(recovered, epoch);
+    let rows: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM cl8y_bep20_transfers")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(rows, 6);
+    terminate_child(&mut restarted).await;
+    terra_server.abort();
+    bsc_server.abort();
+}
+
+#[tokio::test]
+async fn process_database_session_loss_fails_readiness_then_restores_without_new_epoch() {
+    use sqlx::Connection;
+    let Some((pool, _lock)) = setup().await else {
+        return;
+    };
+    let (terra, state, terra_server) = terra_fork_server(110).await;
+    let (rpc, _, bsc_server) = rpc_server().await;
+    seed_terra_fork_electorate(&pool, &state, false).await;
+    sqlx::query(
+        "UPDATE ledger_checkpoints SET network_tip=CASE chain WHEN 'terra' THEN 110 ELSE 120 END",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let database = std::env::var("LEDGER_TEST_DATABASE_URL").unwrap();
+    let name = voting_ledger::test_lock::validate_test_url(&database, true).unwrap();
+    let quoted = name.replace('"', "\"\"");
+    let mut admin_url = reqwest::Url::parse(&database).unwrap();
+    admin_url.set_path("/postgres");
+    let mut control = sqlx::PgConnection::connect(admin_url.as_str())
+        .await
+        .unwrap();
+    let tag = format!("voting-db-fault-{}", uuid::Uuid::new_v4());
+    assert!(tag.len() <= 63);
+    let mut child_url = reqwest::Url::parse(&database).unwrap();
+    child_url
+        .query_pairs_mut()
+        .append_pair("application_name", &tag);
+    let reserve = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = reserve.local_addr().unwrap();
+    drop(reserve);
+    let base = format!("http://{address}");
+    let http = reqwest::Client::new();
+    let mut child = launch_test_ledger(&terra, &rpc, &address.to_string(), child_url.as_str());
+    wait_child_status(&mut child, &http, &base, reqwest::StatusCode::OK).await;
+    let tagged: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM pg_catalog.pg_stat_activity WHERE datname=$1 AND application_name=$2",
+    )
+    .bind(&name)
+    .bind(&tag)
+    .fetch_one(&mut control)
+    .await
+    .unwrap();
+    assert!(tagged > 0, "the fault targets only tagged child sessions");
+    let before: Vec<(String, i64, i64)> =
+        sqlx::query_as("SELECT chain,height,epoch FROM ledger_checkpoints ORDER BY chain")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    sqlx::query(&format!(
+        "ALTER DATABASE \"{quoted}\" ALLOW_CONNECTIONS false"
+    ))
+    .execute(&mut control)
+    .await
+    .unwrap();
+    // Only this marked database and this test child's sessions are disconnected.
+    // Test-lock/observer sessions remain open; the control connection uses the maintenance DB.
+    let disconnected=sqlx::query_scalar::<_,bool>("SELECT pg_catalog.pg_terminate_backend(pid) FROM pg_catalog.pg_stat_activity WHERE datname=$1 AND application_name=$2")
+        .bind(&name).bind(&tag).fetch_all(&mut control).await;
+    let unavailable = tokio::time::timeout(Duration::from_secs(3), async {
+        loop {
+            if let Ok(response) = http.get(format!("{base}/ready")).send().await {
+                if response.status() == reqwest::StatusCode::SERVICE_UNAVAILABLE {
+                    let body: serde_json::Value = response
+                        .json()
+                        .await
+                        .map_err(|_| LedgerError::Provider("test_readiness_json"))?;
+                    let live = http
+                        .get(format!("{base}/live"))
+                        .send()
+                        .await
+                        .map_err(|_| LedgerError::Provider("test_liveness_transport"))?;
+                    return Ok::<_, LedgerError>(
+                        body["database_ok"] == false && live.status().is_success(),
+                    );
+                }
+            }
+            if child.try_wait()?.is_some() {
+                return Ok(false);
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await;
+    // Always restore admission before checking fault assertions, including a failed observation.
+    sqlx::query(&format!(
+        "ALTER DATABASE \"{quoted}\" ALLOW_CONNECTIONS true"
+    ))
+    .execute(&mut control)
+    .await
+    .unwrap();
+    assert!(disconnected.unwrap().iter().any(|killed| *killed));
+    assert!(
+        unavailable.unwrap().unwrap(),
+        "running readiness must expose actual database failure"
+    );
+    let restart = if let Some(exit) = child.try_wait().unwrap() {
+        assert!(
+            !exit.success(),
+            "a fatal DB progress failure requests supervisor restart"
+        );
+        child = launch_test_ledger(&terra, &rpc, &address.to_string(), child_url.as_str());
+        true
+    } else {
+        false
+    };
+    println!("database_session_loss supervisor_restart={restart}");
+    wait_child_status(&mut child, &http, &base, reqwest::StatusCode::OK).await;
+    let after: Vec<(String, i64, i64)> =
+        sqlx::query_as("SELECT chain,height,epoch FROM ledger_checkpoints ORDER BY chain")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert_eq!(after, before);
+    assert_eq!(
+        db::balance_at(&pool, Chain::Terra, ALICE, 110)
+            .await
+            .unwrap(),
+        BigInt::from(990)
+    );
+    assert_eq!(
+        db::balance_at(&pool, Chain::Bsc, EVM, 105).await.unwrap(),
+        BigInt::from(995)
+    );
+    let connections: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM pg_catalog.pg_stat_activity WHERE datname=$1 AND application_name=$2",
+    )
+    .bind(&name)
+    .bind(&tag)
+    .fetch_one(&mut control)
+    .await
+    .unwrap();
+    assert!(connections > 0);
+    terminate_child(&mut child).await;
+    control.close().await.unwrap();
+    terra_server.abort();
+    bsc_server.abort();
+}
