@@ -38,6 +38,6 @@ ENV RUST_LOG=info
 EXPOSE 3001
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
-  CMD curl -fsS http://127.0.0.1:3001/health >/dev/null || exit 1
+  CMD curl -fsS http://127.0.0.1:3001/live >/dev/null || exit 1
 
 CMD ["voting-ledger"]

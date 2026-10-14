@@ -30,4 +30,5 @@ pub mod reconcile;
 
 pub mod worker;
 
+pub mod storage;
 pub mod terra_rpc;

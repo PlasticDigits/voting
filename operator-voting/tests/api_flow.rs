@@ -1697,6 +1697,25 @@ async fn transactional_dual_chain_revisions_receipts_and_concurrency() {
     let Some((pool, _lock)) = setup_pool().await else {
         return;
     };
+    sqlx::raw_sql(include_str!("../../deploy/grants.sql"))
+        .execute(&pool)
+        .await
+        .unwrap();
+    let restricted = sqlx::postgres::PgPoolOptions::new()
+        .after_connect(|conn, _| {
+            Box::pin(async move {
+                sqlx::query("SET SESSION AUTHORIZATION operator_voting")
+                    .execute(conn)
+                    .await?;
+                Ok(())
+            })
+        })
+        .connect(&test_db_url().unwrap())
+        .await
+        .unwrap();
+    db::validate_production_privileges(&restricted)
+        .await
+        .unwrap();
     for chain in ["terra", "bsc"] {
         let chain_id = if chain == "terra" { "columbus-5" } else { "56" };
         let (proposer, key) = if chain == "terra" {
@@ -1727,7 +1746,7 @@ async fn transactional_dual_chain_revisions_receipts_and_concurrency() {
         let mut configuration = cfg(&test_db_url().unwrap(), "");
         configuration.committee = parse_committee(&format!("{proposer},{reviewer}")).unwrap();
         let app = router(AppState {
-            pool: pool.clone(),
+            pool: restricted.clone(),
             cfg: configuration,
         });
         let (status, document) = call(
@@ -1832,6 +1851,19 @@ async fn transactional_dual_chain_revisions_receipts_and_concurrency() {
                 .count(),
             1
         );
+        // The original receipt remains verifiable after its revision is superseded.
+        verified_export(app.clone(), &a.1).await;
+        let receipt = a.1["receipt_id"].as_str().unwrap();
+        let (status, original) = call(
+            app.clone(),
+            Request::get(format!("/v1/receipts/{receipt}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(original["revision"]["revision"], 1);
+        assert_eq!(original["revision"]["title"], "Original title");
         // Title-only amendment invalidates a review of revision 1 even with unchanged section hash.
         let mut old = payload(chain, chain_id, "open_vote", &reviewer);
         old.proposal_id = Some(id.clone());
@@ -2512,4 +2544,57 @@ async fn empty_or_whitespace_draft_title_is_rejected_atomically() {
         .await
         .unwrap();
     assert_eq!(count, 0);
+}
+
+#[test]
+fn ordinary_signature_clock_boundaries_are_checked() {
+    let now = 1_800_000_000;
+    let mut p = payload("terra", "columbus-5", "register", "terra1clockfixture");
+    p.issued_at = now;
+    p.expires_at = now + 120;
+    assert!(operator_voting::payload::validate_time(&p, now).is_ok());
+    p.issued_at = now + 60;
+    p.expires_at = p.issued_at + 120;
+    assert!(operator_voting::payload::validate_time(&p, now).is_ok());
+    p.issued_at = now + 61;
+    p.expires_at = p.issued_at + 120;
+    assert!(operator_voting::payload::validate_time(&p, now).is_err());
+    p.issued_at = now - 630;
+    p.expires_at = now + 1;
+    assert!(operator_voting::payload::validate_time(&p, now).is_err());
+    p.issued_at = now - 120;
+    p.expires_at = now;
+    assert!(operator_voting::payload::validate_time(&p, now).is_err());
+}
+
+#[test]
+fn required_integration_job_rejects_missing_database_before_any_connection() {
+    const CHILD: &str = "VOTING_REQUIRED_DB_GUARD_CHILD";
+    if std::env::var(CHILD).as_deref() == Ok("1") {
+        // Missing test configuration must fail even when an application URL exists.
+        let _ = voting_ledger::test_lock::test_database_url();
+        panic!("required missing database was not refused");
+    }
+    let output = std::process::Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "required_integration_job_rejects_missing_database_before_any_connection",
+            "--nocapture",
+        ])
+        .env(CHILD, "1")
+        .env("LEDGER_TEST_REQUIRED", "1")
+        .env_remove("LEDGER_TEST_DATABASE_URL")
+        .env(
+            "DATABASE_URL",
+            "postgres://fixture:synthetic@prod.invalid/application",
+        )
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    let text = String::from_utf8_lossy(&output.stdout).to_string()
+        + &String::from_utf8_lossy(&output.stderr);
+    assert!(
+        text.contains("required integration job needs LEDGER_TEST_DATABASE_URL"),
+        "expected explicit missing-config guard refusal"
+    );
 }

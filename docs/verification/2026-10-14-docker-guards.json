@@ -1,0 +1,98 @@
+{
+  "valid_image": "voting-frontend-guard-fixture:valid",
+  "passed": true,
+  "cases": [
+    {
+      "case": "missing_api",
+      "argument": "VITE_OPERATOR_VOTING_URL",
+      "exit_code": 1,
+      "rejected_by_guard": true,
+      "recognizable_reason": "VITE_OPERATOR_VOTING_URL: rejected by Dockerfile shell guard before npm run build",
+      "guard_step": true,
+      "npm_build_started": false,
+      "duration_seconds": 2.7
+    },
+    {
+      "case": "insecure_api",
+      "argument": "VITE_OPERATOR_VOTING_URL",
+      "exit_code": 1,
+      "rejected_by_guard": true,
+      "recognizable_reason": "VITE_OPERATOR_VOTING_URL must be https://",
+      "guard_step": true,
+      "npm_build_started": false,
+      "duration_seconds": 4.91
+    },
+    {
+      "case": "credentials_api",
+      "argument": "VITE_OPERATOR_VOTING_URL",
+      "exit_code": 1,
+      "rejected_by_guard": true,
+      "recognizable_reason": "VITE_OPERATOR_VOTING_URL must be a public HTTPS URL without credentials, query or fragment.",
+      "guard_step": true,
+      "npm_build_started": true,
+      "duration_seconds": 13.18
+    },
+    {
+      "case": "missing_walletconnect",
+      "argument": "VITE_WC_PROJECT_ID",
+      "exit_code": 1,
+      "rejected_by_guard": true,
+      "recognizable_reason": "VITE_WC_PROJECT_ID: rejected by Dockerfile shell guard before npm run build",
+      "guard_step": true,
+      "npm_build_started": false,
+      "duration_seconds": 1.1
+    },
+    {
+      "case": "local_network",
+      "argument": "VITE_NETWORK",
+      "exit_code": 1,
+      "rejected_by_guard": true,
+      "recognizable_reason": "VITE_NETWORK must be mainnet for production builds.",
+      "guard_step": true,
+      "npm_build_started": true,
+      "duration_seconds": 10.08
+    },
+    {
+      "case": "legal_hatch",
+      "argument": "VITE_PLAYWRIGHT_E2E",
+      "exit_code": 1,
+      "rejected_by_guard": true,
+      "recognizable_reason": "VITE_PLAYWRIGHT_E2E: rejected by Dockerfile shell guard before npm run build",
+      "guard_step": true,
+      "npm_build_started": false,
+      "duration_seconds": 0.72
+    },
+    {
+      "case": "dev_mnemonic",
+      "argument": "VITE_DEV_MNEMONIC",
+      "exit_code": 1,
+      "rejected_by_guard": true,
+      "recognizable_reason": "VITE_DEV_MNEMONIC: rejected by Dockerfile shell guard before npm run build",
+      "guard_step": true,
+      "npm_build_started": false,
+      "duration_seconds": 0.77
+    },
+    {
+      "case": "browser_bsc_rpc",
+      "argument": "VITE_BSC_RPC",
+      "exit_code": 1,
+      "rejected_by_guard": true,
+      "recognizable_reason": "VITE_BSC_RPC: rejected by Dockerfile shell guard before npm run build",
+      "guard_step": true,
+      "npm_build_started": false,
+      "duration_seconds": 0.79
+    },
+    {
+      "case": "browser_bsc_rpc_url",
+      "argument": "VITE_BSC_RPC_URL",
+      "exit_code": 1,
+      "rejected_by_guard": true,
+      "recognizable_reason": "VITE_BSC_RPC_URL: rejected by Dockerfile shell guard before npm run build",
+      "guard_step": true,
+      "npm_build_started": false,
+      "duration_seconds": 1.12
+    }
+  ],
+  "observed_at": "2026-10-14T07:10:06.458457+00:00",
+  "valid_image_id": "sha256:18b91be00562f5c2760893f389164833b9ae197b312de23765f7c9664a874f6c"
+}

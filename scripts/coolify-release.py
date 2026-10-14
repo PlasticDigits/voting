@@ -49,9 +49,20 @@ def resource(kind):
     return uuid, actual.get("id")
 
 
+def validate_deployment(result, uuid, application_id):
+    # This installation omits the internal id from application GET responses,
+    # but includes the related application on deployment GET responses.
+    related = result.get("application", {})
+    if related.get("uuid") != uuid or str(result.get("application_id")) != str(related.get("id")):
+        raise RuntimeError("deployment belongs to a different application")
+    if application_id is not None and str(result.get("application_id")) != str(application_id):
+        raise RuntimeError("deployment application identity changed")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("stop", "deploy", "status", "recover", "clear-recovery"))
+    parser.add_argument("action", choices=("stop", "deploy", "status", "recover", "clear-recovery",
+                                         "inspect-storage", "clear-inspection"))
     parser.add_argument("resource", choices=RESOURCES)
     parser.add_argument("--sha")
     parser.add_argument("--deployment")
@@ -60,14 +71,17 @@ def main():
     if args.action == "stop":
         call("POST", "/applications/" + uuid + "/stop")
         print(json.dumps({"resource": args.resource, "action": "stop_requested"}))
-    elif args.action in ("recover", "clear-recovery"):
+    elif args.action in ("recover", "clear-recovery", "inspect-storage", "clear-inspection"):
         if args.resource != "ledger":
-            raise RuntimeError("baseline recovery is ledger-only")
-        value = "true" if args.action == "recover" else "false"
+            raise RuntimeError("storage controls are ledger-only")
+        inspection = args.action in ("inspect-storage", "clear-inspection")
+        key = "LEDGER_INSPECT_STORAGE_ONLY" if inspection else "LEDGER_RECONCILE_LIVE_BASELINE"
+        value = "true" if args.action in ("recover", "inspect-storage") else "false"
         call("PATCH", "/applications/" + uuid + "/envs/bulk", {"data": [{
-            "key": "LEDGER_RECONCILE_LIVE_BASELINE", "value": value,
+            "key": key, "value": value,
             "is_buildtime": False, "is_runtime": True}]})
-        print(json.dumps({"resource": "ledger", "recovery_configured": value == "true"}))
+        state = "storage_inspection_configured" if inspection else "recovery_configured"
+        print(json.dumps({"resource": "ledger", state: value == "true"}))
     elif args.action == "deploy":
         if not args.sha or not re.fullmatch(r"[0-9a-f]{40}", args.sha):
             raise RuntimeError("a complete tested main commit is required")
@@ -77,7 +91,24 @@ def main():
             raise RuntimeError("release must run from the voting origin checkout")
         if args.sha != main_sha:
             raise RuntimeError("release commit differs from fetched origin/main")
-        call("PATCH", "/applications/" + uuid, {"git_branch": "main", "git_commit_sha": args.sha})
+        configuration = {"git_branch": "main", "git_commit_sha": args.sha}
+        if args.resource == "frontend":
+            # Static wrapping discards this multi-stage image's nginx runtime.
+            configuration.update({"is_static": False, "is_spa": False,
+                                  "build_pack": "dockerfile", "base_directory": "/",
+                                  "dockerfile_location": "/deploy/docker/frontend.Dockerfile"})
+        elif args.resource == "ledger":
+            configuration["health_check_path"] = "/live"
+        call("PATCH", "/applications/" + uuid, configuration)
+        configured = call("GET", "/applications/" + uuid)
+        if args.resource == "frontend" and (
+            configured.get("settings", {}).get("is_static") is not False
+            or configured.get("dockerfile_location") != "/deploy/docker/frontend.Dockerfile"
+            or configured.get("build_pack") != "dockerfile"
+        ):
+            raise RuntimeError("frontend image mode was not applied")
+        if args.resource == "ledger" and configured.get("health_check_path") != "/live":
+            raise RuntimeError("ledger liveness probe was not applied")
         result = call("POST", "/deploy?" + urllib.parse.urlencode({"uuid": uuid, "force": "true"}))
         deployments = result.get("deployments", [])
         print(json.dumps({"resource": args.resource, "commit": args.sha, "deployments": [
@@ -92,8 +123,7 @@ def main():
         if not re.fullmatch(r"[a-zA-Z0-9]+", args.deployment):
             raise RuntimeError("an inventoried deployment ID is required")
         result = call("GET", "/deployments/" + args.deployment)
-        if str(result.get("application_id")) != str(application_id):
-            raise RuntimeError("deployment belongs to a different application")
+        validate_deployment(result, uuid, application_id)
         print(json.dumps({"resource": args.resource, "deployment": args.deployment,
                           **{k: result.get(k) for k in ("status", "commit", "created_at", "updated_at")}}))
 
