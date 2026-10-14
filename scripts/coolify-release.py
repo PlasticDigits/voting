@@ -49,6 +49,16 @@ def resource(kind):
     return uuid, actual.get("id")
 
 
+def validate_deployment(result, uuid, application_id):
+    # This installation omits the internal id from application GET responses,
+    # but includes the related application on deployment GET responses.
+    related = result.get("application", {})
+    if related.get("uuid") != uuid or str(result.get("application_id")) != str(related.get("id")):
+        raise RuntimeError("deployment belongs to a different application")
+    if application_id is not None and str(result.get("application_id")) != str(application_id):
+        raise RuntimeError("deployment application identity changed")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=("stop", "deploy", "status", "recover", "clear-recovery"))
@@ -92,8 +102,7 @@ def main():
         if not re.fullmatch(r"[a-zA-Z0-9]+", args.deployment):
             raise RuntimeError("an inventoried deployment ID is required")
         result = call("GET", "/deployments/" + args.deployment)
-        if str(result.get("application_id")) != str(application_id):
-            raise RuntimeError("deployment belongs to a different application")
+        validate_deployment(result, uuid, application_id)
         print(json.dumps({"resource": args.resource, "deployment": args.deployment,
                           **{k: result.get(k) for k in ("status", "commit", "created_at", "updated_at")}}))
 

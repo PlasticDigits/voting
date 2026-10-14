@@ -220,6 +220,11 @@ operator and frontend from the same commit and run
 [`scripts/live-smoke.py`](../scripts/live-smoke.py). The baseline recovery flag remains
 false normally and cannot silently authorize future history skips.
 
+Ledger container/proxy health probes use `/live`. Ledger `/ready` and `/health`
+report canonical readiness and may return503 during catch-up or provider failure;
+using either as a restart probe would repeatedly kill the independent workers.
+The operator's `/health` remains liveness and `/ready` reports ledger readiness.
+
 Current configured resources are ledger `s6j6fx1870zbsmhbu2do1yiz`, operator
 `x5j1g2xuc5p508g26ff003q0`, frontend `svvxk9gd93d8kwezvcrekdq0`.
 The frontend uses the repository Dockerfile and root build context. Forwarded-header
