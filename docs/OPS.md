@@ -45,7 +45,11 @@ Boot order:
 
    `/` and `/vote` and `/new` must be 200 HTML. `/assets/missing.js` must be 404. [#8](https://gitlab.com/PlasticDigits/voting/-/issues/8) closed after live `/vote` became 200; keep proving it after nginx edits. Live edge is `https://vote.cl8y.com` (dApp) and `https://operator.vote.cl8y.com` (API). Ledger stays private. After pasting the Coolify snippet, SPA HTML must also send O3 headers (`X-Frame-Options: DENY`, explicit CSP).
 
-`GET /health` on ledger and API must be 200 before opening DNS. A **proxy 503** (`no available server`) is not a healthy poller — nothing is calling `process_pending_intents`, so Register stays pending ([#14](https://gitlab.com/PlasticDigits/voting/-/issues/14)). Confirm the Coolify service name if `ledger.vote.cl8y.com` is not the writer. Ledger `/health` keeps `ok: true` as **liveness** (do not bounce the poller on boot). After a holder registers, inspect `caught_up`, `terra_height`, `terra_behind_registration` / `bsc_behind_registration`, and `intents_ok` (false means `voting.registration_intents` SELECT/UPDATE failed — L12 — not an LCD retry). A cursor of `0` while `voting_registrations` exists is **not** caught up ([#9](https://gitlab.com/PlasticDigits/voting/-/issues/9)). Default GET `/v1/balances` still clamps to `registered_at_height` (OV-B1); ingest catching up is still required for post-register transfers. Live GET `/v1/balances` must include `registered` / `pending` / `as_of_height` (OV-B6); redeploy `operator-voting` from `main` if those keys are missing.
+Ledger and API `/ready` must return 200 before accepting transactional voting. Coolify checks ledger `/live` and API `/health` for process liveness; ledger `/health` is an alias of readiness and may return 503 during catch-up or provider/database failure. The private writer's diagnostics report each chain's height, network tip, lag, observation age, canonical/completeness flags and degradation reason, plus intent heartbeat/backlog/age. A failed heartbeat blocks readiness; an individual retrying intent does not halt otherwise healthy chains. Live `/v1/balances` reports registration/pending state and `snapshot_eligible`; future BSC baselines remain ineligible until the finalized cursor reaches their verified block. See [L14–L17](LEDGER_INVARIANTS.md).
+
+For the current roughly 0.45-second BSC block cadence, set production `POLL_INTERVAL_MS=1000` and verify measured chain lag after deployment. The configured 12000ms interval found during live diagnosis consumes about 27 blocks between 32-block chunks, leaving little time for RPC and accounting. Eight bounded concurrent historical-header reads reduce repeated network checks while preserving the pinned provider, complete validation, ordered hashes and pre/post end-hash checks. The policy remains 15 confirmations plus at most two blocks of additional lag; the poll interval's validated range remains 100–60000ms. See [ledger regression evidence](../ledger/tests/hardening.rs) and [agent workflow](../skills/AGENTS_LEDGER_HARDENING.md).
+
+Test each candidate BSC provider from the deployment network for chain56, fresh head/header, a CL8Y-filtered `eth_getLogs` request at one finalized block, and a bound `eth_call`. A successful balance call alone cannot certify forward indexing: [BNB Chain documents disabled logs on its public dataseed endpoints](https://docs.bnbchain.org/bnb-smart-chain/developers/json_rpc/json-rpc-endpoint/). Record only sanitized capability/latency/lag results; configured credentials stay in OpenBao and provider messages/URLs stay out of worker logs. Static `provider_class` labels distinguish RPC limits/method errors, transport/schema failures and canonicality failures.
 
 ## 2. Legal ops (sibling repo)
 
@@ -113,14 +117,14 @@ Expect some `422` (invalid body), many `429` with `Retry-After`, and `GET /healt
 LocalTerra on this workstation is typically `http://127.0.0.1:1317`. Hardening loop:
 
 1. Mint TCL8Y to a test wallet (DEX LocalTerra fixtures — do not invent a new CW20).
-2. Register via `operator-voting` (ledger takes a **live** LCD `Balance`, L1). Confirm `CL8Y_TOKEN_ADDRESS` is the pinned hpax3 contract (wallet ticker **CL8Y-cb** is that contract unless another is proven).
+2. Register via `operator-voting` with native `TERRA_RPC_URLS` configured. The ledger records an actual same-provider balance/height/hash observation (L1); an LCD header guess is insufficient. Confirm `CL8Y_TOKEN_ADDRESS` is the pinned hpax3 contract (wallet ticker **CL8Y-cb** is that contract unless another is proven).
 3. Transfer TCL8Y; wait for the ledger poller.
-4. Assert `voting_registrations.initial_balance` ≈ live LCD `Balance` ≈ `GET /v1/balances` default `as_of_height` ≥ `registered_at_height` for that registered wallet.
-5. Confirm ledger `GET /health` `terra_height` advances after register (`caught_up: true`).
+4. Compare raw integer balances exactly at matching certified heights/hashes. The initial balance must equal the registration observation; after the transfer, the caught-up API balance must equal the fixture’s expected delta and corresponding live observation. Do not compare a historical initial balance with a later live balance.
+5. Confirm writer `/ready` reports progressing Terra/BSC checkpoints and fresh intent progress; the registered wallet must become `snapshot_eligible` after its verified baseline is indexed under finality policy.
 
 Do not close [#9](https://gitlab.com/PlasticDigits/voting/-/issues/9) / [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7) on a screenshot of “Registered” if `GET /v1/balances` is still `"0"` while LCD is not.
 
-Do not close [#14](https://gitlab.com/PlasticDigits/voting/-/issues/14) on a screenshot of Registering… or of the pending banner. #9 is LCD equality **after registered**; #14 is **never leaving pending**. Writer `/health` must not be 503; intents with a working LCD/`balanceOf` complete without manual DB edits.
+Do not close [#14](https://gitlab.com/PlasticDigits/voting/-/issues/14) on a screenshot of Registering… or of the pending banner. #9 is LCD equality **after registered**; #14 is **never leaving pending**. Registration intents with healthy native Terra RPC/BSC providers must complete without manual DB edits. Writer `/ready` must then pass canonical admission; `/live`200 alone is insufficient.
 
 Integration coverage without LocalTerra: [`../ledger/tests/ledger_integration.rs`](../ledger/tests/ledger_integration.rs) (`register_transfer_balance_at_and_no_backfill`) and [`../operator-voting/tests/api_flow.rs`](../operator-voting/tests/api_flow.rs) (`default_balance_clamps_when_tip_lags_register`). Live LCD equality remains an ops check.
 
@@ -240,7 +244,11 @@ The frontend uses the repository Dockerfile and root build context with Coolify
 `is_static=false` (a static wrapper otherwise looks for nonexistent `/app/dist`
 inside the final nginx image). The release helper verifies this mode and the
 ledger `/live` health probe before queuing a build. Forwarded-header
-trust is explicitly disabled; claimed client IP headers cannot select quota buckets.
-Before any enablement, verify actual ingress peers and replacement behavior. Database
+trust is enabled only for the observed voting ingress peer `10.0.17.2/32`, with
+`VOTING_API_REPLICAS=1`. The [dated live probe](verification/2026-10-14-live-proxy-quota.json)
+proved forged incoming forwarding headers share the same quota bucket and recover
+after `Retry-After`. Keep the normal quota at 60/minute with burst20. Revalidate
+the peer and header replacement after proxy/network changes; never broaden this
+trust to an entire private subnet. Database
 identity additionally requires comment `cl8y-voting-ephemeral-test` before destructive
 DDL. The marker must be installed only by initialization of a dedicated test database.

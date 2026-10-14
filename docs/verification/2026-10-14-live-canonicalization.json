@@ -1,0 +1,44 @@
+{
+  "observed_at": "2026-10-14T11:16:34.211584+00:00",
+  "api": "https://operator.vote.cl8y.com",
+  "checks": [
+    {
+      "case": 0,
+      "status": 200,
+      "canonical_json_matches": true,
+      "body_hash_matches": true,
+      "sections_match": true,
+      "protocol_v2": true,
+      "valid_request_id": true
+    },
+    {
+      "case": 1,
+      "status": 200,
+      "canonical_json_matches": true,
+      "body_hash_matches": true,
+      "sections_match": true,
+      "protocol_v2": true,
+      "valid_request_id": true
+    },
+    {
+      "case": 2,
+      "status": 200,
+      "canonical_json_matches": true,
+      "body_hash_matches": true,
+      "sections_match": true,
+      "protocol_v2": true,
+      "valid_request_id": true
+    },
+    {
+      "case": 3,
+      "status": 200,
+      "canonical_json_matches": true,
+      "body_hash_matches": true,
+      "sections_match": true,
+      "protocol_v2": true,
+      "valid_request_id": true
+    }
+  ],
+  "passed": true,
+  "commit": "0a7dff42b5778206bb112b87bd425c2de59f7aa2"
+}
