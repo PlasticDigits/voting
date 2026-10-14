@@ -43,6 +43,7 @@ test:rust-integration:
         pg_isready -h postgres -U voting -d voting_test_ci && break
         sleep 2
       done
+    - PGPASSWORD="$POSTGRES_PASSWORD" psql -h postgres -U voting -d voting_test_ci -v ON_ERROR_STOP=1 -c "COMMENT ON DATABASE voting_test_ci IS 'cl8y-voting-ephemeral-test'"
   script:
     - cargo test --workspace --tests --jobs 1 -- --test-threads=1
   rules:

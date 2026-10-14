@@ -19,6 +19,8 @@ for attempt in $(seq 1 30); do
   sleep 1
 done
 docker exec "$test_container" pg_isready -U voting -d "$test_database" -p "$test_port"
+docker exec "$test_container" psql -U voting -d "$test_database" -p "$test_port" \
+  -v ON_ERROR_STOP=1 -c "COMMENT ON DATABASE ${test_database} IS 'cl8y-voting-ephemeral-test'"
 export LEDGER_TEST_DATABASE_URL="postgres://voting:voting@127.0.0.1:${test_port}/${test_database}"
 cargo fmt --all -- --check
 cargo test --workspace --lib --bins --locked
