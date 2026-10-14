@@ -94,6 +94,10 @@ async fn main() -> Result<(), LedgerError> {
                     Ok(Ok(())) => failures = 0,
                     failure => {
                         failures = failures.saturating_add(1);
+                        let provider_class = match &failure {
+                            Ok(Err(error)) => provider_error_class(error),
+                            _ => None,
+                        };
                         let reason = match failure {
                             Err(_) => "worker_deadline",
                             Ok(Err(LedgerError::Conflict(_))) => "accounting_corruption",
@@ -101,7 +105,12 @@ async fn main() -> Result<(), LedgerError> {
                             _ => "provider_or_accounting_failure",
                         };
                         db::degrade(&pool, chain, reason).await?;
-                        tracing::warn!(chain = chain.as_str(), reason, "chain worker degraded");
+                        tracing::warn!(
+                            chain = chain.as_str(),
+                            reason,
+                            provider_class = provider_class.unwrap_or("none"),
+                            "chain worker degraded"
+                        );
                     }
                 }
                 // Bounded exponential retry with deterministic per-chain jitter.
@@ -221,9 +230,29 @@ async fn supervise_workers(workers: &mut JoinSet<Result<(), LedgerError>>) {
         "ledger worker exited; shutting down for supervisor restart"
     );
 }
+fn provider_error_class(error: &LedgerError) -> Option<&'static str> {
+    match error {
+        LedgerError::Provider(class) => Some(*class),
+        _ => None,
+    }
+}
 #[cfg(test)]
 mod supervisor_tests {
     use super::*;
+    #[test]
+    fn provider_diagnostics_expose_only_static_provider_labels() {
+        assert_eq!(
+            provider_error_class(&LedgerError::Provider("bsc_transport")),
+            Some("bsc_transport")
+        );
+        for error in [
+            LedgerError::Conflict("SENTINEL_PRIVATE_ERROR".into()),
+            LedgerError::BscRpc("SENTINEL_PRIVATE_RESPONSE".into()),
+            LedgerError::Database(sqlx::Error::Protocol("SENTINEL_PRIVATE_DATABASE".into())),
+        ] {
+            assert_eq!(provider_error_class(&error), None);
+        }
+    }
     #[tokio::test]
     async fn panic_or_exit_notifies_fatal_supervisor() {
         let mut workers = JoinSet::new();
