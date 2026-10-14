@@ -1,0 +1,310 @@
+{
+  "code_commit": "3631b4aa078edc9443bc536c104538b33f2895db",
+  "sample_count": 240,
+  "unready_count": 38,
+  "maximum_lag": {
+    "terra": 3,
+    "bsc": 18
+  },
+  "lag_breach_count": {
+    "bsc": 15,
+    "terra": 23
+  },
+  "representative_states": [
+    {
+      "sample": 16,
+      "ok": false,
+      "database_ok": true,
+      "chains": [
+        {
+          "chain": "bsc",
+          "height": 127600678,
+          "network_tip": 127600696,
+          "lag": 18,
+          "age_seconds": 1,
+          "complete": true,
+          "canonical": true,
+          "degraded_reason": null
+        },
+        {
+          "chain": "terra",
+          "height": 30834559,
+          "network_tip": 30834559,
+          "lag": 0,
+          "age_seconds": 0,
+          "complete": true,
+          "canonical": true,
+          "degraded_reason": null
+        }
+      ],
+      "intent_backlog": 0,
+      "intent_oldest_seconds": 0,
+      "intents_ok": true,
+      "baselines_ok": true,
+      "intent_progress_age_seconds": 1
+    },
+    {
+      "sample": 177,
+      "ok": false,
+      "database_ok": true,
+      "chains": [
+        {
+          "chain": "bsc",
+          "height": 127600770,
+          "network_tip": 127600786,
+          "lag": 16,
+          "age_seconds": 2,
+          "complete": true,
+          "canonical": true,
+          "degraded_reason": null
+        },
+        {
+          "chain": "terra",
+          "height": 30834565,
+          "network_tip": 30834568,
+          "lag": 3,
+          "age_seconds": 1,
+          "complete": true,
+          "canonical": true,
+          "degraded_reason": null
+        }
+      ],
+      "intent_backlog": 0,
+      "intent_oldest_seconds": 0,
+      "intents_ok": true,
+      "baselines_ok": true,
+      "intent_progress_age_seconds": 1
+    }
+  ],
+  "public_sampling": {
+    "checks": [
+      {
+        "observed_at": "2026-10-14T13:13:19.959212+00:00",
+        "status": 200,
+        "ready": true
+      },
+      {
+        "observed_at": "2026-10-14T13:13:22.870266+00:00",
+        "status": 200,
+        "ready": true
+      },
+      {
+        "observed_at": "2026-10-14T13:13:25.748798+00:00",
+        "status": 200,
+        "ready": true
+      },
+      {
+        "observed_at": "2026-10-14T13:13:28.605547+00:00",
+        "status": 200,
+        "ready": true
+      },
+      {
+        "observed_at": "2026-10-14T13:13:31.470060+00:00",
+        "status": 200,
+        "ready": true
+      },
+      {
+        "observed_at": "2026-10-14T13:13:34.337133+00:00",
+        "status": 200,
+        "ready": true
+      },
+      {
+        "observed_at": "2026-10-14T13:13:37.202773+00:00",
+        "status": 503,
+        "ready": false
+      },
+      {
+        "observed_at": "2026-10-14T13:13:40.067664+00:00",
+        "status": 200,
+        "ready": true
+      },
+      {
+        "observed_at": "2026-10-14T13:13:42.963668+00:00",
+        "status": 200,
+        "ready": true
+      },
+      {
+        "observed_at": "2026-10-14T13:13:45.839801+00:00",
+        "status": 200,
+        "ready": true
+      },
+      {
+        "observed_at": "2026-10-14T13:13:48.740329+00:00",
+        "status": 200,
+        "ready": true
+      },
+      {
+        "observed_at": "2026-10-14T13:13:51.646048+00:00",
+        "status": 200,
+        "ready": true
+      },
+      {
+        "observed_at": "2026-10-14T13:13:54.505819+00:00",
+        "status": 200,
+        "ready": true
+      },
+      {
+        "observed_at": "2026-10-14T13:13:57.371469+00:00",
+        "status": 200,
+        "ready": true
+      },
+      {
+        "observed_at": "2026-10-14T13:14:00.227271+00:00",
+        "status": 200,
+        "ready": true
+      },
+      {
+        "observed_at": "2026-10-14T13:14:03.129478+00:00",
+        "status": 200,
+        "ready": true
+      },
+      {
+        "observed_at": "2026-10-14T13:14:06.029361+00:00",
+        "status": 200,
+        "ready": true
+      },
+      {
+        "observed_at": "2026-10-14T13:14:08.899784+00:00",
+        "status": 200,
+        "ready": true
+      },
+      {
+        "observed_at": "2026-10-14T13:14:11.771158+00:00",
+        "status": 503,
+        "ready": false
+      },
+      {
+        "observed_at": "2026-10-14T13:14:14.638494+00:00",
+        "status": 503,
+        "ready": false
+      },
+      {
+        "observed_at": "2026-10-14T13:14:17.497779+00:00",
+        "status": 200,
+        "ready": true
+      },
+      {
+        "observed_at": "2026-10-14T13:14:20.364945+00:00",
+        "status": 200,
+        "ready": true
+      },
+      {
+        "observed_at": "2026-10-14T13:14:23.235266+00:00",
+        "status": 200,
+        "ready": true
+      },
+      {
+        "observed_at": "2026-10-14T13:14:26.101917+00:00",
+        "status": 200,
+        "ready": true
+      },
+      {
+        "observed_at": "2026-10-14T13:14:28.967027+00:00",
+        "status": 503,
+        "ready": false
+      },
+      {
+        "observed_at": "2026-10-14T13:14:31.819730+00:00",
+        "status": 200,
+        "ready": true
+      },
+      {
+        "observed_at": "2026-10-14T13:14:34.675861+00:00",
+        "status": 200,
+        "ready": true
+      },
+      {
+        "observed_at": "2026-10-14T13:14:37.573999+00:00",
+        "status": 200,
+        "ready": true
+      },
+      {
+        "observed_at": "2026-10-14T13:14:40.484840+00:00",
+        "status": 200,
+        "ready": true
+      },
+      {
+        "observed_at": "2026-10-14T13:14:43.360170+00:00",
+        "status": 200,
+        "ready": true
+      },
+      {
+        "observed_at": "2026-10-14T13:14:46.228183+00:00",
+        "status": 200,
+        "ready": true
+      },
+      {
+        "observed_at": "2026-10-14T13:14:49.086191+00:00",
+        "status": 200,
+        "ready": true
+      },
+      {
+        "observed_at": "2026-10-14T13:14:51.946129+00:00",
+        "status": 200,
+        "ready": true
+      },
+      {
+        "observed_at": "2026-10-14T13:14:54.843209+00:00",
+        "status": 200,
+        "ready": true
+      },
+      {
+        "observed_at": "2026-10-14T13:14:57.718764+00:00",
+        "status": 200,
+        "ready": true
+      },
+      {
+        "observed_at": "2026-10-14T13:15:00.580162+00:00",
+        "status": 200,
+        "ready": true
+      },
+      {
+        "observed_at": "2026-10-14T13:15:03.453364+00:00",
+        "status": 200,
+        "ready": true
+      },
+      {
+        "observed_at": "2026-10-14T13:15:06.327619+00:00",
+        "status": 200,
+        "ready": true
+      },
+      {
+        "observed_at": "2026-10-14T13:15:09.200703+00:00",
+        "status": 200,
+        "ready": true
+      },
+      {
+        "observed_at": "2026-10-14T13:15:12.064752+00:00",
+        "status": 200,
+        "ready": true
+      },
+      {
+        "observed_at": "2026-10-14T13:15:14.932291+00:00",
+        "status": 200,
+        "ready": true
+      },
+      {
+        "observed_at": "2026-10-14T13:15:17.843935+00:00",
+        "status": 200,
+        "ready": true
+      },
+      {
+        "observed_at": "2026-10-14T13:15:20.709981+00:00",
+        "status": 200,
+        "ready": true
+      },
+      {
+        "observed_at": "2026-10-14T13:15:23.577729+00:00",
+        "status": 200,
+        "ready": true
+      },
+      {
+        "observed_at": "2026-10-14T13:15:26.439191+00:00",
+        "status": 200,
+        "ready": true
+      }
+    ],
+    "passed": false
+  },
+  "accepted_as_final_release": false
+}
