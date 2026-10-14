@@ -10,6 +10,7 @@ services:
       POSTGRES_USER: voting
       POSTGRES_PASSWORD: voting
       POSTGRES_DB: voting_test_local
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256 --auth-local=trust"
       PGPORT: "5433"
     volumes:
       - ./deploy/tests/mark-test-database.sql:/docker-entrypoint-initdb.d/mark-test-database.sql:ro

@@ -225,6 +225,15 @@ report canonical readiness and may return503 during catch-up or provider failure
 using either as a restart probe would repeatedly kill the independent workers.
 The operator's `/health` remains liveness and `/ready` reports ledger readiness.
 
+The 2026-10-14 inspection found 15 historical registrations and two BSC event and
+balance rows in `voting`, with empty canonical `public` electorate/history tables.
+See the [bounded live inventory](verification/2026-10-14-live-storage-inventory.json).
+Forward migration `20261014000105` archives and imports that legacy namespace,
+preserves its original tables and the canonical migration tracker, rejects unequal
+collisions, and requires explicit reconciliation. A higher empty public cursor is
+not evidence that the legacy electorate can be discarded. Keep API and frontend
+stopped until the import and both canonical baseline epochs have been verified.
+
 Current configured resources are ledger `s6j6fx1870zbsmhbu2do1yiz`, operator
 `x5j1g2xuc5p508g26ff003q0`, frontend `svvxk9gd93d8kwezvcrekdq0`.
 The frontend uses the repository Dockerfile and root build context with Coolify

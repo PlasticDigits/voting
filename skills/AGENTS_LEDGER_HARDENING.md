@@ -1,5 +1,13 @@
 # Ledger hardening for human and agent maintainers
 
+Historical `voting` ledger tables are preserved by
+[migration005](../ledger/migrations/20261014000105_promote_legacy_ledger_namespace.sql).
+Read the [live namespace inventory](../docs/verification/2026-10-14-live-storage-inventory.json)
+before recovery. A newer empty public cursor cannot replace the original electorate.
+Verify imported history/frozen weights, then reconcile current canonical baselines;
+retain legacy tables and archives for audit. Use the documented storage inspection
+flag only during maintenance and clear it before normal workers resume.
+
 Read [HANDOFF](../docs/HANDOFF.md), [governance doctrine](../docs/GOVERNANCE_RESEARCH.md) and [ledger invariants L1–L17](../docs/LEDGER_INVARIANTS.md) before changing adapters/accounting. Workstreams: [36](https://git.cl8y.com/code/voting/issues/36), [37](https://git.cl8y.com/code/voting/issues/37), [38](https://git.cl8y.com/code/voting/issues/38), [39](https://git.cl8y.com/code/voting/issues/39).
 
 * Never substitute `txs` decoded bodies for `tx_responses` execution results. Compare full SHA256 physical block transaction identities/order against executions; preserve original WASM ordinals before native metadata/emitter/registration filters; validate pagination completion before persistence. Empty responses and invalid schema differ.

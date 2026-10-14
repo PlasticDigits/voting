@@ -100,3 +100,9 @@ repo-only readiness assumptions. Begin release verification with
 [`OPS.md`](OPS.md). Disposable database guards are mandatory before destructive tests.
 Keep the implementation, isolated verification, actual deployment and live acceptance
 checklists separate; mark a criterion complete only with evidence.
+
+Production inspection found the old ledger electorate under schema `voting`,
+while canonical `public` tables were empty. Migration `20261014000105` preserves
+and imports that history before explicit re-baselining; never discard it because
+an empty namespace reports a newer cursor. See [ops](OPS.md) and
+[dated inventory](verification/2026-10-14-live-storage-inventory.json).
