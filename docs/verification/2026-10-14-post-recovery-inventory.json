@@ -1,0 +1,240 @@
+{
+  "resource": "ledger",
+  "resource_uuid": "s6j6fx1870zbsmhbu2do1yiz",
+  "configured_commit": "6a1755a674ee88e8a8ff0f735023724ed849abbd",
+  "status": "running:healthy",
+  "observed_at": "2026-10-14T10:44:09.874589+00:00",
+  "task_uuid": "pztd2rycl2d7kyopvytdcwzt",
+  "execution_uuid": "8pnzdufsvnbycwqylvxf5gff",
+  "inventory": {
+    "read_only": true,
+    "relations": [
+      {
+        "schema": "public",
+        "table": "indexer_state",
+        "exists": true,
+        "row_count": 6,
+        "baseline_height_present": false,
+        "last_indexed_height": 30833047,
+        "last_indexed_bsc_block": 127580561,
+        "migration_max_version": null
+      },
+      {
+        "schema": "public",
+        "table": "voting_registrations",
+        "exists": true,
+        "row_count": 15,
+        "baseline_height_present": true,
+        "last_indexed_height": null,
+        "last_indexed_bsc_block": null,
+        "migration_max_version": null
+      },
+      {
+        "schema": "public",
+        "table": "cl8y_cw20_transfers",
+        "exists": true,
+        "row_count": 0,
+        "baseline_height_present": false,
+        "last_indexed_height": null,
+        "last_indexed_bsc_block": null,
+        "migration_max_version": null
+      },
+      {
+        "schema": "public",
+        "table": "cl8y_balances",
+        "exists": true,
+        "row_count": 7,
+        "baseline_height_present": false,
+        "last_indexed_height": null,
+        "last_indexed_bsc_block": null,
+        "migration_max_version": null
+      },
+      {
+        "schema": "public",
+        "table": "cl8y_bep20_transfers",
+        "exists": true,
+        "row_count": 2,
+        "baseline_height_present": false,
+        "last_indexed_height": null,
+        "last_indexed_bsc_block": null,
+        "migration_max_version": null
+      },
+      {
+        "schema": "public",
+        "table": "cl8y_bsc_balances",
+        "exists": true,
+        "row_count": 10,
+        "baseline_height_present": false,
+        "last_indexed_height": null,
+        "last_indexed_bsc_block": null,
+        "migration_max_version": null
+      },
+      {
+        "schema": "public",
+        "table": "_sqlx_migrations",
+        "exists": true,
+        "row_count": 12,
+        "baseline_height_present": false,
+        "last_indexed_height": null,
+        "last_indexed_bsc_block": null,
+        "migration_max_version": 20261014000105
+      },
+      {
+        "schema": "voting",
+        "table": "indexer_state",
+        "exists": true,
+        "row_count": 5,
+        "baseline_height_present": false,
+        "last_indexed_height": 30830539,
+        "last_indexed_bsc_block": 127547775,
+        "migration_max_version": null
+      },
+      {
+        "schema": "voting",
+        "table": "voting_registrations",
+        "exists": true,
+        "row_count": 15,
+        "baseline_height_present": false,
+        "last_indexed_height": null,
+        "last_indexed_bsc_block": null,
+        "migration_max_version": null
+      },
+      {
+        "schema": "voting",
+        "table": "cl8y_cw20_transfers",
+        "exists": true,
+        "row_count": 0,
+        "baseline_height_present": false,
+        "last_indexed_height": null,
+        "last_indexed_bsc_block": null,
+        "migration_max_version": null
+      },
+      {
+        "schema": "voting",
+        "table": "cl8y_balances",
+        "exists": true,
+        "row_count": 0,
+        "baseline_height_present": false,
+        "last_indexed_height": null,
+        "last_indexed_bsc_block": null,
+        "migration_max_version": null
+      },
+      {
+        "schema": "voting",
+        "table": "cl8y_bep20_transfers",
+        "exists": true,
+        "row_count": 2,
+        "baseline_height_present": false,
+        "last_indexed_height": null,
+        "last_indexed_bsc_block": null,
+        "migration_max_version": null
+      },
+      {
+        "schema": "voting",
+        "table": "cl8y_bsc_balances",
+        "exists": true,
+        "row_count": 2,
+        "baseline_height_present": false,
+        "last_indexed_height": null,
+        "last_indexed_bsc_block": null,
+        "migration_max_version": null
+      },
+      {
+        "schema": "voting",
+        "table": "_sqlx_migrations",
+        "exists": true,
+        "row_count": 5,
+        "baseline_height_present": false,
+        "last_indexed_height": null,
+        "last_indexed_bsc_block": null,
+        "migration_max_version": 20260830000002
+      }
+    ],
+    "comparisons": [
+      {
+        "table": "indexer_state",
+        "common_columns": [
+          "key",
+          "value",
+          "updated_at"
+        ],
+        "public_only_rows": 6,
+        "voting_only_rows": 5
+      },
+      {
+        "table": "voting_registrations",
+        "common_columns": [
+          "chain",
+          "wallet_address",
+          "registered_at_height",
+          "registered_at_time",
+          "initial_balance",
+          "status",
+          "signature_id"
+        ],
+        "public_only_rows": 0,
+        "voting_only_rows": 0
+      },
+      {
+        "table": "cl8y_cw20_transfers",
+        "common_columns": [
+          "id",
+          "height",
+          "tx_hash",
+          "msg_index",
+          "from_address",
+          "to_address",
+          "amount",
+          "action"
+        ],
+        "public_only_rows": 0,
+        "voting_only_rows": 0
+      },
+      {
+        "table": "cl8y_balances",
+        "common_columns": [
+          "wallet_address",
+          "height",
+          "balance"
+        ],
+        "public_only_rows": 7,
+        "voting_only_rows": 0
+      },
+      {
+        "table": "cl8y_bep20_transfers",
+        "common_columns": [
+          "id",
+          "bsc_block",
+          "tx_hash",
+          "log_index",
+          "from_address",
+          "to_address",
+          "amount"
+        ],
+        "public_only_rows": 0,
+        "voting_only_rows": 0
+      },
+      {
+        "table": "cl8y_bsc_balances",
+        "common_columns": [
+          "wallet_address",
+          "bsc_block",
+          "balance"
+        ],
+        "public_only_rows": 8,
+        "voting_only_rows": 0
+      },
+      {
+        "table": "_sqlx_migrations",
+        "common_columns": [
+          "version",
+          "success",
+          "checksum"
+        ],
+        "public_only_rows": 7,
+        "voting_only_rows": 0
+      }
+    ]
+  },
+  "temporary_task_deleted": true
+}
