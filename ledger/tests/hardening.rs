@@ -318,15 +318,27 @@ async fn rpc_fixture(
             }
             serde_json::json!({"number":params[0],"timestamp":format!("0x{:x}",chrono::Utc::now().timestamp()-if mode==13{121}else{0}),"hash":block_hash(if mode==8 || (mode==7 && h>=103) || (mode==11 && h>=120) {h+100000}else{h})})
         }
-        "eth_call" => serde_json::json!(format!(
-            "0x{:064x}",
-            if mode == 6 && params[1] == "latest" {
-                90
+        "eth_call" => {
+            if mode == 24 {
+                f.tip.store(135, Ordering::Relaxed);
+                serde_json::json!(format!("0x{:064x}", 0))
             } else {
-                100
+                serde_json::json!(format!(
+                    "0x{:064x}",
+                    if mode == 6 && params[1] == "latest" {
+                        90
+                    } else {
+                        100
+                    }
+                ))
             }
-        )),
+        }
         "eth_getLogs" => {
+            if mode == 24 {
+                return Json(
+                    serde_json::json!({"jsonrpc":"2.0","id":1,"error":{"code":-32000,"message":"execution history unavailable"}}),
+                );
+            }
             if mode == 18 {
                 return Json(serde_json::json!({"jsonrpc":"2.0","id":1,"result":[]}));
             }
@@ -3339,5 +3351,540 @@ async fn process_storage_inspection_precedes_migrations_and_never_starts_account
         "a bounded query failure does not poison the inventory transaction"
     );
     lock.rollback().await.unwrap();
+    server.abort();
+}
+
+#[derive(Clone)]
+struct TerraForkFixture {
+    tip: Arc<std::sync::atomic::AtomicI64>,
+    fork_after: Arc<std::sync::atomic::AtomicI64>,
+    fail_hash: Arc<AtomicBool>,
+    missing_from: Arc<std::sync::atomic::AtomicI64>,
+    live_balance: Arc<std::sync::atomic::AtomicI64>,
+}
+impl TerraForkFixture {
+    fn new(tip: i64) -> Self {
+        Self {
+            tip: Arc::new(std::sync::atomic::AtomicI64::new(tip)),
+            fork_after: Arc::new(std::sync::atomic::AtomicI64::new(i64::MAX)),
+            fail_hash: Arc::new(AtomicBool::new(false)),
+            missing_from: Arc::new(std::sync::atomic::AtomicI64::new(i64::MAX)),
+            live_balance: Arc::new(std::sync::atomic::AtomicI64::new(1000)),
+        }
+    }
+    fn changed(&self, height: i64) -> bool {
+        height > self.fork_after.load(Ordering::Relaxed)
+    }
+    fn hash(&self, height: i64) -> String {
+        format!(
+            "{:064X}",
+            height + if self.changed(height) { 1_000_000 } else { 0 }
+        )
+    }
+    fn bytes(&self, height: i64) -> String {
+        format!("terra-indexed-fork:{height}:{}", self.changed(height))
+    }
+}
+async fn terra_fork_http(
+    State(state): State<TerraForkFixture>,
+    uri: OriginalUri,
+    request: axum::http::HeaderMap,
+) -> axum::response::Response {
+    use axum::response::IntoResponse;
+    use sha2::{Digest, Sha256};
+    let path = uri.0.path();
+    if path.contains("/smart/") {
+        let mut headers = axum::http::HeaderMap::new();
+        headers.insert(
+            "x-cosmos-block-height",
+            request.get("x-cosmos-block-height").unwrap().clone(),
+        );
+        return (headers,Json(serde_json::json!({"data":{"balance":state.live_balance.load(Ordering::Relaxed).to_string()}}))).into_response();
+    }
+    if path.contains("/blocks/") {
+        let suffix = path.rsplit('/').next().unwrap();
+        if suffix != "latest" && state.fail_hash.load(Ordering::Relaxed) {
+            return (
+                axum::http::StatusCode::SERVICE_UNAVAILABLE,
+                "canonical hash unavailable",
+            )
+                .into_response();
+        }
+        let height = if suffix == "latest" {
+            state.tip.load(Ordering::Relaxed)
+        } else {
+            suffix.parse::<i64>().unwrap()
+        };
+        return Json(serde_json::json!({"block_id":{"hash":state.hash(height)},"sdk_block":{
+            "header":{"height":height.to_string(),"chain_id":"columbus-5","time":chrono::Utc::now().to_rfc3339()},
+            "data":{"txs":[base64::Engine::encode(&base64::engine::general_purpose::STANDARD,state.bytes(height))]}
+        }})).into_response();
+    }
+    let url = reqwest::Url::parse(&format!("http://fixture{}", uri.0)).unwrap();
+    let height = url
+        .query_pairs()
+        .find(|(k, _)| k == "query")
+        .unwrap()
+        .1
+        .split('=')
+        .nth(1)
+        .unwrap()
+        .parse::<i64>()
+        .unwrap();
+    if height >= state.missing_from.load(Ordering::Relaxed) {
+        return (
+            axum::http::StatusCode::NOT_FOUND,
+            "execution history unavailable",
+        )
+            .into_response();
+    }
+    Json(serde_json::json!({"pagination":null,"total":"1","tx_responses":[{
+        "height":height.to_string(),"txhash":hex::encode_upper(Sha256::digest(state.bytes(height).as_bytes())),"code":0,"logs":[],
+        "events":[{"type":"wasm","attributes":[
+            {"key":"_contract_address","value":DEFAULT_CL8Y_CW20},
+            {"key":"action","value":"transfer"},{"key":"from","value":ALICE},{"key":"to","value":"terra1bob"},
+            {"key":"amount","value":if state.changed(height){"2"}else{"1"}}
+        ]}]
+    }]})).into_response()
+}
+async fn terra_fork_server(tip: i64) -> (String, TerraForkFixture, tokio::task::JoinHandle<()>) {
+    let state = TerraForkFixture::new(tip);
+    let app = Router::new()
+        .fallback(get(terra_fork_http))
+        .with_state(state.clone());
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    (url, state, server)
+}
+async fn seed_terra_fork_electorate(
+    pool: &sqlx::PgPool,
+    state: &TerraForkFixture,
+    recipient: bool,
+) {
+    for (chain, wallet, balance) in [(Chain::Terra, ALICE, 1000), (Chain::Bsc, EVM, 1000)] {
+        seed_registration(pool, chain, wallet, 100, &BigInt::from(balance), None)
+            .await
+            .unwrap();
+    }
+    if recipient {
+        seed_registration(pool, Chain::Terra, "terra1bob", 100, &BigInt::from(0), None)
+            .await
+            .unwrap();
+    }
+    sqlx::query("UPDATE public.voting_registrations SET baseline_height=100,baseline_block_hash=$1 WHERE chain='terra'")
+        .bind(state.hash(100)).execute(pool).await.unwrap();
+    for chain in [Chain::Terra, Chain::Bsc] {
+        let mut tx = pool.begin().await.unwrap();
+        db::lock_chain(&mut tx, chain).await.unwrap();
+        db::publish_checkpoint(
+            &mut tx,
+            chain,
+            100,
+            &if chain == Chain::Terra {
+                state.hash(100)
+            } else {
+                block_hash(100)
+            },
+            if chain == Chain::Terra { 100 } else { 115 },
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+    }
+    db::set_state(pool, "intents_ok", "true").await.unwrap();
+}
+async fn frozen_terra_power(pool: &sqlx::PgPool, proposal: uuid::Uuid) -> String {
+    sqlx::query_scalar("SELECT weight::text FROM voting.proposal_snapshots WHERE proposal_id=$1 AND chain='terra' AND wallet_address=$2")
+        .bind(proposal).bind(ALICE).fetch_one(pool).await.unwrap()
+}
+
+#[tokio::test]
+async fn indexed_terra_one_multi_and_beyond_retained_horizon_forks_preserve_frozen_power() {
+    for (end, ancestor) in [(104, Some(103)), (104, Some(102)), (230, None)] {
+        let Some((pool, _lock)) = setup().await else {
+            return;
+        };
+        let (url, state, server) = terra_fork_server(end).await;
+        let lcd = LcdClient::new(vec![url.clone()]);
+        let cfg = config(&url);
+        seed_terra_fork_electorate(&pool, &state, true).await;
+        for height in 101..=end {
+            assert_eq!(
+                ingest::ingest_terra_height(&pool, &lcd, &cfg, height)
+                    .await
+                    .unwrap(),
+                1
+            );
+        }
+        let original = 1000 - (end - 100);
+        assert_eq!(
+            db::balance_at(&pool, Chain::Terra, ALICE, end)
+                .await
+                .unwrap(),
+            BigInt::from(original)
+        );
+        let (poll, signature) = signed_draft_fixture(&pool).await;
+        sqlx::query("SELECT * FROM voting.freeze_proposal($1,$2)")
+            .bind(poll)
+            .bind(signature)
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert_eq!(frozen_terra_power(&pool, poll).await, original.to_string());
+        state
+            .fork_after
+            .store(ancestor.unwrap_or(100), Ordering::Relaxed);
+        if let Some(ancestor) = ancestor {
+            ingest::maybe_rewind_terra(&pool, &lcd, end).await.unwrap();
+            assert_eq!(db::indexed_terra_height(&pool).await.unwrap(), ancestor);
+            let remaining: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM cl8y_cw20_transfers")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+            assert_eq!(remaining, ancestor - 100);
+            assert_eq!(
+                db::balance_at(&pool, Chain::Terra, ALICE, ancestor)
+                    .await
+                    .unwrap(),
+                BigInt::from(1000 - (ancestor - 100))
+            );
+            for height in ancestor + 1..=end {
+                ingest::ingest_terra_height(&pool, &lcd, &cfg, height)
+                    .await
+                    .unwrap();
+            }
+            ingest::ingest_terra_height(&pool, &lcd, &cfg, end)
+                .await
+                .unwrap();
+            let expected = 1000 - (ancestor - 100) - 2 * (end - ancestor);
+            assert_eq!(
+                db::balance_at(&pool, Chain::Terra, ALICE, end)
+                    .await
+                    .unwrap(),
+                BigInt::from(expected)
+            );
+            let recipient = db::balance_at(&pool, Chain::Terra, "terra1bob", end)
+                .await
+                .unwrap();
+            assert_eq!(recipient + BigInt::from(expected), BigInt::from(1000));
+            let checkpoint:(i64,String,bool,bool)=sqlx::query_as("SELECT height,block_hash,complete,canonical FROM ledger_checkpoints WHERE chain='terra'").fetch_one(&pool).await.unwrap();
+            assert_eq!(checkpoint, (end, state.hash(end), true, true));
+            let replayed: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM cl8y_cw20_transfers")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+            assert_eq!(replayed, end - 100);
+        } else {
+            let first: i64 = sqlx::query_scalar(
+                "SELECT MIN(height) FROM ledger_canonical_blocks WHERE chain='terra'",
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            assert_eq!(
+                first, 102,
+                "actual ancestor100 is outside retained128-block horizon"
+            );
+            let error = ingest::maybe_rewind_terra(&pool, &lcd, end)
+                .await
+                .unwrap_err();
+            assert_eq!(error.to_string(), "provider: fork_beyond_horizon");
+            assert_eq!(db::indexed_terra_height(&pool).await.unwrap(), end);
+            let state:(bool,bool,String)=sqlx::query_as("SELECT complete,canonical,degraded_reason FROM ledger_checkpoints WHERE chain='terra'").fetch_one(&pool).await.unwrap();
+            assert_eq!(state, (false, false, "fork_beyond_horizon".into()));
+            assert_eq!(
+                db::balance_at(&pool, Chain::Terra, ALICE, end)
+                    .await
+                    .unwrap(),
+                BigInt::from(original)
+            );
+            let retained: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM cl8y_cw20_transfers")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+            assert_eq!(
+                retained,
+                end - 100,
+                "unresolved fork does not rewrite accounting history"
+            );
+            assert_eq!(
+                voting_ledger::health::readiness(&pool).await.0,
+                axum::http::StatusCode::SERVICE_UNAVAILABLE
+            );
+            let (blocked, signature) = signed_draft_fixture(&pool).await;
+            assert!(sqlx::query("SELECT * FROM voting.freeze_proposal($1,$2)")
+                .bind(blocked)
+                .bind(signature)
+                .execute(&pool)
+                .await
+                .is_err());
+        }
+        let validity: String =
+            sqlx::query_scalar("SELECT snapshot_validity FROM voting.proposals WHERE id=$1")
+                .bind(poll)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(validity, "invalid");
+        assert_eq!(frozen_terra_power(&pool, poll).await, original.to_string());
+        server.abort();
+    }
+}
+
+#[tokio::test]
+async fn indexed_terra_canonical_hash_failure_keeps_checkpoint_then_recovers_same_epoch() {
+    let Some((pool, _lock)) = setup().await else {
+        return;
+    };
+    let (url, state, server) = terra_fork_server(104).await;
+    let lcd = LcdClient::new(vec![url.clone()]);
+    let cfg = config(&url);
+    seed_terra_fork_electorate(&pool, &state, false).await;
+    for height in 101..=104 {
+        ingest::ingest_terra_height(&pool, &lcd, &cfg, height)
+            .await
+            .unwrap();
+    }
+    let before: (i64, String, i64, chrono::DateTime<chrono::Utc>) = sqlx::query_as(
+        "SELECT height,block_hash,epoch,observed_at FROM ledger_checkpoints WHERE chain='terra'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    state.fail_hash.store(true, Ordering::Relaxed);
+    let absent = voting_ledger::bsc::BscClient::new(vec![]);
+    assert!(voting_ledger::worker::poll_chain(
+        &pool,
+        &Some(lcd.clone()),
+        &absent,
+        &cfg,
+        Chain::Terra
+    )
+    .await
+    .is_err());
+    let after: (i64, String, i64, chrono::DateTime<chrono::Utc>) = sqlx::query_as(
+        "SELECT height,block_hash,epoch,observed_at FROM ledger_checkpoints WHERE chain='terra'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(after, before);
+    // Mirror the supervisor's persisted failure classification without inventing a fork.
+    db::degrade(&pool, Chain::Terra, "provider_or_accounting_failure")
+        .await
+        .unwrap();
+    assert_eq!(
+        voting_ledger::health::readiness(&pool).await.0,
+        axum::http::StatusCode::SERVICE_UNAVAILABLE
+    );
+    state.fail_hash.store(false, Ordering::Relaxed);
+    voting_ledger::worker::poll_chain(&pool, &Some(lcd), &absent, &cfg, Chain::Terra)
+        .await
+        .unwrap();
+    let recovered:(i64,String,i64,bool,bool)=sqlx::query_as("SELECT height,block_hash,epoch,complete,canonical FROM ledger_checkpoints WHERE chain='terra'").fetch_one(&pool).await.unwrap();
+    assert_eq!(recovered, (before.0, before.1, before.2, true, true));
+    assert_eq!(
+        db::balance_at(&pool, Chain::Terra, ALICE, 104)
+            .await
+            .unwrap(),
+        BigInt::from(996)
+    );
+    assert_eq!(
+        voting_ledger::health::readiness(&pool).await.0,
+        axum::http::StatusCode::OK
+    );
+    server.abort();
+}
+
+#[tokio::test]
+async fn drained_holder_missing_terra_interval_requires_recovery_before_new_freeze() {
+    let Some((pool, _lock)) = setup().await else {
+        return;
+    };
+    let (url, state, server) = terra_fork_server(100).await;
+    let lcd = LcdClient::new(vec![url.clone()]);
+    let cfg = config(&url);
+    seed_terra_fork_electorate(&pool, &state, false).await;
+    let (old, signature) = signed_draft_fixture(&pool).await;
+    sqlx::query("SELECT * FROM voting.freeze_proposal($1,$2)")
+        .bind(old)
+        .bind(signature)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(frozen_terra_power(&pool, old).await, "1000");
+    state.tip.store(110, Ordering::Relaxed);
+    state.missing_from.store(101, Ordering::Relaxed);
+    state.live_balance.store(0, Ordering::Relaxed);
+    let absent = voting_ledger::bsc::BscClient::new(vec![]);
+    assert!(voting_ledger::worker::poll_chain(
+        &pool,
+        &Some(lcd.clone()),
+        &absent,
+        &cfg,
+        Chain::Terra
+    )
+    .await
+    .is_err());
+    assert_eq!(
+        db::indexed_terra_height(&pool).await.unwrap(),
+        100,
+        "unavailable interval cannot jump to current head"
+    );
+    // The operator confirms history is unavailable and explicitly requests a new eligibility epoch.
+    db::degrade(&pool, Chain::Terra, "lost_registered_history")
+        .await
+        .unwrap();
+    let (new, signature) = signed_draft_fixture(&pool).await;
+    assert!(sqlx::query("SELECT * FROM voting.freeze_proposal($1,$2)")
+        .bind(new)
+        .bind(signature)
+        .execute(&pool)
+        .await
+        .is_err());
+    let source = voting_ledger::bsc::CompositeBalanceSource {
+        terra: Some(voting_ledger::bsc::LcdBalancePair {
+            lcd: lcd.clone(),
+            token: DEFAULT_CL8Y_CW20.into(),
+        }),
+        bsc: None,
+    };
+    voting_ledger::reconcile::reconcile_live_baseline(
+        &pool,
+        &source,
+        &lcd,
+        &absent,
+        &cfg,
+        Chain::Terra,
+    )
+    .await
+    .unwrap();
+    assert_eq!(db::indexed_terra_height(&pool).await.unwrap(), 110);
+    assert_eq!(
+        db::balance_at(&pool, Chain::Terra, ALICE, 110)
+            .await
+            .unwrap(),
+        BigInt::from(0)
+    );
+    assert_eq!(
+        voting_ledger::health::readiness(&pool).await.0,
+        axum::http::StatusCode::OK
+    );
+    let heights: (i64, i64) = sqlx::query_as("SELECT * FROM voting.freeze_proposal($1,$2)")
+        .bind(new)
+        .bind(signature)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(heights, (110, 100));
+    assert_eq!(
+        frozen_terra_power(&pool, new).await,
+        "0",
+        "spent Terra power is excluded from the new electorate"
+    );
+    assert_eq!(
+        frozen_terra_power(&pool, old).await,
+        "1000",
+        "old advisory weight remains immutable"
+    );
+    let epochs: Vec<i64> = sqlx::query_scalar(
+        "SELECT terra_epoch FROM voting.proposals WHERE id=ANY($1) ORDER BY terra_epoch",
+    )
+    .bind(vec![old, new])
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(epochs, vec![1, 2]);
+    server.abort();
+}
+
+#[tokio::test]
+async fn drained_holder_missing_bsc_interval_requires_confirmed_recovery_before_new_freeze() {
+    let Some((pool, _lock)) = setup().await else {
+        return;
+    };
+    let (url, mode, server) = rpc_server().await;
+    let state = TerraForkFixture::new(100);
+    seed_terra_fork_electorate(&pool, &state, false).await;
+    let client = voting_ledger::bsc::BscClient::new(vec![url.clone()]);
+    let cfg = config(&url);
+    let (old, signature) = signed_draft_fixture(&pool).await;
+    sqlx::query("SELECT * FROM voting.freeze_proposal($1,$2)")
+        .bind(old)
+        .bind(signature)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let frozen = |id| {
+        sqlx::query_scalar::<_, String>("SELECT weight::text FROM voting.proposal_snapshots WHERE proposal_id=$1 AND chain='bsc' AND wallet_address=$2")
+        .bind(id).bind(EVM)
+    };
+    assert_eq!(frozen(old).fetch_one(&pool).await.unwrap(), "1000");
+    mode.store(24, Ordering::Relaxed);
+    assert!(
+        voting_ledger::worker::poll_chain(&pool, &None, &client, &cfg, Chain::Bsc)
+            .await
+            .is_err()
+    );
+    assert_eq!(db::indexed_bsc_block(&pool).await.unwrap(), 100);
+    db::degrade(&pool, Chain::Bsc, "lost_registered_history")
+        .await
+        .unwrap();
+    let (new, signature) = signed_draft_fixture(&pool).await;
+    assert!(sqlx::query("SELECT * FROM voting.freeze_proposal($1,$2)")
+        .bind(new)
+        .bind(signature)
+        .execute(&pool)
+        .await
+        .is_err());
+    let source = voting_ledger::bsc::CompositeBalanceSource {
+        terra: None,
+        bsc: Some(voting_ledger::bsc::BscBalanceSource {
+            client: client.clone(),
+            token: DEFAULT_CL8Y_BEP20.into(),
+        }),
+    };
+    voting_ledger::reconcile::reconcile_live_baseline(
+        &pool,
+        &source,
+        &LcdClient::new(vec![]),
+        &client,
+        &cfg,
+        Chain::Bsc,
+    )
+    .await
+    .unwrap();
+    let checkpoint:(i64,i64,i64,bool,bool)=sqlx::query_as("SELECT height,network_tip,epoch,complete,canonical FROM ledger_checkpoints WHERE chain='bsc'").fetch_one(&pool).await.unwrap();
+    assert_eq!(
+        checkpoint,
+        (120, 135, 2, true, true),
+        "current baseline becomes eligible only at15confirmedblocks"
+    );
+    assert_eq!(
+        db::balance_at(&pool, Chain::Bsc, EVM, 120).await.unwrap(),
+        BigInt::from(0)
+    );
+    assert_eq!(
+        voting_ledger::health::readiness(&pool).await.0,
+        axum::http::StatusCode::OK
+    );
+    let heights: (i64, i64) = sqlx::query_as("SELECT * FROM voting.freeze_proposal($1,$2)")
+        .bind(new)
+        .bind(signature)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(heights, (100, 120));
+    assert_eq!(frozen(new).fetch_one(&pool).await.unwrap(), "0");
+    assert_eq!(frozen(old).fetch_one(&pool).await.unwrap(), "1000");
+    let epochs: Vec<i64> = sqlx::query_scalar(
+        "SELECT bsc_epoch FROM voting.proposals WHERE id=ANY($1) ORDER BY bsc_epoch",
+    )
+    .bind(vec![old, new])
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(epochs, vec![1, 2]);
     server.abort();
 }
