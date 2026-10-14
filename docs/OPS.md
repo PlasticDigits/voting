@@ -240,7 +240,18 @@ The frontend uses the repository Dockerfile and root build context with Coolify
 `is_static=false` (a static wrapper otherwise looks for nonexistent `/app/dist`
 inside the final nginx image). The release helper verifies this mode and the
 ledger `/live` health probe before queuing a build. Forwarded-header
-trust is explicitly disabled; claimed client IP headers cannot select quota buckets.
-Before any enablement, verify actual ingress peers and replacement behavior. Database
+trust is enabled only for the observed voting ingress peer `10.0.17.2/32`, with
+`VOTING_API_REPLICAS=1`. The [dated live probe](verification/2026-10-14-live-proxy-quota.json)
+proved forged incoming forwarding headers share the same quota bucket and recover
+after `Retry-After`. Keep the normal quota at 60/minute with burst20. Revalidate
+the peer and header replacement after proxy/network changes; never broaden this
+trust to an entire private subnet. Database
 identity additionally requires comment `cl8y-voting-ephemeral-test` before destructive
 DDL. The marker must be installed only by initialization of a dedicated test database.
+
+Production chain polling uses `POLL_INTERVAL_MS=1000`. The previous 12000ms
+interval plus sequential BSC header reads could not clear the live backlog; an
+actual inspection showed canonical BSC lag278 while Terra and intent checks were
+healthy. Poll cadence and bounded header batches must sustain the current BSC
+block rate. Validate real readiness after changing either; never compensate by
+weakening finality, freshness or admission lag limits.

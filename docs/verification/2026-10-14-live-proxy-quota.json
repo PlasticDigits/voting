@@ -1,0 +1,62 @@
+{
+  "observed_at": "2026-10-14T10:49:29Z",
+  "commit": "6a1755a674ee88e8a8ff0f735023724ed849abbd",
+  "deployment": "z7oa6vjzjjdrjxs7qxbqwd5a",
+  "checks": [
+    {
+      "operation": "bounded_ingress_log_read",
+      "status": 200,
+      "resource_uuid": "x5j1g2xuc5p508g26ff003q0",
+      "peers": [],
+      "distinct_peers": 0
+    },
+    {
+      "operation": "bounded_ingress_log_read",
+      "status": 200,
+      "resource_uuid": "x5j1g2xuc5p508g26ff003q0",
+      "peers": [
+        {
+          "transport_peer": "10.0.17.2",
+          "candidate_cidr": "10.0.17.2/32",
+          "observed_at": "2026-10-14T10:49:29.069893+00:00"
+        }
+      ],
+      "distinct_peers": 1
+    },
+    {
+      "operation": "bounded_spoofed_xff_quota_probe",
+      "responses": [
+        {
+          "status": 200,
+          "valid_request_id": true
+        },
+        {
+          "status": 200,
+          "valid_request_id": true
+        },
+        {
+          "status": 429,
+          "valid_request_id": true,
+          "safe_rate_limit_code": true,
+          "correlated_request_id": true,
+          "retry_after_seconds": 29
+        }
+      ],
+      "elapsed_seconds": 2.62,
+      "unlimited_health": {
+        "status": 200,
+        "valid_request_id": true
+      },
+      "initial_pass": true
+    },
+    {
+      "operation": "retry_after_recovery",
+      "response": {
+        "status": 200,
+        "valid_request_id": true
+      },
+      "passed": true
+    }
+  ],
+  "passed": true
+}
