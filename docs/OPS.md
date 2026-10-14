@@ -227,7 +227,10 @@ The operator's `/health` remains liveness and `/ready` reports ledger readiness.
 
 Current configured resources are ledger `s6j6fx1870zbsmhbu2do1yiz`, operator
 `x5j1g2xuc5p508g26ff003q0`, frontend `svvxk9gd93d8kwezvcrekdq0`.
-The frontend uses the repository Dockerfile and root build context. Forwarded-header
+The frontend uses the repository Dockerfile and root build context with Coolify
+`is_static=false` (a static wrapper otherwise looks for nonexistent `/app/dist`
+inside the final nginx image). The release helper verifies this mode and the
+ledger `/live` health probe before queuing a build. Forwarded-header
 trust is explicitly disabled; claimed client IP headers cannot select quota buckets.
 Before any enablement, verify actual ingress peers and replacement behavior. Database
 identity additionally requires comment `cl8y-voting-ephemeral-test` before destructive

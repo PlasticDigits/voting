@@ -25,10 +25,10 @@ async fn main() -> Result<(), LedgerError> {
     let lcd = if cfg.terra_lcd_urls.is_empty() {
         None
     } else {
-        Some(LcdClient::new_for_chain(
-            cfg.terra_lcd_urls.clone(),
-            &cfg.terra_chain_id,
-        ))
+        Some(
+            LcdClient::new_for_chain(cfg.terra_lcd_urls.clone(), &cfg.terra_chain_id)
+                .with_rpc_urls(cfg.terra_rpc_urls.clone()),
+        )
     };
     let bsc = BscClient::new(cfg.bsc_rpc_urls.clone());
     let source = CompositeBalanceSource {

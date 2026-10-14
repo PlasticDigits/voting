@@ -87,7 +87,24 @@ def main():
             raise RuntimeError("release must run from the voting origin checkout")
         if args.sha != main_sha:
             raise RuntimeError("release commit differs from fetched origin/main")
-        call("PATCH", "/applications/" + uuid, {"git_branch": "main", "git_commit_sha": args.sha})
+        configuration = {"git_branch": "main", "git_commit_sha": args.sha}
+        if args.resource == "frontend":
+            # Static wrapping discards this multi-stage image's nginx runtime.
+            configuration.update({"is_static": False, "is_spa": False,
+                                  "build_pack": "dockerfile", "base_directory": "/",
+                                  "dockerfile_location": "/deploy/docker/frontend.Dockerfile"})
+        elif args.resource == "ledger":
+            configuration["health_check_path"] = "/live"
+        call("PATCH", "/applications/" + uuid, configuration)
+        configured = call("GET", "/applications/" + uuid)
+        if args.resource == "frontend" and (
+            configured.get("settings", {}).get("is_static") is not False
+            or configured.get("dockerfile_location") != "/deploy/docker/frontend.Dockerfile"
+            or configured.get("build_pack") != "dockerfile"
+        ):
+            raise RuntimeError("frontend image mode was not applied")
+        if args.resource == "ledger" and configured.get("health_check_path") != "/live":
+            raise RuntimeError("ledger liveness probe was not applied")
         result = call("POST", "/deploy?" + urllib.parse.urlencode({"uuid": uuid, "force": "true"}))
         deployments = result.get("deployments", [])
         print(json.dumps({"resource": args.resource, "commit": args.sha, "deployments": [
