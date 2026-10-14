@@ -55,7 +55,8 @@ CI also runs `test:rust-integration` against Postgres 16 (applies [`deploy/grant
 |-----|----------------|
 | [`AGENTS.md`](AGENTS.md) | Start here |
 | [`docs/HANDOFF.md`](docs/HANDOFF.md) | Current state + next work |
-| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Planned packages |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Packages, merge gate **H30**, Woodpecker bootstrap |
+| [`docs/adr/0001-remove-catchall-codeowners.md`](docs/adr/0001-remove-catchall-codeowners.md) | Catch-all CODEOWNERS removal ([#30](https://git.cl8y.com/code/voting/issues/30)) |
 | [`docs/ISSUE_MIGRATION.md`](docs/ISSUE_MIGRATION.md) | Old DEX IID → this repo |
 | [`skills/AGENTS_VOTING_BUNDLE.md`](skills/AGENTS_VOTING_BUNDLE.md) | Issue order and invariants |
 | [`docs/OPS.md`](docs/OPS.md) | Coolify, Legal admin, live QA, POST limits (#7) |
@@ -68,3 +69,12 @@ git config core.hooksPath .githooks
 ```
 
 Commit message **bodies** must not contain email addresses, `Co-authored-by`, or the word **author**. Never use `--no-verify`.
+
+## Merge gate
+
+Merge to `main` is a pull request, Woodpecker context
+`ci/woodpecker/pr/woodpecker`, and SHA-pinned `Do: merge`
+([architecture **H30**](docs/ARCHITECTURE.md)). Official CODEOWNERS review
+is not a merge gate. Do not re-add catch-all `CODEOWNERS`
+(`.* @code/maintainers`); see
+[ADR 0001](docs/adr/0001-remove-catchall-codeowners.md).
