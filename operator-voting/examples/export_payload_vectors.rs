@@ -10,8 +10,7 @@ fn main() {
     let key = k256::ecdsa::SigningKey::from_slice(&[0x33; 32]).unwrap();
     let point = key.verifying_key().to_encoded_point(true);
     let terra_address =
-        operator_voting::crypto::cosmos_address_from_pubkey(point.as_bytes(), "terra")
-            .unwrap();
+        operator_voting::crypto::cosmos_address_from_pubkey(point.as_bytes(), "terra").unwrap();
     for (chain, address, chain_id) in [
         ("terra", terra_address.as_str(), "columbus-5"),
         ("bsc", "0x19e7e376e7c213b7e7e7e46cc70a5dd086daff2a", "56"),

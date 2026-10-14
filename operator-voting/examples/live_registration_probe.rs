@@ -133,7 +133,9 @@ fn probe(chain: &str) -> Result<Value, ()> {
     }
     let receipt = accepted["receipt_id"].as_str().ok_or(())?;
     let (receipt_status, exported) = request("GET", &format!("/v1/receipts/{receipt}"), None)?;
-    if receipt_status != 200 || operator_voting::payload::verify_exported_receipt(&exported).is_err() {
+    if receipt_status != 200
+        || operator_voting::payload::verify_exported_receipt(&exported).is_err()
+    {
         return Err(());
     }
     for _ in 0..60 {
