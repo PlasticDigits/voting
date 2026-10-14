@@ -327,6 +327,9 @@ async fn rpc_fixture(
             }
         )),
         "eth_getLogs" => {
+            if mode == 18 {
+                return Json(serde_json::json!({"jsonrpc":"2.0","id":1,"result":[]}));
+            }
             let lo = i64::from_str_radix(
                 params[0]["fromBlock"]
                     .as_str()
@@ -991,6 +994,28 @@ async fn process_readiness_isolation_sigterm_and_restart() {
             .await
             .unwrap();
     assert_eq!(recovered_epoch, original_epoch);
+    // Explicit canonical hash lookup failure must not refresh a stale head or stop its sibling.
+    bad.store(9, Ordering::Relaxed);
+    wait_status(reqwest::StatusCode::SERVICE_UNAVAILABLE).await;
+    assert_eq!(db::indexed_bsc_block(&pool).await.unwrap(), 105);
+    assert_eq!(db::indexed_terra_height(&pool).await.unwrap(), 110);
+    assert_eq!(
+        http.get(format!("{base}/live"))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        reqwest::StatusCode::OK
+    );
+    bad.store(0, Ordering::Relaxed);
+    wait_status(reqwest::StatusCode::OK).await;
+    let recovered: i64 =
+        sqlx::query_scalar("SELECT epoch FROM ledger_checkpoints WHERE chain='bsc'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(recovered, original_epoch);
+
     assert!(std::process::Command::new("kill")
         .arg("-TERM")
         .arg(child.id().to_string())
@@ -2381,4 +2406,271 @@ async fn registration_cannot_insert_into_stale_registered_set_during_http_fetch_
         );
         server.abort();
     }
+}
+#[derive(Clone)]
+struct RpcHttpFault {
+    inner: RpcFixture,
+}
+async fn rpc_http_fault(
+    State(state): State<RpcHttpFault>,
+    Json(body): Json<serde_json::Value>,
+) -> axum::response::Response {
+    use axum::response::IntoResponse;
+    if body["method"] == "eth_getLogs" {
+        match state.inner.bad.load(Ordering::Relaxed) {
+            20 => {
+                return (axum::http::StatusCode::TOO_MANY_REQUESTS, "rate limited").into_response()
+            }
+            21 => return (axum::http::StatusCode::OK, "malformed successful JSON").into_response(),
+            22 => {
+                tokio::time::sleep(Duration::from_secs(30)).await;
+                return "delayed response".into_response();
+            }
+            _ => {}
+        }
+    }
+    rpc_fixture(State(state.inner), Json(body))
+        .await
+        .into_response()
+}
+#[tokio::test]
+async fn bsc_http_429_timeout_malformed_json_and_empty_logs_preserve_atomic_progress() {
+    let Some((pool, _lock)) = setup().await else {
+        return;
+    };
+    let mode = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let app = Router::new()
+        .fallback(axum::routing::post(rpc_http_fault))
+        .with_state(RpcHttpFault {
+            inner: RpcFixture {
+                bad: mode.clone(),
+                tip: Arc::new(std::sync::atomic::AtomicI64::new(120)),
+            },
+        });
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    let server = tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+    let client = voting_ledger::bsc::BscClient::new(vec![url.clone()]);
+    let cfg = config(&url);
+    seed_registration(&pool, Chain::Bsc, EVM, 100, &BigInt::from(100), None)
+        .await
+        .unwrap();
+    let mut tx = pool.begin().await.unwrap();
+    db::lock_chain(&mut tx, Chain::Bsc).await.unwrap();
+    db::publish_checkpoint(&mut tx, Chain::Bsc, 100, &block_hash(100), 115)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    for (offset, fault) in [20, 21, 22].into_iter().enumerate() {
+        let height = 101 + offset as i64;
+        let before: (i64, String, i64, chrono::DateTime<chrono::Utc>) = sqlx::query_as(
+            "SELECT height,block_hash,epoch,observed_at FROM ledger_checkpoints WHERE chain='bsc'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        mode.store(fault, Ordering::Relaxed);
+        assert!(
+            tokio::time::timeout(
+                Duration::from_secs(10),
+                ingest::ingest_bsc_range(&pool, &client, &cfg, height, height)
+            )
+            .await
+            .unwrap()
+            .is_err(),
+            "fault {fault}"
+        );
+        let after: (i64, String, i64, chrono::DateTime<chrono::Utc>) = sqlx::query_as(
+            "SELECT height,block_hash,epoch,observed_at FROM ledger_checkpoints WHERE chain='bsc'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(after, before, "fault {fault}");
+        assert_eq!(db::indexed_bsc_block(&pool).await.unwrap(), height - 1);
+        let rows: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM cl8y_bep20_transfers")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(rows, offset as i64);
+        assert_eq!(
+            db::balance_at(&pool, Chain::Bsc, EVM, height)
+                .await
+                .unwrap(),
+            BigInt::from(100 - offset)
+        );
+        mode.store(0, Ordering::Relaxed);
+        assert_eq!(
+            ingest::ingest_bsc_range(&pool, &client, &cfg, height, height)
+                .await
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            db::balance_at(&pool, Chain::Bsc, EVM, height)
+                .await
+                .unwrap(),
+            BigInt::from(99 - offset)
+        );
+    }
+    mode.store(18, Ordering::Relaxed);
+    assert_eq!(
+        ingest::ingest_bsc_range(&pool, &client, &cfg, 104, 104)
+            .await
+            .unwrap(),
+        0
+    );
+    let checkpoint: (i64, String, i64, bool, bool) = sqlx::query_as(
+        "SELECT height,block_hash,epoch,complete,canonical FROM ledger_checkpoints WHERE chain='bsc'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(checkpoint, (104, block_hash(104), 1, true, true));
+    assert_eq!(
+        db::balance_at(&pool, Chain::Bsc, EVM, 104).await.unwrap(),
+        BigInt::from(97)
+    );
+    let rows: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM cl8y_bep20_transfers")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(rows, 3);
+    server.abort();
+}
+#[tokio::test]
+async fn valid_empty_terra_block_advances_bound_cursor_without_invented_events() {
+    let Some((pool, _lock)) = setup().await else {
+        return;
+    };
+    let app = Router::new().fallback(get(|uri: OriginalUri| async move {
+        if uri.0.path().contains("/blocks/") {
+            Json(serde_json::json!({
+                "block_id": {
+                    "hash": base64::Engine::encode(
+                        &base64::engine::general_purpose::STANDARD,
+                        vec![0xAA; 32],
+                    )
+                },
+                "sdk_block": {
+                    "header": {
+                        "height": "110", "chain_id": "columbus-5",
+                        "time": chrono::Utc::now().to_rfc3339()
+                    },
+                    "data": {"txs": null}
+                }
+            }))
+        } else {
+            Json(
+                serde_json::from_str::<serde_json::Value>(include_str!(
+                    "fixtures/terra-supported-empty.json"
+                ))
+                .unwrap(),
+            )
+        }
+    }));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    let server = tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+    seed_registration(&pool, Chain::Terra, ALICE, 100, &BigInt::from(100), None)
+        .await
+        .unwrap();
+    assert_eq!(
+        ingest::ingest_terra_height(
+            &pool,
+            &LcdClient::new(vec![url.clone()]),
+            &config(&url),
+            110
+        )
+        .await
+        .unwrap(),
+        0
+    );
+    let checkpoint: (i64, String, bool, bool) = sqlx::query_as(
+        "SELECT height,block_hash,complete,canonical FROM ledger_checkpoints WHERE chain='terra'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(checkpoint, (110, "A".repeat(64), true, true));
+    assert_eq!(db::indexed_terra_height(&pool).await.unwrap(), 110);
+    let rows: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM cl8y_cw20_transfers")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(rows, 0);
+    assert_eq!(
+        db::balance_at(&pool, Chain::Terra, ALICE, 110)
+            .await
+            .unwrap(),
+        BigInt::from(100)
+    );
+    server.abort();
+}
+#[tokio::test]
+async fn repeated_terra_pagination_key_stops_after_two_pages_without_progress() {
+    let Some((pool, _lock)) = setup().await else {
+        return;
+    };
+    let pages = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let count = pages.clone();
+    let app = Router::new().fallback(get(move |uri: OriginalUri| {
+        let count = count.clone();
+        async move {
+            let mut body = fixture(
+                State(Fixture {
+                    fail_second: Arc::new(AtomicBool::new(false)),
+                }),
+                uri,
+            )
+            .await
+            .0;
+            if body.get("tx_responses").is_some() {
+                count.fetch_add(1, Ordering::Relaxed);
+                body["pagination"]["total"] = serde_json::json!("1000");
+                body["pagination"]["next_key"] = serde_json::json!("repeated+/=");
+            }
+            Json(body)
+        }
+    }));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    let server = tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+    seed_registration(&pool, Chain::Terra, ALICE, 100, &BigInt::from(1000), None)
+        .await
+        .unwrap();
+    let error = ingest::ingest_terra_height(
+        &pool,
+        &LcdClient::new(vec![url.clone()]),
+        &config(&url),
+        110,
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(error.to_string(), "provider: repeated_tx_page");
+    assert_eq!(pages.load(Ordering::Relaxed), 2);
+    assert_eq!(db::indexed_terra_height(&pool).await.unwrap(), 0);
+    let checkpoints: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM ledger_checkpoints")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(checkpoints, 0);
+    let rows: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM cl8y_cw20_transfers")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(rows, 0);
+    assert_eq!(
+        db::balance_at(&pool, Chain::Terra, ALICE, 110)
+            .await
+            .unwrap(),
+        BigInt::from(1000)
+    );
+    server.abort();
 }
