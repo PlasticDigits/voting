@@ -61,7 +61,8 @@ def validate_deployment(result, uuid, application_id):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("stop", "deploy", "status", "recover", "clear-recovery"))
+    parser.add_argument("action", choices=("stop", "deploy", "status", "recover", "clear-recovery",
+                                         "inspect-storage", "clear-inspection"))
     parser.add_argument("resource", choices=RESOURCES)
     parser.add_argument("--sha")
     parser.add_argument("--deployment")
@@ -70,14 +71,17 @@ def main():
     if args.action == "stop":
         call("POST", "/applications/" + uuid + "/stop")
         print(json.dumps({"resource": args.resource, "action": "stop_requested"}))
-    elif args.action in ("recover", "clear-recovery"):
+    elif args.action in ("recover", "clear-recovery", "inspect-storage", "clear-inspection"):
         if args.resource != "ledger":
-            raise RuntimeError("baseline recovery is ledger-only")
-        value = "true" if args.action == "recover" else "false"
+            raise RuntimeError("storage controls are ledger-only")
+        inspection = args.action in ("inspect-storage", "clear-inspection")
+        key = "LEDGER_INSPECT_STORAGE_ONLY" if inspection else "LEDGER_RECONCILE_LIVE_BASELINE"
+        value = "true" if args.action in ("recover", "inspect-storage") else "false"
         call("PATCH", "/applications/" + uuid + "/envs/bulk", {"data": [{
-            "key": "LEDGER_RECONCILE_LIVE_BASELINE", "value": value,
+            "key": key, "value": value,
             "is_buildtime": False, "is_runtime": True}]})
-        print(json.dumps({"resource": "ledger", "recovery_configured": value == "true"}))
+        state = "storage_inspection_configured" if inspection else "recovery_configured"
+        print(json.dumps({"resource": "ledger", state: value == "true"}))
     elif args.action == "deploy":
         if not args.sha or not re.fullmatch(r"[0-9a-f]{40}", args.sha):
             raise RuntimeError("a complete tested main commit is required")
