@@ -6,6 +6,8 @@ use crate::config::{normalize_evm_addr, normalize_terra_addr};
 use crate::error::{LedgerError, LedgerResult};
 use crate::parser::{apply_transfer, Bep20Transfer, Cw20Transfer};
 
+const TRUSTED_SEARCH_PATH_SQL: &str = "SET SESSION search_path TO pg_catalog, public, pg_temp";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Chain {
     Terra,
@@ -35,12 +37,31 @@ pub async fn migrate(pool: &PgPool) -> LedgerResult<()> {
     sqlx::query("SET search_path TO public, pg_temp")
         .execute(&mut *connection)
         .await?;
-    sqlx::migrate!("./migrations").run(&mut *connection).await?;
+    // Unqualified migration DDL must create in public, rather than pg_catalog.
+    // Restore the writer lookup path even when migration execution fails.
+    let migration = sqlx::migrate!("./migrations").run(&mut *connection).await;
+    let restore = sqlx::query(TRUSTED_SEARCH_PATH_SQL)
+        .execute(&mut *connection)
+        .await;
+    migration?;
+    restore?;
     Ok(())
 }
 
 pub async fn connect(database_url: &str) -> LedgerResult<PgPool> {
-    Ok(PgPool::connect(database_url).await?)
+    Ok(sqlx::postgres::PgPoolOptions::new()
+        .after_connect(|connection, _| {
+            Box::pin(async move {
+                // Role/database defaults and libpq options must never select a shadow
+                // schema for ledger tables, or override trusted catalog functions.
+                sqlx::query(TRUSTED_SEARCH_PATH_SQL)
+                    .execute(connection)
+                    .await?;
+                Ok(())
+            })
+        })
+        .connect(database_url)
+        .await?)
 }
 
 pub fn normalize_wallet(chain: Chain, raw: &str) -> LedgerResult<String> {

@@ -2912,3 +2912,156 @@ async fn process_startup_recovery_and_registration_use_configured_native_terra_r
     native_task.abort();
     bsc_task.abort();
 }
+
+#[tokio::test]
+async fn writer_pool_pins_every_connection_against_startup_search_path_shadow_tables() {
+    use sqlx::Connection;
+    let Some((pool, _lock)) = setup().await else {
+        return;
+    };
+    for (chain, wallet) in [(Chain::Terra, ALICE), (Chain::Bsc, EVM)] {
+        seed_registration(&pool, chain, wallet, 100, &BigInt::from(100), None)
+            .await
+            .unwrap();
+        sqlx::query("UPDATE public.voting_registrations SET baseline_height=100 WHERE chain=$1 AND wallet_address=$2")
+            .bind(chain.as_str()).bind(wallet).execute(&pool).await.unwrap();
+        let mut transaction = pool.begin().await.unwrap();
+        db::lock_chain(&mut transaction, chain).await.unwrap();
+        db::publish_checkpoint(
+            &mut transaction,
+            chain,
+            100,
+            &if chain == Chain::Terra {
+                "A".repeat(64)
+            } else {
+                block_hash(100)
+            },
+            if chain == Chain::Terra { 100 } else { 115 },
+        )
+        .await
+        .unwrap();
+        transaction.commit().await.unwrap();
+    }
+    let (proposal, signature) = signed_draft_fixture(&pool).await;
+    sqlx::query("SELECT * FROM voting.freeze_proposal($1,$2)")
+        .bind(proposal)
+        .bind(signature)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let frozen_before: Vec<(String, String, String)> = sqlx::query_as(
+        "SELECT chain,wallet_address,weight::text FROM voting.proposal_snapshots WHERE proposal_id=$1 ORDER BY chain,wallet_address",
+    ).bind(proposal).fetch_all(&pool).await.unwrap();
+    sqlx::query("CREATE TABLE voting.voting_registrations(chain text,wallet_address text,registered_at_height bigint,initial_balance numeric,status text)")
+        .execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO voting.voting_registrations VALUES ('terra',$1,1,999,'active'),('terra','terra1shadowonly',1,888,'active')")
+        .bind(ALICE).execute(&pool).await.unwrap();
+    let mut url = reqwest::Url::parse(&std::env::var("LEDGER_TEST_DATABASE_URL").unwrap()).unwrap();
+    url.query_pairs_mut()
+        .append_pair("options", "-csearch_path=voting,public");
+    let mut unsafe_connection = sqlx::PgConnection::connect(url.as_str()).await.unwrap();
+    let shadow: String = sqlx::query_scalar(
+        "SELECT initial_balance::text FROM voting_registrations WHERE wallet_address=$1",
+    )
+    .bind(ALICE)
+    .fetch_one(&mut unsafe_connection)
+    .await
+    .unwrap();
+    assert_eq!(
+        shadow, "999",
+        "startup options actually select the legacy shadow"
+    );
+    unsafe_connection.close().await.unwrap();
+
+    let writer = db::connect(url.as_str()).await.unwrap();
+    db::migrate(&writer).await.unwrap();
+    assert_eq!(
+        db::registered_set(&writer, Chain::Terra).await.unwrap(),
+        vec![ALICE.to_string()]
+    );
+    assert_eq!(
+        db::get_registration(&writer, Chain::Terra, ALICE)
+            .await
+            .unwrap()
+            .unwrap()
+            .initial_balance,
+        "100"
+    );
+    assert!(db::insert_registration(
+        &writer,
+        Chain::Terra,
+        "terra1freshpool",
+        101,
+        &BigInt::from(7),
+        None
+    )
+    .await
+    .unwrap());
+
+    // Hold every default-pool slot simultaneously so these checks cannot reuse one connection.
+    let mut connections = Vec::new();
+    let mut process_ids = std::collections::HashSet::new();
+    for _ in 0..10 {
+        let mut connection = writer.acquire().await.unwrap();
+        let path: String = sqlx::query_scalar("SHOW search_path")
+            .fetch_one(&mut *connection)
+            .await
+            .unwrap();
+        assert_eq!(path, "pg_catalog, public, pg_temp");
+        let height: i64 = sqlx::query_scalar(
+            "SELECT baseline_height FROM voting_registrations WHERE wallet_address=$1",
+        )
+        .bind(ALICE)
+        .fetch_one(&mut *connection)
+        .await
+        .unwrap();
+        assert_eq!(height, 100);
+        let process: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+            .fetch_one(&mut *connection)
+            .await
+            .unwrap();
+        assert!(process_ids.insert(process));
+        connections.push(connection);
+    }
+    connections.pop().unwrap().close().await.unwrap();
+    let mut replacement = writer.acquire().await.unwrap();
+    let (path, process): (String, i32) =
+        sqlx::query_as("SELECT current_setting('search_path'),pg_backend_pid()")
+            .fetch_one(&mut *replacement)
+            .await
+            .unwrap();
+    assert_eq!(path, "pg_catalog, public, pg_temp");
+    assert!(
+        !process_ids.contains(&process),
+        "replacement uses a newly opened physical connection"
+    );
+    drop(replacement);
+    drop(connections);
+    let canonical_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM public.voting_registrations WHERE wallet_address='terra1freshpool'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let shadow_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM voting.voting_registrations")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(canonical_count, 1);
+    assert_eq!(shadow_count, 2, "shadow history remains untouched");
+    let frozen_after: Vec<(String, String, String)> = sqlx::query_as(
+        "SELECT chain,wallet_address,weight::text FROM voting.proposal_snapshots WHERE proposal_id=$1 ORDER BY chain,wallet_address",
+    ).bind(proposal).fetch_all(&pool).await.unwrap();
+    assert_eq!(frozen_after, frozen_before);
+    assert_eq!(
+        db::balance_at(&writer, Chain::Terra, ALICE, 100)
+            .await
+            .unwrap(),
+        BigInt::from(100)
+    );
+    writer.close().await;
+    sqlx::query("DROP TABLE voting.voting_registrations")
+        .execute(&pool)
+        .await
+        .unwrap();
+}
