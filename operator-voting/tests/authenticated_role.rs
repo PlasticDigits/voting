@@ -23,6 +23,17 @@ async fn rejected(options: PgConnectOptions) {
     );
 }
 
+async fn provision_secret(pool: &sqlx::PgPool, role: &str, secret: &str) {
+    let mut provision = pool.acquire().await.unwrap();
+    sqlx::query("SELECT set_config('voting_test.credential',$1,false),set_config('voting_test.actor',$2,false),set_config('password_encryption','scram-sha-256',false)").bind(secret).bind(role).execute(&mut *provision).await.unwrap();
+    sqlx::raw_sql("DO $$ BEGIN EXECUTE format('ALTER ROLE %I PASSWORD %L',current_setting('voting_test.actor'),current_setting('voting_test.credential')); END $$;").execute(&mut *provision).await.unwrap();
+    sqlx::query("RESET voting_test.credential")
+        .execute(&mut *provision)
+        .await
+        .unwrap();
+    drop(provision);
+}
+
 #[tokio::test]
 async fn null_and_historical_default_passwords_fail_real_tcp_then_ephemeral_secret_authenticates() {
     let Some(url) = voting_ledger::test_lock::test_database_url() else {
@@ -76,14 +87,7 @@ async fn null_and_historical_default_passwords_fail_real_tcp_then_ephemeral_secr
         uuid::Uuid::new_v4().simple(),
         uuid::Uuid::new_v4().simple()
     );
-    let mut provision = child.acquire().await.unwrap();
-    sqlx::query("SELECT set_config('voting_test.credential',$1,false),set_config('voting_test.actor',$2,false),set_config('password_encryption','scram-sha-256',false)").bind(&secret).bind(&role).execute(&mut *provision).await.unwrap();
-    sqlx::raw_sql("DO $$ BEGIN EXECUTE format('ALTER ROLE %I PASSWORD %L',current_setting('voting_test.actor'),current_setting('voting_test.credential')); END $$;").execute(&mut *provision).await.unwrap();
-    sqlx::query("RESET voting_test.credential")
-        .execute(&mut *provision)
-        .await
-        .unwrap();
-    drop(provision);
+    provision_secret(&child, &role, &secret).await;
     let restricted = PgPoolOptions::new()
         .max_connections(2)
         .connect_with(options.clone().password(&secret))
@@ -105,8 +109,31 @@ async fn null_and_historical_default_passwords_fail_real_tcp_then_ephemeral_secr
             .await
             .is_err()
     );
-    rejected(options.password("change-me-in-prod")).await;
+    rejected(options.clone().password("change-me-in-prod")).await;
     restricted.close().await;
+    // Rotate an already usable credential and establish new physical TCP sessions.
+    let replacement = format!(
+        "{}{}",
+        uuid::Uuid::new_v4().simple(),
+        uuid::Uuid::new_v4().simple()
+    );
+    provision_secret(&child, &role, &replacement).await;
+    rejected(options.clone().password(&secret)).await;
+    let rotated = PgPoolOptions::new()
+        .max_connections(2)
+        .connect_with(options.password(&replacement))
+        .await
+        .expect("replacement secret authenticates restricted role");
+    let rotated_identity: (String, String) =
+        sqlx::query_as("SELECT current_user::text,session_user::text")
+            .fetch_one(&rotated)
+            .await
+            .unwrap();
+    assert_eq!(rotated_identity, (role.clone(), role.clone()));
+    operator_voting::db::validate_production_privileges(&rotated)
+        .await
+        .unwrap();
+    rotated.close().await;
     child.close().await;
     sqlx::query(&format!("DROP DATABASE {database}"))
         .execute(&admin)
