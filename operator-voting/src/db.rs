@@ -17,7 +17,12 @@ pub async fn migrate(pool: &PgPool) -> VotingResult<()> {
 }
 
 pub async fn connect(url: &str) -> VotingResult<PgPool> {
-    Ok(PgPool::connect(url).await?)
+    voting_ledger::db::connect(url)
+        .await
+        .map_err(|error| match error {
+            voting_ledger::LedgerError::Database(database) => VotingError::Database(database),
+            _ => VotingError::InvalidConfig("database connection initialization failed".into()),
+        })
 }
 
 #[derive(Debug, Clone, sqlx::FromRow, serde::Serialize)]
