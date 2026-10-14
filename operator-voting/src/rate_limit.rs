@@ -12,7 +12,10 @@ use ipnet::IpNet;
 use std::{
     collections::HashMap,
     net::{IpAddr, Ipv4Addr, SocketAddr},
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    },
     time::{Duration, Instant},
 };
 
@@ -24,6 +27,7 @@ pub struct RateLimitState {
     per_minute: u32,
     burst: u32,
     trusted_peers: Vec<IpNet>,
+    observed_ingress: Arc<AtomicBool>,
 }
 #[derive(Debug)]
 struct Bucket {
@@ -49,6 +53,7 @@ impl RateLimitState {
             per_minute,
             burst: burst.max(1),
             trusted_peers: vec![],
+            observed_ingress: Arc::new(AtomicBool::new(false)),
         }
     }
     fn check(&self, key: String, now: Instant) -> Result<(), u64> {
@@ -97,6 +102,17 @@ pub async fn enforce_post_rate_limit(
         .extensions()
         .get::<ConnectInfo<SocketAddr>>()
         .map(|c| c.0);
+    // One private transport peer per process supports exact proxy enrollment.
+    // Never log forwarded identities, public client addresses, URLs or bodies.
+    if let Some(peer) = peer {
+        let private = match peer.ip() {
+            IpAddr::V4(ip) => ip.is_private() && !ip.is_loopback(),
+            IpAddr::V6(ip) => ip.is_unique_local(),
+        };
+        if private && !state.observed_ingress.swap(true, Ordering::Relaxed) {
+            tracing::info!(transport_peer = %peer.ip(), "voting ingress peer observed");
+        }
+    }
     let ip = client_ip(request.headers(), peer, &state.trusted_peers);
     if let Err(wait) = state.check(format!("ip:{ip}"), Instant::now()) {
         return limited(wait);
