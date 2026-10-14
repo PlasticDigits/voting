@@ -4520,6 +4520,36 @@ async fn wait_child_status(
     .await
     .unwrap();
 }
+// Readiness permits bounded lag; fault fixtures need fully committed, exact tips.
+async fn wait_child_cursors(
+    child: &mut tokio::process::Child,
+    pool: &sqlx::PgPool,
+    terra: i64,
+    bsc: i64,
+) {
+    tokio::time::timeout(Duration::from_secs(8), async {
+        loop {
+            assert!(
+                child.try_wait().unwrap().is_none(),
+                "ledger child exited before cursor barrier"
+            );
+            let observed = (
+                db::indexed_terra_height(pool).await.unwrap(),
+                db::indexed_bsc_block(pool).await.unwrap(),
+            );
+            assert!(
+                observed.0 <= terra && observed.1 <= bsc,
+                "cursor exceeded fixed fixture tip"
+            );
+            if observed == (terra, bsc) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .unwrap();
+}
 async fn terminate_child(child: &mut tokio::process::Child) {
     assert!(std::process::Command::new("kill")
         .arg("-TERM")
@@ -4570,6 +4600,7 @@ async fn process_sigterm_during_pending_bsc_rpc_rolls_back_and_restart_retries_f
     let http = reqwest::Client::new();
     let mut child = launch_test_ledger(&terra, &rpc, &address.to_string(), &database);
     wait_child_status(&mut child, &http, &base, reqwest::StatusCode::OK).await;
+    wait_child_cursors(&mut child, &pool, 110, 105).await;
     assert_eq!(db::indexed_terra_height(&pool).await.unwrap(), 110);
     assert_eq!(db::indexed_bsc_block(&pool).await.unwrap(), 105);
     let epoch: i64 = sqlx::query_scalar("SELECT epoch FROM ledger_checkpoints WHERE chain='bsc'")
@@ -4590,13 +4621,7 @@ async fn process_sigterm_during_pending_bsc_rpc_rolls_back_and_restart_retries_f
     mode.store(0, Ordering::Relaxed);
     let mut restarted = launch_test_ledger(&terra, &rpc, &address.to_string(), &database);
     wait_child_status(&mut restarted, &http, &base, reqwest::StatusCode::OK).await;
-    tokio::time::timeout(Duration::from_secs(3), async {
-        while db::indexed_bsc_block(&pool).await.unwrap() != 106 {
-            tokio::time::sleep(Duration::from_millis(20)).await;
-        }
-    })
-    .await
-    .unwrap();
+    wait_child_cursors(&mut restarted, &pool, 110, 106).await;
     assert_eq!(
         db::balance_at(&pool, Chain::Bsc, EVM, 106).await.unwrap(),
         BigInt::from(994)
@@ -4653,6 +4678,7 @@ async fn process_database_session_loss_fails_readiness_then_restores_without_new
     let http = reqwest::Client::new();
     let mut child = launch_test_ledger(&terra, &rpc, &address.to_string(), child_url.as_str());
     wait_child_status(&mut child, &http, &base, reqwest::StatusCode::OK).await;
+    wait_child_cursors(&mut child, &pool, 110, 105).await;
     let tagged: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM pg_catalog.pg_stat_activity WHERE datname=$1 AND application_name=$2",
     )
@@ -4726,6 +4752,7 @@ async fn process_database_session_loss_fails_readiness_then_restores_without_new
     };
     println!("database_session_loss supervisor_restart={restart}");
     wait_child_status(&mut child, &http, &base, reqwest::StatusCode::OK).await;
+    wait_child_cursors(&mut child, &pool, 110, 105).await;
     let after: Vec<(String, i64, i64)> =
         sqlx::query_as("SELECT chain,height,epoch FROM ledger_checkpoints ORDER BY chain")
             .fetch_all(&pool)
@@ -4860,6 +4887,7 @@ async fn process_sigkill_after_event_balance_and_during_commit_recovers_exactly_
             let mut restarted = launch_test_ledger(&terra, &rpc, &address.to_string(), &database);
             let http = reqwest::Client::new();
             wait_child_status(&mut restarted, &http, &base, reqwest::StatusCode::OK).await;
+            wait_child_cursors(&mut restarted, &pool, 101, 105).await;
             let rows: i64 = sqlx::query_scalar(&format!("SELECT COUNT(*) FROM public.{table}"))
                 .fetch_one(&pool)
                 .await
@@ -4950,6 +4978,7 @@ async fn process_sigterm_during_pending_terra_lcd_keeps_bsc_progress_and_retries
     let http = reqwest::Client::new();
     let mut child = launch_test_ledger(&terra, &rpc, &address.to_string(), &database);
     wait_child_status(&mut child, &http, &base, reqwest::StatusCode::OK).await;
+    wait_child_cursors(&mut child, &pool, 110, 105).await;
     let epoch: i64 = sqlx::query_scalar("SELECT epoch FROM ledger_checkpoints WHERE chain='terra'")
         .fetch_one(&pool)
         .await
@@ -4991,13 +5020,7 @@ async fn process_sigterm_during_pending_terra_lcd_keeps_bsc_progress_and_retries
     blocked.store(false, Ordering::Relaxed);
     let mut restarted = launch_test_ledger(&terra, &rpc, &address.to_string(), &database);
     wait_child_status(&mut restarted, &http, &base, reqwest::StatusCode::OK).await;
-    tokio::time::timeout(Duration::from_secs(3), async {
-        while db::indexed_terra_height(&pool).await.unwrap() != 111 {
-            tokio::time::sleep(Duration::from_millis(20)).await;
-        }
-    })
-    .await
-    .unwrap();
+    wait_child_cursors(&mut restarted, &pool, 111, 105).await;
     assert_eq!(
         db::balance_at(&pool, Chain::Terra, ALICE, 111)
             .await
