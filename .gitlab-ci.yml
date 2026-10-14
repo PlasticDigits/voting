@@ -36,8 +36,11 @@ test:rust-integration:
     LEDGER_TEST_ALLOW_DESTRUCTIVE: "1"
     LEDGER_TEST_REQUIRED: "1"
     LEDGER_TEST_ALLOW_CI_SERVICE: "1"
+    VOTING_CONTRACT_CAPTURE_PATH: /tmp/voting-contracts.jsonl
   before_script:
-    - apt-get update && apt-get install -y --no-install-recommends pkg-config libssl-dev postgresql-client
+    - apt-get update && apt-get install -y --no-install-recommends pkg-config libssl-dev postgresql-client python3-venv
+    - python3 -m venv /tmp/voting-validator
+    - /tmp/voting-validator/bin/pip install --disable-pip-version-check -r scripts/requirements-verify.txt
     - |
       for i in $(seq 1 30); do
         pg_isready -h postgres -U voting -d voting_test_ci && break
@@ -46,6 +49,7 @@ test:rust-integration:
     - PGPASSWORD="$POSTGRES_PASSWORD" psql -h postgres -U voting -d voting_test_ci -v ON_ERROR_STOP=1 -c "COMMENT ON DATABASE voting_test_ci IS 'cl8y-voting-ephemeral-test'"
   script:
     - cargo test --workspace --tests --jobs 1 -- --test-threads=1
+    - /tmp/voting-validator/bin/python scripts/verify-api-contracts.py /tmp/voting-contracts.jsonl --require-success
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
@@ -60,6 +64,7 @@ test:frontend:
   script:
     - cd frontend
     - npm ci
+    - npm exec patch-package
     - npm test
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"

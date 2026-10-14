@@ -20,7 +20,8 @@ ARG GITLAB_NPM_TOKEN=
 RUN if [ -n "$GITLAB_NPM_TOKEN" ]; then \
       echo "//gitlab.com/api/v4/projects/82547916/packages/npm/:_authToken=${GITLAB_NPM_TOKEN}" >> .npmrc; \
     fi \
-    && npm ci
+    && npm ci \
+    && npm exec patch-package
 
 COPY frontend/ ./
 

@@ -72,6 +72,9 @@ def main():
         if not args.sha or not re.fullmatch(r"[0-9a-f]{40}", args.sha):
             raise RuntimeError("a complete tested main commit is required")
         main_sha = subprocess.check_output(["git", "rev-parse", "origin/main"], text=True).strip()
+        remote = subprocess.check_output(["git", "remote", "get-url", "origin"], text=True).strip()
+        if remote != "https://git.cl8y.com/code/voting.git":
+            raise RuntimeError("release must run from the voting origin checkout")
         if args.sha != main_sha:
             raise RuntimeError("release commit differs from fetched origin/main")
         call("PATCH", "/applications/" + uuid, {"git_branch": "main", "git_commit_sha": args.sha})
