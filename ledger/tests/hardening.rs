@@ -4728,6 +4728,11 @@ async fn process_database_session_loss_fails_readiness_then_restores_without_new
         }
     })
     .await;
+    let restored_after: chrono::DateTime<chrono::Utc> =
+        sqlx::query_scalar("SELECT clock_timestamp()")
+            .fetch_one(&mut control)
+            .await
+            .unwrap();
     // Always restore admission before checking fault assertions, including a failed observation.
     sqlx::query(&format!(
         "ALTER DATABASE \"{quoted}\" ALLOW_CONNECTIONS true"
@@ -4740,18 +4745,32 @@ async fn process_database_session_loss_fails_readiness_then_restores_without_new
         unavailable.unwrap().unwrap(),
         "running readiness must expose actual database failure"
     );
-    let restart = if let Some(exit) = child.try_wait().unwrap() {
-        assert!(
-            !exit.success(),
-            "a fatal DB progress failure requests supervisor restart"
-        );
-        child = launch_test_ledger(&terra, &rpc, &address.to_string(), child_url.as_str());
-        true
-    } else {
-        false
-    };
+    // An in-flight DB failure can request fatal supervision *after* admission
+    // returns. Observe that allowed exit throughout recovery, not just once.
+    // Require fresh passes from both chains and intents after restoration, so
+    // healthy HTTP backed only by old metadata cannot satisfy this barrier.
+    let restart=tokio::time::timeout(Duration::from_secs(8),async {
+        let mut restarted=false;
+        let mut ready_since=None;
+        loop {
+            if let Some(exit)=child.try_wait().unwrap() {
+                assert!(!exit.success(),"fatal DB progress failure must request a nonzero supervised restart");
+                assert!(!restarted,"DB restoration must not produce a restart loop");
+                child=launch_test_ledger(&terra,&rpc,&address.to_string(),child_url.as_str());
+                restarted=true;
+                ready_since=None;
+            }
+            let fresh:bool=sqlx::query_scalar("SELECT (SELECT count(*)=2 FROM public.ledger_checkpoints WHERE observed_at>=$1 AND complete AND canonical AND degraded_reason IS NULL) AND EXISTS(SELECT 1 FROM public.indexer_state WHERE key='intents_ok' AND value='true' AND updated_at>=$1)")
+                .bind(restored_after).fetch_one(&pool).await.unwrap();
+            let ready=http.get(format!("{base}/ready")).send().await.is_ok_and(|response|response.status()==reqwest::StatusCode::OK);
+            if fresh&&ready {
+                let since=ready_since.get_or_insert_with(std::time::Instant::now);
+                if since.elapsed()>=Duration::from_millis(300) && child.try_wait().unwrap().is_none() {break restarted;}
+            }else{ready_since=None;}
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    }).await.expect("restored DB must regain fresh dual-chain/intent progress and sustained readiness with at most one supervised restart");
     println!("database_session_loss supervisor_restart={restart}");
-    wait_child_status(&mut child, &http, &base, reqwest::StatusCode::OK).await;
     wait_child_cursors(&mut child, &pool, 110, 105).await;
     let after: Vec<(String, i64, i64)> =
         sqlx::query_as("SELECT chain,height,epoch FROM ledger_checkpoints ORDER BY chain")
