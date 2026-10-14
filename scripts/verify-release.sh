@@ -11,7 +11,7 @@ cleanup() {
   if [[ -n "$test_container" ]]; then docker rm -f "$test_container" >/dev/null; fi
 }
 trap cleanup EXIT
-test_container=$(docker run -d --network host \
+test_container=$(docker run -d --network host --tmpfs /var/lib/postgresql/data:rw,size=768m \
   -e POSTGRES_USER=voting -e POSTGRES_PASSWORD=voting -e POSTGRES_DB="$test_database" \
   postgres:16-alpine postgres -c "port=$test_port" -c listen_addresses=127.0.0.1)
 for attempt in $(seq 1 30); do
