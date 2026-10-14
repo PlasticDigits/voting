@@ -222,6 +222,23 @@ pub fn verify_exported_receipt(export: &serde_json::Value) -> VotingResult<()> {
     {
         return Err(fail());
     }
+    if payload
+        .nonce
+        .as_deref()
+        .filter(|n| !n.is_empty() && n.len() <= 128)
+        .is_none()
+        || sig["revision"] != serde_json::json!(payload.revision)
+    {
+        return Err(fail());
+    }
+    let accepted_at = chrono::DateTime::parse_from_rfc3339(
+        export["receipt"]["accepted_at"].as_str().ok_or_else(fail)?,
+    )
+    .map_err(|_| fail())?;
+    validate_time(&payload, accepted_at.timestamp())?;
+    if export["receipt"]["response"]["receipt_id"] != sig["id"] {
+        return Err(fail());
+    }
     match payload.chain.as_str() {
         "terra" if sig["scheme"] == "ADR-36" => verify_adr36(
             actor,
@@ -252,6 +269,25 @@ pub fn verify_exported_receipt(export: &serde_json::Value) -> VotingResult<()> {
         "draft" | "amend" | "open_vote" => {
             let revision = &export["revision"];
             let canonical = revision["body_canonical"].as_str().ok_or_else(fail)?;
+            let prepared = crate::proposal_sections::prepare_sections(&revision["body_sections"])?;
+            if prepared.canonical_json != canonical
+                || serde_json::Value::Object(prepared.sanitized.clone())
+                    != revision["body_sections"]
+            {
+                return Err(fail());
+            }
+            if payload.purpose == "draft"
+                && export["receipt"]["response"]["id"] != revision["proposal_id"]
+            {
+                return Err(fail());
+            }
+            if payload.purpose == "amend"
+                && (export["receipt"]["response"]["revision"] != revision["revision"]
+                    || export["receipt"]["response"]["body_hash"] != prepared.body_hash)
+            {
+                return Err(fail());
+            }
+
             if payload.title.as_deref() != revision["title"].as_str()
                 || payload.body_hash.as_deref() != Some(body_hash(canonical).as_str())
                 || revision["proposal_id"] != export["receipt"]["proposal_id"]
@@ -265,6 +301,7 @@ pub fn verify_exported_receipt(export: &serde_json::Value) -> VotingResult<()> {
             let raw = content["signed_body_html"].as_str().ok_or_else(fail)?;
             if payload.body_hash.as_deref() != Some(body_hash(raw).as_str())
                 || content["body_html"] != crate::html::sanitize_proposal_html(raw)
+                || content["id"] != export["receipt"]["response"]["id"]
             {
                 return Err(fail());
             }
@@ -273,8 +310,14 @@ pub fn verify_exported_receipt(export: &serde_json::Value) -> VotingResult<()> {
             let sections: crate::proposal_sections::AnalysisSections =
                 serde_json::from_value(export["receipt"]["content"]["sections"].clone())
                     .map_err(|_| fail())?;
-            let (_, _, hash) = crate::proposal_sections::prepare_analysis(&sections)?;
-            if payload.body_hash.as_deref() != Some(hash.as_str()) {
+            let (clean, _, hash) = crate::proposal_sections::prepare_analysis(&sections)?;
+            if serde_json::to_value(&clean).map_err(|_| fail())?
+                != export["receipt"]["content"]["sections"]
+                || payload.body_hash.as_deref() != Some(hash.as_str())
+                || export["receipt"]["content"]["body_html"]
+                    != crate::proposal_sections::render_analysis_html(&clean)
+                || export["receipt"]["content"]["id"] != export["receipt"]["response"]["id"]
+            {
                 return Err(fail());
             }
         }

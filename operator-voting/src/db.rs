@@ -167,6 +167,7 @@ pub struct ProposalRow {
     pub status: String,
     pub revision: i64,
     pub snapshot_validity: String,
+    pub snapshot_incident: Option<String>,
     pub opened_at: Option<chrono::DateTime<chrono::Utc>>,
     pub body_sections: Option<sqlx::types::Json<serde_json::Value>>,
 }
@@ -250,7 +251,7 @@ pub async fn list_proposals(
 ) -> VotingResult<Vec<ProposalRow>> {
     Ok(sqlx::query_as::<_, ProposalRow>(
         r#"
-        SELECT id, chain, proposer, title, body_html, terra_height, bsc_block, created_at, status, revision, snapshot_validity, opened_at, body_sections
+        SELECT id, chain, proposer, title, body_html, terra_height, bsc_block, created_at, status, revision, snapshot_validity, snapshot_incident, opened_at, body_sections
         FROM voting.proposals
         WHERE ($1::text IS NULL OR status = $1)
         ORDER BY created_at DESC
@@ -267,7 +268,7 @@ pub async fn get_proposal(
 ) -> VotingResult<Option<ProposalRow>> {
     Ok(sqlx::query_as::<_, ProposalRow>(
         r#"
-        SELECT id, chain, proposer, title, body_html, terra_height, bsc_block, created_at, status, revision, snapshot_validity, opened_at, body_sections
+        SELECT id, chain, proposer, title, body_html, terra_height, bsc_block, created_at, status, revision, snapshot_validity, snapshot_incident, opened_at, body_sections
         FROM voting.proposals WHERE id = $1 FOR NO KEY UPDATE
         "#,
     )
@@ -558,9 +559,12 @@ pub async fn validate_production_privileges(pool: &PgPool) -> VotingResult<()> {
         "voting.proposal_snapshots",
         "voting.action_receipts",
         "voting.proposal_revisions",
+        "voting.proposal_comments",
+        "voting.proposal_analysis",
+        "voting.registration_intents",
     ] {
         let unsafe_access: bool = sqlx::query_scalar(
-            "SELECT has_table_privilege(current_user,$1,'UPDATE,DELETE,TRUNCATE')",
+            "SELECT has_table_privilege(current_user,$1,'UPDATE,DELETE,TRUNCATE') OR has_any_column_privilege(current_user,$1,'UPDATE')",
         )
         .bind(table)
         .fetch_one(pool)
@@ -572,7 +576,7 @@ pub async fn validate_production_privileges(pool: &PgPool) -> VotingResult<()> {
         }
         if table.starts_with("public.") || table == "voting.proposal_snapshots" {
             let insert: bool =
-                sqlx::query_scalar("SELECT has_table_privilege(current_user,$1,'INSERT')")
+                sqlx::query_scalar("SELECT has_table_privilege(current_user,$1,'INSERT') OR has_any_column_privilege(current_user,$1,'INSERT')")
                     .bind(table)
                     .fetch_one(pool)
                     .await?;
@@ -627,7 +631,6 @@ pub async fn validate_production_privileges(pool: &PgPool) -> VotingResult<()> {
     }
     for table in [
         "voting.signatures",
-        "voting.registration_intents",
         "voting.votes",
         "voting.proposal_comments",
         "voting.proposal_analysis",
@@ -710,6 +713,33 @@ pub async fn validate_production_privileges(pool: &PgPool) -> VotingResult<()> {
             )));
         }
     }
+    for column in ["chain", "wallet_address", "signature_id"] {
+        let allowed: bool = sqlx::query_scalar(
+            "SELECT has_column_privilege(current_user,'voting.registration_intents',$1,'INSERT')",
+        )
+        .bind(column)
+        .fetch_one(pool)
+        .await?;
+        if !allowed {
+            return Err(VotingError::InvalidConfig(
+                "API role lacks registration intent INSERT".into(),
+            ));
+        }
+    }
+    for column in [
+        "processed_at",
+        "last_attempt_at",
+        "retry_after",
+        "attempts",
+        "last_error_class",
+    ] {
+        let unsafe_access: bool=sqlx::query_scalar("SELECT has_column_privilege(current_user,'voting.registration_intents',$1,'INSERT,UPDATE')").bind(column).fetch_one(pool).await?;
+        if unsafe_access {
+            return Err(VotingError::InvalidConfig(
+                "API role can forge ledger-owned intent metadata".into(),
+            ));
+        }
+    }
     let creates: bool = sqlx::query_scalar("SELECT has_schema_privilege(current_user,'public','CREATE') OR has_schema_privilege(current_user,'voting','CREATE') OR has_database_privilege(current_user,current_database(),'CREATE,TEMP')")
         .fetch_one(pool).await?;
     if creates {
@@ -722,5 +752,40 @@ pub async fn validate_production_privileges(pool: &PgPool) -> VotingResult<()> {
 
 /// The same positive/fresh/canonical dual-chain policy required by freeze.
 pub async fn ledger_ready(pool: &PgPool) -> VotingResult<bool> {
-    Ok(sqlx::query_scalar("SELECT count(*)=2 FROM public.ledger_checkpoints WHERE chain IN ('terra','bsc') AND height>0 AND network_tip>=height AND network_tip-height<=CASE chain WHEN 'terra' THEN 2 ELSE 17 END AND block_hash<>'' AND complete AND canonical AND degraded_reason IS NULL AND observed_at BETWEEN now()-interval '120 seconds' AND now()+interval '60 seconds'").fetch_one(pool).await?)
+    Ok(sqlx::query_scalar("SELECT count(*)=2 AND NOT EXISTS(SELECT 1 FROM public.voting_registrations r JOIN public.ledger_checkpoints c ON c.chain=r.chain WHERE r.status='active' AND COALESCE(r.baseline_height,r.registered_at_height)<=c.height AND (NOT r.baseline_verified OR r.baseline_block_hash IS NULL OR r.baseline_block_hash='')) FROM public.ledger_checkpoints WHERE chain IN ('terra','bsc') AND height>0 AND network_tip>=height AND network_tip-height<=CASE chain WHEN 'terra' THEN 2 ELSE 17 END AND block_hash<>'' AND complete AND canonical AND degraded_reason IS NULL AND observed_at BETWEEN clock_timestamp()-interval '120 seconds' AND clock_timestamp()+interval '60 seconds'").fetch_one(pool).await?)
+}
+
+/// Shared, accepted-action wallet quota. Called only after signature/domain checks
+/// and receipt replay lookup; unsigned requests and safe retries cannot charge it.
+pub async fn enforce_verified_action_quota(
+    conn: &mut sqlx::PgConnection,
+    chain: &str,
+    actor: &str,
+    purpose: &str,
+    per_minute: u32,
+) -> VotingResult<()> {
+    if per_minute == 0 {
+        return Ok(());
+    }
+    let actor = normalize_address(actor);
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
+        .bind(format!("verified-action:{chain}:{actor}:{purpose}"))
+        .execute(&mut *conn)
+        .await?;
+    let (count,retry):(i64,i64)=sqlx::query_as("SELECT count(*)::bigint,COALESCE(GREATEST(1,ceil(extract(epoch FROM min(r.accepted_at)+interval '60 seconds'-clock_timestamp())))::bigint,1) FROM voting.action_receipts r JOIN voting.signatures s ON s.id=r.signature_id WHERE s.chain=$1 AND s.wallet_address=$2 AND s.purpose=$3 AND r.accepted_at>clock_timestamp()-interval '60 seconds'")
+        .bind(chain).bind(actor).bind(purpose).fetch_one(conn).await?;
+    if count >= i64::from(per_minute) {
+        return Err(VotingError::RateLimited(retry.clamp(1, 60) as u64));
+    }
+    Ok(())
+}
+
+/// Admission for a future opening, independent from any existing frozen poll.
+pub async fn snapshot_eligible(
+    conn: &mut sqlx::PgConnection,
+    chain: &str,
+    actor: &str,
+) -> VotingResult<bool> {
+    Ok(sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM public.voting_registrations r JOIN public.ledger_checkpoints c ON c.chain=r.chain WHERE r.chain=$1 AND r.wallet_address=$2 AND r.status='active' AND r.baseline_verified AND r.baseline_block_hash IS NOT NULL AND r.baseline_block_hash<>'' AND COALESCE(r.baseline_height,r.registered_at_height)<=c.height AND r.registered_at_height<=c.height AND c.height>0 AND c.complete AND c.canonical AND c.degraded_reason IS NULL AND c.network_tip>=c.height AND c.network_tip-c.height<=CASE c.chain WHEN 'terra' THEN 2 ELSE 17 END AND c.observed_at BETWEEN clock_timestamp()-interval '120 seconds' AND clock_timestamp()+interval '60 seconds')")
+        .bind(chain).bind(normalize_address(actor)).fetch_one(conn).await?)
 }

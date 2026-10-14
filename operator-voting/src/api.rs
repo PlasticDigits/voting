@@ -46,6 +46,7 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/proposals/{id}/open", post(open_vote))
         .route("/v1/proposals/{id}/votes", post(cast_vote))
         .route("/v1/proposals/{id}/votes/{addr}", get(get_vote))
+        .route("/v1/proposals/{id}/weights/{addr}", get(get_frozen_weight))
         .route("/v1/balances/{addr}", get(get_balance))
         .with_state(state)
 }
@@ -64,6 +65,7 @@ async fn health() -> Json<Health> {
     })
 }
 
+#[utoipa::path(get,path="/openapi.json",responses((status=200,description="Generated OpenAPI document",body=Object)))]
 async fn openapi() -> Json<serde_json::Value> {
     Json(crate::contracts::openapi())
 }
@@ -71,6 +73,7 @@ async fn openapi() -> Json<serde_json::Value> {
 #[derive(utoipa::OpenApi)]
 #[openapi(
     paths(
+        openapi,
         health,
         readiness,
         register,
@@ -86,6 +89,7 @@ async fn openapi() -> Json<serde_json::Value> {
         open_vote,
         cast_vote,
         get_vote,
+        get_frozen_weight,
         get_balance,
         get_receipt
     ),
@@ -256,6 +260,9 @@ async fn begin_action<'a>(
         .ok_or_else(|| VotingError::BadRequest("bounded unique nonce required".into()))?;
     let hash = body_hash(&req.payload);
     let mut tx = state.pool.begin().await?;
+    sqlx::query("SET TRANSACTION ISOLATION LEVEL READ COMMITTED")
+        .execute(&mut *tx)
+        .await?;
     if matches!(purpose, "open_vote" | "vote") {
         sqlx::query("SELECT pg_advisory_xact_lock(8136,1),pg_advisory_xact_lock(8136,2)")
             .execute(&mut *tx)
@@ -286,6 +293,15 @@ async fn begin_action<'a>(
             .ok_or_else(|| VotingError::NotFound("proposal".into()))?;
     }
     crate::payload::validate_time(&payload, chrono::Utc::now().timestamp())?;
+    db::enforce_verified_action_quota(
+        &mut tx,
+        &payload.chain,
+        &req.address,
+        purpose,
+        state.cfg.rate_limit_post_per_minute,
+    )
+    .await?;
+    crate::payload::validate_time(&payload, chrono::Utc::now().timestamp())?;
     let sig_id = Uuid::new_v4();
     sqlx::query("INSERT INTO voting.signatures(id,chain,wallet_address,pubkey,signature,payload_hash,purpose,signed_payload,scheme,domain,nonce,proposal_id,revision) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)")
         .bind(sig_id).bind(&req.chain).bind(normalize_address(&req.address)).bind(&req.pubkey).bind(&req.signature).bind(hash).bind(purpose)
@@ -299,6 +315,15 @@ async fn finish_action(
     proposal_id: Option<Uuid>,
     mut response: serde_json::Value,
 ) -> VotingResult<serde_json::Value> {
+    let accepted_at = chrono::Utc::now();
+    let raw: String =
+        sqlx::query_scalar("SELECT signed_payload FROM voting.signatures WHERE id=$1")
+            .bind(signature_id)
+            .fetch_one(&mut *tx)
+            .await?;
+    let payload: SignedPayload = serde_json::from_str(&raw)
+        .map_err(|_| VotingError::Unauthorized("stored action payload invalid".into()))?;
+    crate::payload::validate_time(&payload, accepted_at.timestamp())?;
     let revision: Option<i64> = if let Some(id) = proposal_id {
         sqlx::query_scalar("SELECT revision FROM voting.proposals WHERE id=$1")
             .bind(id)
@@ -311,8 +336,8 @@ async fn finish_action(
         .as_object_mut()
         .and_then(|o| o.remove("receipt_content"));
     response["receipt_id"] = serde_json::json!(signature_id);
-    sqlx::query("INSERT INTO voting.action_receipts(signature_id,proposal_id,revision,response,content) VALUES($1,$2,$3,$4,$5)")
-        .bind(signature_id).bind(proposal_id).bind(revision).bind(&response).bind(content).execute(&mut *tx).await?;
+    sqlx::query("INSERT INTO voting.action_receipts(signature_id,proposal_id,revision,response,content,accepted_at) VALUES($1,$2,$3,$4,$5,$6)")
+        .bind(signature_id).bind(proposal_id).bind(revision).bind(&response).bind(content).bind(accepted_at).execute(&mut *tx).await?;
     tx.commit().await?;
     Ok(response)
 }
@@ -341,6 +366,7 @@ fn proposal_list_json(p: &db::ProposalRow, tallies: Vec<db::TallyRow>) -> serde_
         "title": p.title,
         "revision": p.revision,
         "snapshot_validity": p.snapshot_validity,
+        "snapshot_incident": p.snapshot_incident,
         "summary": proposal_summary(p),
         "terra_height": p.terra_height,
         "bsc_block": p.bsc_block,
@@ -540,6 +566,7 @@ async fn get_proposal(
         "title": p.title,
         "revision": p.revision,
         "snapshot_validity": p.snapshot_validity,
+        "snapshot_incident": p.snapshot_incident,
         "body_html": p.body_html,
         "body_sections": p.body_sections.as_ref().map(|s| &s.0),
         "body_hash": p.body_sections.as_ref().and_then(|s| prepare_sections(&s.0).ok()).map(|s| s.body_hash),
@@ -981,6 +1008,7 @@ async fn get_balance(
 
     let chain = resolve_chain(&addr, q.chain.as_deref())?;
     let reg = db::ledger_registration(&mut conn, chain, &addr).await?;
+    let snapshot_eligible = db::snapshot_eligible(&mut conn, chain, &addr).await?;
     let pending = if reg.is_some() {
         false
     } else {
@@ -999,6 +1027,7 @@ async fn get_balance(
         "as_of_height": as_of_height,
         "balance": amount.to_string(),
         "registered": reg.is_some(),
+        "snapshot_eligible": snapshot_eligible,
         "pending": pending,
         "initial_balance": reg.as_ref().map(|r| r.initial_balance.clone()),
     })))
@@ -1049,4 +1078,23 @@ async fn readiness(State(state): State<AppState>) -> (StatusCode, Json<Readiness
             },
         }),
     )
+}
+
+#[utoipa::path(get,path="/v1/proposals/{id}/weights/{addr}",params(("id"=String,Path,description="Proposal UUID"),("addr"=String,Path,description="Terra or EVM address"),("chain"=Option<String>,Query,description="terra or bsc")),responses((status=200,description="Stored immutable per-poll snapshot weight",body=crate::dto::FrozenWeightResponse),(status=400,body=crate::error::ErrorBody),(status=404,body=crate::error::ErrorBody),(status=500,body=crate::error::ErrorBody)))]
+async fn get_frozen_weight(
+    State(state): State<AppState>,
+    Path((id, addr)): Path<(Uuid, String)>,
+    Query(q): Query<ChainQuery>,
+) -> VotingResult<Json<serde_json::Value>> {
+    let chain = resolve_chain(&addr, q.chain.as_deref())?;
+    let mut conn = state.pool.acquire().await?;
+    let proposal = db::get_proposal(&mut conn, id)
+        .await?
+        .ok_or_else(|| VotingError::NotFound("proposal".into()))?;
+    let weight = db::snapshot_weight(&mut conn, id, chain, &addr).await?;
+    let eligible =
+        proposal.status == "open" && proposal.snapshot_validity == "valid" && weight > 0.into();
+    Ok(Json(
+        serde_json::json!({"proposal_id":id,"chain":chain,"address":normalize_address(&addr),"weight":weight.to_string(),"eligible":eligible}),
+    ))
 }

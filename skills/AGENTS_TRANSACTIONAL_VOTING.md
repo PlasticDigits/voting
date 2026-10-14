@@ -46,3 +46,13 @@ executed; do not infer production completeness from isolated integration tests.
 The runtime test database catalog comment must equal `cl8y-voting-ephemeral-test`.
 Provision this marker only on a new disposable database; an absent/wrong marker
 fails before migration or destructive SQL. Never mark an application database.
+
+Follow [OV-T7–OV-T10](../docs/OPERATOR_VOTING.md#review-followup-shared-quotas-actual-acceptance-and-field-level-evidence)
+when modifying quotas, clocks or operational privileges. Shared wallet quotas
+must use authenticated actors and accepted database receipts under the wallet
+lock; unsigned envelopes cannot charge another actor. Check signed TTL again at
+actual acceptance and roll back expired mutations. Preserve exact content and
+revision links in offline verification. Audit column grants as well as table
+permissions, and leave ledger queue processing metadata to the writer. Eligible
+unverified baselines block opening; above-cutoff registrations do not. Policy
+rotation requires an API restart and unaccepted old-role signatures must fail.

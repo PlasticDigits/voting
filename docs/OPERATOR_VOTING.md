@@ -263,3 +263,55 @@ exact `postgres` service hostname only with `CI=true` and
 The runtime test database catalog comment must equal `cl8y-voting-ephemeral-test`.
 Provision this marker only on a new disposable database; an absent/wrong marker
 fails before migration or destructive SQL. Never mark an application database.
+
+### Review followup: shared quotas, actual acceptance and field-level evidence
+
+- **OV-T7 — authenticated aggregate quota:** after signature/domain/actor checks
+  and accepted-receipt replay lookup, a database wallet/chain/purpose advisory
+  lock serializes the last-60-second accepted-action count. The configured
+  `RATE_LIMIT_POST_PER_MINUTE` cap is shared across API processes; accepted exact
+  retries and rejected unsigned envelopes do not charge it. Addresses use the
+  same normalization as authentication. Exhaustion returns safe 429 JSON plus
+  `Retry-After`. Peer-IP protection still belongs to the production middleware;
+  multi-replica IP limits require a shared edge limiter. Transactions explicitly
+  use READ COMMITTED so the post-lock count sees prior accepted commits.
+- **OV-T8 — acceptance clock:** receipt `accepted_at` is the exact timestamp used
+  for the final signed TTL check after mutation and lock waits. Expiry at this
+  point rolls back all signature/content/history changes. The offline verifier
+  checks that persisted timestamp against the signed bounds; receipt retries
+  use the original accepted record. Freeze freshness and `opened_at` use
+  `clock_timestamp()` after obtaining chain locks.
+- **OV-T9 — complete receipt content:** verification binds stored sanitized
+  sections to canonical JSON/hash, displayed analysis HTML to the canonical
+  sections, content IDs to responses, and stored signature revision to signed
+  revision. Mutating any of these fields or the acceptance time fails verification.
+- **OV-T10 — eligible certified baselines:** opening and readiness refuse active
+  unverified/missing-hash baselines at or below the chosen chain checkpoint.
+  Unconfirmed registrations above that cutoff remain zero-weight and cannot
+  globally halt opening. List/detail responses disclose `snapshot_incident`.
+
+`20261014000102_verified_action_guards.sql` upgrades actual-time freeze/default
+receipt clocks and revokes column-level privileges before restoring the explicit
+matrix. Table-level REVOKE alone does not remove column grants. Startup checks
+both table and effective column permissions, including inherited/PUBLIC grants,
+comments/analysis TRUNCATE and ledger-owned registration processing metadata.
+API registration intent INSERT is limited to chain/address/signature columns.
+Unsafe inherited role membership is detected and must be removed by operations.
+
+The isolated `process_restart` regression launches the real API binary, accepts a
+signed draft, sends SIGKILL, restarts against the same marked database, and retries
+the exact bytes after expiry. It verifies exactly one signature, receipt and draft,
+and rejects unaccepted signatures prepared before committee/blacklist rotation.
+`api_flow` now uses the production application factory; optional
+`VOTING_CONTRACT_CAPTURE_PATH` writes synthetic response JSONL for independent
+OpenAPI response validation. Never enable this fixture capture against live data.
+
+`GET /v1/balances/:addr` always emits `snapshot_eligible`: certified per-chain
+registration admission at the current complete canonical checkpoint. A BSC
+registration at live head H can show a positive initial balance while admission
+remains false at the finalized cutoff H-15. Later admission does not change old
+polls. `GET /v1/proposals/:id/weights/:addr?chain=terra|bsc` returns the exact stored
+snapshot weight and eligibility (open, valid snapshot, positive weight), without
+recomputing live balances. Missing snapshot addresses return weight `"0"` and
+false; unknown proposals return 404. The UI checks this per-poll endpoint before
+vote signing, and displays future registration admission separately.

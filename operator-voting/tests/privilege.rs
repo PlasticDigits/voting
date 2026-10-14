@@ -78,6 +78,63 @@ async fn restricted_role_from_grants_sql_cannot_write_ledger() {
         .await
         .is_err());
 
+    for grant in [
+        "GRANT UPDATE(balance) ON public.cl8y_balances TO operator_voting",
+        "GRANT INSERT(wallet_address,height,balance) ON public.cl8y_balances TO PUBLIC",
+        "GRANT TRUNCATE ON voting.proposal_comments TO operator_voting",
+        "GRANT TRUNCATE ON voting.proposal_analysis TO operator_voting",
+        "GRANT UPDATE(processed_at) ON voting.registration_intents TO operator_voting",
+    ] {
+        sqlx::query(grant).execute(&admin).await.unwrap();
+        assert!(
+            operator_voting::db::validate_production_privileges(&restricted)
+                .await
+                .is_err(),
+            "unsafe effective privilege accepted: {grant}"
+        );
+        apply_grants_sql(&url);
+        operator_voting::db::validate_production_privileges(&restricted)
+            .await
+            .unwrap();
+    }
+    let leaky = format!("voting_test_leaky_{}", uuid::Uuid::new_v4().simple());
+    sqlx::query(&format!("CREATE ROLE {leaky} NOLOGIN"))
+        .execute(&admin)
+        .await
+        .unwrap();
+    sqlx::query(&format!(
+        "GRANT UPDATE(balance) ON public.cl8y_balances TO {leaky}"
+    ))
+    .execute(&admin)
+    .await
+    .unwrap();
+    sqlx::query(&format!("GRANT {leaky} TO operator_voting"))
+        .execute(&admin)
+        .await
+        .unwrap();
+    assert!(
+        operator_voting::db::validate_production_privileges(&restricted)
+            .await
+            .is_err(),
+        "inherited column write must fail startup"
+    );
+    sqlx::query(&format!("REVOKE {leaky} FROM operator_voting"))
+        .execute(&admin)
+        .await
+        .unwrap();
+    sqlx::query(&format!(
+        "REVOKE UPDATE(balance) ON public.cl8y_balances FROM {leaky}"
+    ))
+    .execute(&admin)
+    .await
+    .unwrap();
+    sqlx::query(&format!("DROP ROLE {leaky}"))
+        .execute(&admin)
+        .await
+        .unwrap();
+    operator_voting::db::validate_production_privileges(&restricted)
+        .await
+        .unwrap();
     let read = sqlx::query_scalar::<_, String>(
         "SELECT public.voting_cl8y_balance_at('terra1missing', 1)::text",
     )
@@ -378,6 +435,7 @@ async fn populated_upgrade_preserves_legacy_and_revokes_blanket_grants() {
         include_str!("../../ledger/migrations/20261014000001_ledger_hardening.sql"),
         include_str!("../../ledger/migrations/20261014000100_transactional_actions.sql"),
         include_str!("../../ledger/migrations/20261014000101_restrict_existing_api_role.sql"),
+        include_str!("../../ledger/migrations/20261014000102_verified_action_guards.sql"),
     ] {
         sqlx::raw_sql(sql).execute(&mut *conn).await.unwrap();
     }
