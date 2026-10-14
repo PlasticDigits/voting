@@ -315,3 +315,33 @@ snapshot weight and eligibility (open, valid snapshot, positive weight), without
 recomputing live balances. Missing snapshot addresses return weight `"0"` and
 false; unknown proposals return 404. The UI checks this per-poll endpoint before
 vote signing, and displays future registration admission separately.
+
+The canonical v2 payload field order is `version`, `nonce`, `app`, `chain`,
+`chain_id`, `purpose`, `address`, `issued_at`, `expires_at`, optional `revision`,
+then optional title/body/proposal/choice/previous-body fields. This matches the
+client canonical builder; verification still uses original stored bytes and
+never rewrites previously accepted signatures. New draft/amend titles must have
+non-whitespace content and fit the existing 200-byte UTF-8 limit. Terra ADR-36
+actors must use the native `terra` address prefix.
+
+API startup also rejects parent-role memberships, including NOINHERIT roles
+that allow SET ROLE, ownership of protected balance/freeze routines, and
+writer-authenticated sessions disguised by SET ROLE. Authenticate directly as
+the dedicated restricted role; ledger owners retain routine ownership. Restricted
+REGISTER creates only unprocessed intent metadata; direct processed/retry/attempt
+metadata INSERT is denied as well as UPDATE.
+
+`20261014000103_intent_pass_readiness.sql` aligns opening with the ledger worker:
+`indexer_state.intents_ok` must equal `true` with `updated_at` age 0–120 seconds.
+A fresh successful bounded pass is required; the age/count of individual pending
+or failed intents is not a global veto. Fresh-nonce duplicate ballots retain the
+existing database 409 conflict behavior and roll back their signature/receipt;
+exact accepted-nonce retries continue to return the persisted successful response.
+
+`20261014000104_complete_proposal_immutability.sql` seals the complete opened
+content/freeze tuple, including displayed `body_html`, block hashes and epochs.
+Proposal id/chain/proposer/created_at remain immutable even while draft; only
+snapshot incident/validity are deliberately writer-mutable. API startup rejects
+UPDATE grants on identity columns while retaining their required draft INSERT
+rights. Cargo tracks the migration directory through `ledger/build.rs`, so an
+incremental build cannot silently omit a newly added forward migration.

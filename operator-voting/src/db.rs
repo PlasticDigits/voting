@@ -538,11 +538,27 @@ pub async fn receipt(
 
 /// Effective privileges, including inherited/PUBLIC grants, must be safe in prod.
 pub async fn validate_production_privileges(pool: &PgPool) -> VotingResult<()> {
+    let same_session: bool = sqlx::query_scalar("SELECT session_user=current_user")
+        .fetch_one(pool)
+        .await?;
+    if !same_session {
+        return Err(VotingError::InvalidConfig(
+            "API connection must authenticate directly as its restricted role".into(),
+        ));
+    }
     let unsafe_role: bool = sqlx::query_scalar("SELECT rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication OR rolbypassrls FROM pg_roles WHERE rolname=current_user")
         .fetch_one(pool).await?;
     if unsafe_role {
         return Err(VotingError::InvalidConfig(
             "API database role has administrative privileges".into(),
+        ));
+    }
+    // No parent-role membership is needed by the reviewed direct grant matrix.
+    // Even NOINHERIT membership can permit SET ROLE into a writer/admin role.
+    let memberships:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_auth_members WHERE member=(SELECT oid FROM pg_roles WHERE rolname=current_user))").fetch_one(pool).await?;
+    if memberships {
+        return Err(VotingError::InvalidConfig(
+            "API role must have no parent role memberships".into(),
         ));
     }
     for table in [
@@ -623,6 +639,12 @@ pub async fn validate_production_privileges(pool: &PgPool) -> VotingResult<()> {
                 .bind(function)
                 .fetch_one(pool)
                 .await?;
+        let owned:bool=sqlx::query_scalar("SELECT proowner=(SELECT oid FROM pg_roles WHERE rolname=current_user) FROM pg_proc WHERE oid=to_regprocedure($1)").bind(function).fetch_one(pool).await?;
+        if owned {
+            return Err(VotingError::InvalidConfig(
+                "API role must not own protected balance/freeze functions".into(),
+            ));
+        }
         if !callable {
             return Err(VotingError::InvalidConfig(format!(
                 "API role lacks EXECUTE on {function}"
@@ -694,6 +716,19 @@ pub async fn validate_production_privileges(pool: &PgPool) -> VotingResult<()> {
             )));
         }
     }
+    for column in ["id", "chain", "proposer"] {
+        let unsafe_access: bool = sqlx::query_scalar(
+            "SELECT has_column_privilege(current_user,'voting.proposals',$1,'UPDATE')",
+        )
+        .bind(column)
+        .fetch_one(pool)
+        .await?;
+        if unsafe_access {
+            return Err(VotingError::InvalidConfig(
+                "API role can rewrite proposal identity".into(),
+            ));
+        }
+    }
     for column in [
         "title",
         "body_html",
@@ -752,7 +787,7 @@ pub async fn validate_production_privileges(pool: &PgPool) -> VotingResult<()> {
 
 /// The same positive/fresh/canonical dual-chain policy required by freeze.
 pub async fn ledger_ready(pool: &PgPool) -> VotingResult<bool> {
-    Ok(sqlx::query_scalar("SELECT count(*)=2 AND NOT EXISTS(SELECT 1 FROM public.voting_registrations r JOIN public.ledger_checkpoints c ON c.chain=r.chain WHERE r.status='active' AND COALESCE(r.baseline_height,r.registered_at_height)<=c.height AND (NOT r.baseline_verified OR r.baseline_block_hash IS NULL OR r.baseline_block_hash='')) FROM public.ledger_checkpoints WHERE chain IN ('terra','bsc') AND height>0 AND network_tip>=height AND network_tip-height<=CASE chain WHEN 'terra' THEN 2 ELSE 17 END AND block_hash<>'' AND complete AND canonical AND degraded_reason IS NULL AND observed_at BETWEEN clock_timestamp()-interval '120 seconds' AND clock_timestamp()+interval '60 seconds'").fetch_one(pool).await?)
+    Ok(sqlx::query_scalar("SELECT count(*)=2 AND EXISTS(SELECT 1 FROM public.indexer_state WHERE key='intents_ok' AND value='true' AND updated_at BETWEEN clock_timestamp()-interval '120 seconds' AND clock_timestamp()) AND NOT EXISTS(SELECT 1 FROM public.voting_registrations r JOIN public.ledger_checkpoints c ON c.chain=r.chain WHERE r.status='active' AND COALESCE(r.baseline_height,r.registered_at_height)<=c.height AND (NOT r.baseline_verified OR r.baseline_block_hash IS NULL OR r.baseline_block_hash='')) FROM public.ledger_checkpoints WHERE chain IN ('terra','bsc') AND height>0 AND network_tip>=height AND network_tip-height<=CASE chain WHEN 'terra' THEN 2 ELSE 17 END AND block_hash<>'' AND complete AND canonical AND degraded_reason IS NULL AND observed_at BETWEEN clock_timestamp()-interval '120 seconds' AND clock_timestamp()+interval '60 seconds'").fetch_one(pool).await?)
 }
 
 /// Shared, accepted-action wallet quota. Called only after signature/domain checks

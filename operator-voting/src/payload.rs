@@ -12,8 +12,6 @@ pub struct SignedPayload {
     pub version: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub nonce: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub revision: Option<i64>,
     pub app: String,
     #[schema(value_type=crate::dto::VotingChain)]
     pub chain: String,
@@ -22,6 +20,8 @@ pub struct SignedPayload {
     pub address: String,
     pub issued_at: i64,
     pub expires_at: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub revision: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

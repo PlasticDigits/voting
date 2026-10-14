@@ -79,6 +79,7 @@ async fn set_tip(pool: &PgPool, terra: i64, bsc: i64) {
         .bind(chain).bind(height).bind(format!("{chain}-{height}")).execute(pool).await.unwrap();
     }
     sqlx::query("UPDATE public.voting_registrations SET baseline_height=COALESCE(baseline_height,registered_at_height),baseline_verified=true,baseline_block_hash=chain||'-'||registered_at_height::text WHERE status='active'").execute(pool).await.unwrap();
+    sqlx::query("INSERT INTO public.indexer_state(key,value,updated_at) VALUES('intents_ok','true',clock_timestamp()) ON CONFLICT(key) DO UPDATE SET value='true',updated_at=clock_timestamp()").execute(pool).await.unwrap();
 }
 
 fn cfg(pool_url: &str, blacklist: &str) -> VotingConfig {
@@ -1968,6 +1969,20 @@ async fn transactional_dual_chain_revisions_receipts_and_concurrency() {
             post_json(app.clone(), &format!("/v1/proposals/{id}/votes"), req).await;
         assert_eq!(status, StatusCode::OK, "{voted}");
         verified_export(app.clone(), &voted).await;
+        let mut duplicate = voting.clone();
+        duplicate.nonce = Some(uuid::Uuid::new_v4().to_string());
+        let mut duplicate = envelope(chain, &proposer, &key, &duplicate);
+        duplicate["choice"] = serde_json::json!("for");
+        let before:(i64,i64,i64)=sqlx::query_as("SELECT (SELECT count(*) FROM voting.signatures),(SELECT count(*) FROM voting.action_receipts),(SELECT count(*) FROM voting.votes)").fetch_one(&pool).await.unwrap();
+        let (status, response) =
+            post_json(app.clone(), &format!("/v1/proposals/{id}/votes"), duplicate).await;
+        assert_eq!(status, StatusCode::CONFLICT, "{response}");
+        let after:(i64,i64,i64)=sqlx::query_as("SELECT (SELECT count(*) FROM voting.signatures),(SELECT count(*) FROM voting.action_receipts),(SELECT count(*) FROM voting.votes)").fetch_one(&pool).await.unwrap();
+        assert_eq!(
+            before, after,
+            "freshnonce duplicate vote must not add signature/receipt/ballot"
+        );
+
         let mut comment = payload(chain, chain_id, "comment", &reviewer);
         comment.proposal_id = Some(id.clone());
         comment.body_hash = Some(body_hash("<p>Receipt reviewed</p>"));
@@ -2327,6 +2342,16 @@ async fn readiness_and_freeze_refuse_only_eligible_unverified_baselines() {
     )
     .await;
     assert_eq!(status, StatusCode::OK);
+    for (value, age) in [("false", 0), ("true", 121)] {
+        sqlx::query("UPDATE public.indexer_state SET value=$1,updated_at=clock_timestamp()-($2::text||' seconds')::interval WHERE key='intents_ok'").bind(value).bind(age.to_string()).execute(&pool).await.unwrap();
+        let (status, _) = call(
+            app.clone(),
+            Request::get("/ready").body(Body::empty()).unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    }
+    sqlx::query("UPDATE public.indexer_state SET value='true',updated_at=clock_timestamp() WHERE key='intents_ok'").execute(&pool).await.unwrap();
     sqlx::query("INSERT INTO public.voting_registrations(chain,wallet_address,registered_at_height,initial_balance,status,baseline_height,baseline_verified) VALUES('bsc','eligible_unverified',10,1,'active',10,false)").execute(&pool).await.unwrap();
     let (status, _) = call(
         app.clone(),
@@ -2458,4 +2483,33 @@ async fn bsc_registration_waits_for_finalized_snapshot_admission() {
     let (status, balance) = call(app, Request::get(&path).body(Body::empty()).unwrap()).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(balance["snapshot_eligible"], true);
+}
+
+#[tokio::test]
+async fn empty_or_whitespace_draft_title_is_rejected_atomically() {
+    let Some((pool, _lock)) = setup_pool().await else {
+        return;
+    };
+    let url = test_db_url().unwrap();
+    let (actor, _, key) = terra_wallet();
+    insert_reg(&pool, "terra", &actor, 10, 5000).await;
+    set_tip(&pool, 20, 20).await;
+    let app = router(AppState {
+        pool: pool.clone(),
+        cfg: cfg(&url, ""),
+    });
+    let sections = valid_sections();
+    for title in ["", " \t\n"] {
+        let p = draft_payload("terra", "columbus-5", &actor, title, &sections);
+        let mut request = envelope("terra", &actor, &key, &p);
+        request["title"] = serde_json::json!(title);
+        request["body_sections"] = sections.clone();
+        let (status, _) = post_json(app.clone(), "/v1/proposals", request).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+    }
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM voting.signatures")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(count, 0);
 }

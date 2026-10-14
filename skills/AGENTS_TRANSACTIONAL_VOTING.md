@@ -56,3 +56,9 @@ revision links in offline verification. Audit column grants as well as table
 permissions, and leave ledger queue processing metadata to the writer. Eligible
 unverified baselines block opening; above-cutoff registrations do not. Policy
 rotation requires an API restart and unaccepted old-role signatures must fail.
+
+Keep canonical v2 optional revision after expires_at; use the shared wire vectors
+for Unicode and ADR-36/EIP-191 signing bytes. Native Terra signatures must use the
+terra prefix. The database API identity must authenticate directly, have no parent
+role memberships, and own no protected definers. Worker readiness requires a fresh
+successful intents_ok pass, not an empty queue or arbitrary per-intent age cutoff.

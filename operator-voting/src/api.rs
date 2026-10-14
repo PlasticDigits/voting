@@ -473,7 +473,7 @@ async fn create_draft(
         return Ok((StatusCode::CREATED, Json(prior)));
     }
 
-    if req.title.len() > 200 {
+    if req.title.trim().is_empty() || req.title.len() > 200 {
         return Err(VotingError::BadRequest("proposal too large".into()));
     }
     if req.body_html.as_ref().is_some_and(|html| !html.is_empty()) {
@@ -605,7 +605,7 @@ async fn amend_sections(
         return Ok(Json(prior));
     }
 
-    if req.title.len() > 200 {
+    if req.title.trim().is_empty() || req.title.len() > 200 {
         return Err(VotingError::BadRequest("proposal too large".into()));
     }
     deny_blacklisted(&state.cfg, &req.signed.address)?;

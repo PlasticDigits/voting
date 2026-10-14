@@ -177,6 +177,7 @@ async fn sigkill_restart_replays_once_and_rejects_prepared_revoked_actors() {
     .unwrap();
     sqlx::query("INSERT INTO public.voting_registrations(chain,wallet_address,registered_at_height,initial_balance,status,baseline_height,baseline_block_hash,baseline_verified) VALUES('terra',$1,1,5000000000000000000000,'active',1,'terra-1',true)").bind(&actor).execute(&pool).await.unwrap();
     sqlx::query("INSERT INTO public.ledger_checkpoints(chain,height,block_hash,observed_at,complete,canonical,network_tip) VALUES('terra',20,'terra-20',clock_timestamp(),true,true,20),('bsc',20,'bsc-20',clock_timestamp(),true,true,20)").execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO public.indexer_state(key,value,updated_at) VALUES('intents_ok','true',clock_timestamp()) ON CONFLICT(key) DO UPDATE SET value='true',updated_at=clock_timestamp()").execute(&pool).await.unwrap();
     let reservation = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = reservation.local_addr().unwrap();
     drop(reservation);

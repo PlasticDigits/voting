@@ -58,11 +58,11 @@ async fn restricted_role_from_grants_sql_cannot_write_ledger() {
     // sqlx pool execute / raw_sql is not that path and can stop after the first statement.
     apply_grants_sql(&url);
 
-    // Reuse the guarded ephemeral admin URL; SET ROLE avoids any test login password.
+    // Test-only session authorization models the restricted authenticated identity without a login password.
     let restricted = sqlx::postgres::PgPoolOptions::new()
         .after_connect(|conn, _| {
             Box::pin(async move {
-                sqlx::query("SET ROLE operator_voting")
+                sqlx::query("SET SESSION AUTHORIZATION operator_voting")
                     .execute(conn)
                     .await?;
                 Ok(())
@@ -84,6 +84,11 @@ async fn restricted_role_from_grants_sql_cannot_write_ledger() {
         "GRANT TRUNCATE ON voting.proposal_comments TO operator_voting",
         "GRANT TRUNCATE ON voting.proposal_analysis TO operator_voting",
         "GRANT UPDATE(processed_at) ON voting.registration_intents TO operator_voting",
+        "GRANT INSERT(processed_at) ON voting.registration_intents TO operator_voting",
+        "GRANT INSERT(processed_at) ON voting.registration_intents TO PUBLIC",
+        "GRANT UPDATE(proposer) ON voting.proposals TO PUBLIC",
+        "GRANT UPDATE(chain) ON voting.proposals TO PUBLIC",
+        "GRANT UPDATE(id) ON voting.proposals TO PUBLIC",
     ] {
         sqlx::query(grant).execute(&admin).await.unwrap();
         assert!(
@@ -135,6 +140,86 @@ async fn restricted_role_from_grants_sql_cannot_write_ledger() {
     operator_voting::db::validate_production_privileges(&restricted)
         .await
         .unwrap();
+    let parent = format!("voting_test_setrole_{}", uuid::Uuid::new_v4().simple());
+    sqlx::query(&format!("CREATE ROLE {parent} NOLOGIN"))
+        .execute(&admin)
+        .await
+        .unwrap();
+    // PG16+ distinguishes inheritance from SET ROLE permission explicitly.
+    sqlx::query(&format!(
+        "GRANT {parent} TO operator_voting WITH INHERIT FALSE, SET TRUE"
+    ))
+    .execute(&admin)
+    .await
+    .unwrap();
+    assert!(
+        operator_voting::db::validate_production_privileges(&restricted)
+            .await
+            .is_err(),
+        "NOINHERIT/SET role escape must fail startup"
+    );
+    sqlx::query(&format!("REVOKE {parent} FROM operator_voting"))
+        .execute(&admin)
+        .await
+        .unwrap();
+    sqlx::query(&format!("DROP ROLE {parent}"))
+        .execute(&admin)
+        .await
+        .unwrap();
+    let owner:String=sqlx::query_scalar("SELECT quote_ident(pg_get_userbyid(proowner)) FROM pg_proc WHERE oid='public.voting_cl8y_balance_at(text,bigint)'::regprocedure").fetch_one(&admin).await.unwrap();
+    sqlx::query(
+        "ALTER FUNCTION public.voting_cl8y_balance_at(text,bigint) OWNER TO operator_voting",
+    )
+    .execute(&admin)
+    .await
+    .unwrap();
+    assert!(
+        operator_voting::db::validate_production_privileges(&restricted)
+            .await
+            .is_err(),
+        "owned definer must fail startup even without ledger writes"
+    );
+    sqlx::query(&format!(
+        "ALTER FUNCTION public.voting_cl8y_balance_at(text,bigint) OWNER TO {owner}"
+    ))
+    .execute(&admin)
+    .await
+    .unwrap();
+    apply_grants_sql(&url);
+    operator_voting::db::validate_production_privileges(&restricted)
+        .await
+        .unwrap();
+    let masked_writer = sqlx::postgres::PgPoolOptions::new()
+        .after_connect(|conn, _| {
+            Box::pin(async move {
+                sqlx::query("SET ROLE operator_voting")
+                    .execute(conn)
+                    .await?;
+                Ok(())
+            })
+        })
+        .connect(&url)
+        .await
+        .unwrap();
+    assert!(
+        operator_voting::db::validate_production_privileges(&masked_writer)
+            .await
+            .is_err(),
+        "writer-authenticated connection cannot disguise privilege via SET ROLE"
+    );
+    masked_writer.close().await;
+    let immutable_id = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO voting.proposals(id,chain,proposer,title,body_html,body_canonical,status,terra_height,bsc_block,opened_at) VALUES($1,'terra','fixture','frozen title','<p>frozen content</p>','{}','open',20,20,clock_timestamp())").bind(immutable_id).execute(&admin).await.unwrap();
+    assert!(
+        sqlx::query(
+            "UPDATE voting.proposals SET body_html='<p>unreviewed replacement</p>' WHERE id=$1"
+        )
+        .bind(immutable_id)
+        .execute(&restricted)
+        .await
+        .is_err(),
+        "legitimate draft column privilege cannot mutate opened display content"
+    );
     let read = sqlx::query_scalar::<_, String>(
         "SELECT public.voting_cl8y_balance_at('terra1missing', 1)::text",
     )
@@ -344,6 +429,48 @@ async fn restricted_role_from_grants_sql_cannot_write_ledger() {
             .is_err(),
         "freeze without signed complete revision must be denied"
     );
+    let signature_id: uuid::Uuid = sqlx::query_scalar("SELECT id FROM voting.signatures LIMIT 1")
+        .fetch_one(&admin)
+        .await
+        .unwrap();
+    assert!(sqlx::query("INSERT INTO voting.registration_intents(chain,wallet_address,signature_id,processed_at,retry_after,attempts,last_error_class) VALUES('terra','forged_queue',$1,clock_timestamp(),clock_timestamp(),999,'forged')").bind(signature_id).execute(&restricted).await.is_err(),"API role cannot forge writer-owned intent progress on INSERT");
+    // Real authenticated API request through the restricted identity, not direct SQL alone.
+    use base64::Engine;
+    use http_body_util::BodyExt;
+    use k256::ecdsa::signature::hazmat::PrehashSigner;
+    use sha2::Digest;
+    use tower::ServiceExt;
+    let key = k256::ecdsa::SigningKey::from_slice(&[0x75u8; 32]).unwrap();
+    let public = key.verifying_key().to_encoded_point(true);
+    let actor =
+        operator_voting::crypto::cosmos_address_from_pubkey(public.as_bytes(), "terra").unwrap();
+    let issued = chrono::Utc::now().timestamp();
+    let payload=serde_json::json!({"version":2,"nonce":uuid::Uuid::new_v4(),"app":"cl8y-voting","chain":"terra","chain_id":"columbus-5","purpose":"register","address":actor,"issued_at":issued,"expires_at":issued+120}).to_string();
+    let doc = operator_voting::crypto::adr36_sign_doc_json(&actor, &payload);
+    let digest = sha2::Sha256::digest(doc.as_bytes());
+    let signature: k256::ecdsa::Signature = key.sign_prehash(&digest).unwrap();
+    let base64 = base64::engine::general_purpose::STANDARD;
+    let request = serde_json::json!({"chain":"terra","address":actor,"payload":payload,"signature":base64.encode(signature.to_bytes()),"pubkey":base64.encode(public.as_bytes())});
+    let app = operator_voting::application::application(operator_voting::api::AppState {
+        pool: restricted.clone(),
+        cfg: operator_voting::config::VotingConfig::for_tests(&url, ""),
+    })
+    .unwrap();
+    let response = app
+        .oneshot(
+            axum::http::Request::post("/v1/register")
+                .header("content-type", "application/json")
+                .body(axum::body::Body::from(request.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(body["pending"], true);
+    let clean:(bool,i32)=sqlx::query_as("SELECT processed_at IS NULL,attempts FROM voting.registration_intents WHERE wallet_address=$1").bind(actor).fetch_one(&restricted).await.unwrap();
+    assert_eq!(clean, (true, 0));
     let create = sqlx::query("CREATE TABLE voting.should_not_exist (id int)")
         .execute(&restricted)
         .await;
@@ -436,6 +563,8 @@ async fn populated_upgrade_preserves_legacy_and_revokes_blanket_grants() {
         include_str!("../../ledger/migrations/20261014000100_transactional_actions.sql"),
         include_str!("../../ledger/migrations/20261014000101_restrict_existing_api_role.sql"),
         include_str!("../../ledger/migrations/20261014000102_verified_action_guards.sql"),
+        include_str!("../../ledger/migrations/20261014000103_intent_pass_readiness.sql"),
+        include_str!("../../ledger/migrations/20261014000104_complete_proposal_immutability.sql"),
     ] {
         sqlx::raw_sql(sql).execute(&mut *conn).await.unwrap();
     }
@@ -454,7 +583,7 @@ async fn populated_upgrade_preserves_legacy_and_revokes_blanket_grants() {
     let restricted = sqlx::postgres::PgPoolOptions::new()
         .after_connect(|conn, _| {
             Box::pin(async move {
-                sqlx::query("SET ROLE operator_voting")
+                sqlx::query("SET SESSION AUTHORIZATION operator_voting")
                     .execute(conn)
                     .await?;
                 Ok(())
