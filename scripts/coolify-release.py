@@ -66,7 +66,7 @@ def main():
         value = "true" if args.action == "recover" else "false"
         call("PATCH", "/applications/" + uuid + "/envs/bulk", {"data": [{
             "key": "LEDGER_RECONCILE_LIVE_BASELINE", "value": value,
-            "is_build_time": False, "is_runtime": True}]})
+            "is_buildtime": False, "is_runtime": True}]})
         print(json.dumps({"resource": "ledger", "recovery_configured": value == "true"}))
     elif args.action == "deploy":
         if not args.sha or not re.fullmatch(r"[0-9a-f]{40}", args.sha):
