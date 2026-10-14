@@ -4745,3 +4745,266 @@ async fn process_database_session_loss_fails_readiness_then_restores_without_new
     terra_server.abort();
     bsc_server.abort();
 }
+
+#[cfg(unix)]
+#[tokio::test]
+async fn process_sigkill_after_event_balance_and_during_commit_recovers_exactly_once_both_chains() {
+    use std::os::unix::process::ExitStatusExt;
+    for chain in [Chain::Terra, Chain::Bsc] {
+        for stage in 1..=3 {
+            let Some((pool, _lock)) = setup().await else {
+                return;
+            };
+            let (terra, state, terra_server) = terra_fork_server(101).await;
+            let (rpc, _, bsc_server) = rpc_server().await;
+            seed_terra_fork_electorate(&pool, &state, false).await;
+            sqlx::query("UPDATE ledger_checkpoints SET network_tip=CASE chain WHEN 'terra' THEN 101 ELSE 120 END").execute(&pool).await.unwrap();
+            let before: (i64, String, i64, chrono::DateTime<chrono::Utc>) = sqlx::query_as(
+                "SELECT height,block_hash,epoch,observed_at FROM ledger_checkpoints WHERE chain=$1",
+            )
+            .bind(chain.as_str())
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            let mut gate = install_ingest_gate(&pool, chain, stage).await;
+            let reserve = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            let address = reserve.local_addr().unwrap();
+            drop(reserve);
+            let base = format!("http://{address}");
+            let database = std::env::var("LEDGER_TEST_DATABASE_URL").unwrap();
+            let mut child = launch_test_ledger(&terra, &rpc, &address.to_string(), &database);
+            let query = wait_advisory_query(&pool, INGEST_GATE_CLASS, stage).await;
+            if stage == 3 {
+                assert_eq!(query.trim(), "COMMIT");
+            }
+            child.kill().await.unwrap();
+            assert_eq!(child.try_wait().unwrap().unwrap().signal(), Some(9));
+            release_ingest_gate(&mut gate, stage).await;
+            tokio::time::timeout(Duration::from_secs(5), async {
+                let mut tx = pool.begin().await.unwrap();
+                db::lock_chain(&mut tx, chain).await.unwrap();
+                tx.rollback().await.unwrap();
+            })
+            .await
+            .unwrap();
+            let (table, wallet, last, total) = match chain {
+                Chain::Terra => ("cl8y_cw20_transfers", ALICE, 101, 1),
+                Chain::Bsc => ("cl8y_bep20_transfers", EVM, 105, 5),
+            };
+            let rows: i64 = sqlx::query_scalar(&format!("SELECT COUNT(*) FROM public.{table}"))
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+            assert!(
+                rows == 0 || rows == total,
+                "a crashed commit cannot publish a partial range"
+            );
+            if stage != 3 {
+                assert_eq!(
+                    rows, 0,
+                    "unfinished statement must roll back after process death"
+                );
+            }
+            let checkpoint: (i64, String, i64, chrono::DateTime<chrono::Utc>) = sqlx::query_as(
+                "SELECT height,block_hash,epoch,observed_at FROM ledger_checkpoints WHERE chain=$1",
+            )
+            .bind(chain.as_str())
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            if rows == 0 {
+                assert_eq!(checkpoint, before);
+            } else {
+                assert_eq!((checkpoint.0, checkpoint.2), (last, before.2));
+                assert_eq!(
+                    checkpoint.1,
+                    if chain == Chain::Terra {
+                        state.hash(last)
+                    } else {
+                        block_hash(last)
+                    }
+                );
+            }
+            assert_eq!(
+                db::balance_at(&pool, chain, wallet, last).await.unwrap(),
+                BigInt::from(1000 - rows)
+            );
+            let cursor = match chain {
+                Chain::Terra => db::indexed_terra_height(&pool).await.unwrap(),
+                Chain::Bsc => db::indexed_bsc_block(&pool).await.unwrap(),
+            };
+            assert_eq!(cursor, if rows == 0 { 100 } else { last });
+            let history: i64 =
+                sqlx::query_scalar("SELECT COUNT(*) FROM ledger_canonical_blocks WHERE chain=$1")
+                    .bind(chain.as_str())
+                    .fetch_one(&pool)
+                    .await
+                    .unwrap();
+            assert_eq!(history, 1 + rows);
+            println!(
+                "process_sigkill chain={} stage={stage} durable_events={rows}",
+                chain.as_str()
+            );
+            remove_ingest_gate(&pool, chain, stage).await;
+            let mut restarted = launch_test_ledger(&terra, &rpc, &address.to_string(), &database);
+            let http = reqwest::Client::new();
+            wait_child_status(&mut restarted, &http, &base, reqwest::StatusCode::OK).await;
+            let rows: i64 = sqlx::query_scalar(&format!("SELECT COUNT(*) FROM public.{table}"))
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+            assert_eq!(rows, total);
+            assert_eq!(
+                db::balance_at(&pool, chain, wallet, last).await.unwrap(),
+                BigInt::from(1000 - total)
+            );
+            let epoch: i64 =
+                sqlx::query_scalar("SELECT epoch FROM ledger_checkpoints WHERE chain=$1")
+                    .bind(chain.as_str())
+                    .fetch_one(&pool)
+                    .await
+                    .unwrap();
+            assert_eq!(epoch, before.2);
+            let cfg = config(&terra);
+            let lcd = LcdClient::new(vec![terra.clone()]);
+            let bsc = voting_ledger::bsc::BscClient::new(vec![rpc.clone()]);
+            if chain == Chain::Terra {
+                ingest::ingest_terra_height(&pool, &lcd, &cfg, last)
+                    .await
+                    .unwrap();
+            } else {
+                ingest::ingest_bsc_range(&pool, &bsc, &cfg, 101, last)
+                    .await
+                    .unwrap();
+            }
+            assert_eq!(
+                db::balance_at(&pool, chain, wallet, last).await.unwrap(),
+                BigInt::from(1000 - total)
+            );
+            terminate_child(&mut restarted).await;
+            terra_server.abort();
+            bsc_server.abort();
+        }
+    }
+}
+
+#[derive(Clone)]
+struct PendingTerra {
+    inner: TerraForkFixture,
+    blocked: Arc<AtomicBool>,
+    pending: Arc<tokio::sync::Notify>,
+}
+async fn pending_terra_http(
+    State(state): State<PendingTerra>,
+    uri: OriginalUri,
+    headers: axum::http::HeaderMap,
+) -> axum::response::Response {
+    if uri.0.path().contains("/tx/") && state.blocked.load(Ordering::Relaxed) {
+        state.pending.notify_one();
+        std::future::pending::<()>().await;
+    }
+    terra_fork_http(State(state.inner), uri, headers).await
+}
+#[tokio::test]
+async fn process_sigterm_during_pending_terra_lcd_keeps_bsc_progress_and_retries_funded_delta() {
+    let Some((pool, _lock)) = setup().await else {
+        return;
+    };
+    let state = TerraForkFixture::new(110);
+    let blocked = Arc::new(AtomicBool::new(false));
+    let pending = Arc::new(tokio::sync::Notify::new());
+    let app = Router::new()
+        .fallback(get(pending_terra_http))
+        .with_state(PendingTerra {
+            inner: state.clone(),
+            blocked: blocked.clone(),
+            pending: pending.clone(),
+        });
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let terra = format!("http://{}", listener.local_addr().unwrap());
+    let terra_server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let (rpc, _, bsc_server) = rpc_server().await;
+    seed_terra_fork_electorate(&pool, &state, false).await;
+    sqlx::query(
+        "UPDATE ledger_checkpoints SET network_tip=CASE chain WHEN 'terra' THEN 110 ELSE 120 END",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let reserve = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = reserve.local_addr().unwrap();
+    drop(reserve);
+    let base = format!("http://{address}");
+    let database = std::env::var("LEDGER_TEST_DATABASE_URL").unwrap();
+    let http = reqwest::Client::new();
+    let mut child = launch_test_ledger(&terra, &rpc, &address.to_string(), &database);
+    wait_child_status(&mut child, &http, &base, reqwest::StatusCode::OK).await;
+    let epoch: i64 = sqlx::query_scalar("SELECT epoch FROM ledger_checkpoints WHERE chain='terra'")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    blocked.store(true, Ordering::Relaxed);
+    state.tip.store(111, Ordering::Relaxed);
+    tokio::time::timeout(Duration::from_secs(3), pending.notified())
+        .await
+        .unwrap();
+    let sibling_observed: chrono::DateTime<chrono::Utc> =
+        sqlx::query_scalar("SELECT observed_at FROM ledger_checkpoints WHERE chain='bsc'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    tokio::time::timeout(Duration::from_secs(3), async {
+        loop {
+            let observed: chrono::DateTime<chrono::Utc> =
+                sqlx::query_scalar("SELECT observed_at FROM ledger_checkpoints WHERE chain='bsc'")
+                    .fetch_one(&pool)
+                    .await
+                    .unwrap();
+            if observed > sibling_observed {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(db::indexed_bsc_block(&pool).await.unwrap(), 105);
+    terminate_child(&mut child).await;
+    assert_eq!(db::indexed_terra_height(&pool).await.unwrap(), 110);
+    assert_eq!(
+        db::balance_at(&pool, Chain::Terra, ALICE, 111)
+            .await
+            .unwrap(),
+        BigInt::from(990)
+    );
+    blocked.store(false, Ordering::Relaxed);
+    let mut restarted = launch_test_ledger(&terra, &rpc, &address.to_string(), &database);
+    wait_child_status(&mut restarted, &http, &base, reqwest::StatusCode::OK).await;
+    tokio::time::timeout(Duration::from_secs(3), async {
+        while db::indexed_terra_height(&pool).await.unwrap() != 111 {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(
+        db::balance_at(&pool, Chain::Terra, ALICE, 111)
+            .await
+            .unwrap(),
+        BigInt::from(989)
+    );
+    let recovered: i64 =
+        sqlx::query_scalar("SELECT epoch FROM ledger_checkpoints WHERE chain='terra'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(recovered, epoch);
+    let rows: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM cl8y_cw20_transfers")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(rows, 11);
+    terminate_child(&mut restarted).await;
+    terra_server.abort();
+    bsc_server.abort();
+}
