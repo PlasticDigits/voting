@@ -5,7 +5,7 @@
 # Do not point this image at the ledger writer. APPLY_MIGRATIONS is pinned
 # false; RUN_MODE=prod also refuses true. See docs/OPS.md and docs/OPERATOR_VOTING.md.
 
-FROM rust:1.88-bookworm AS builder
+FROM rust:1.88.0-bookworm AS builder
 
 WORKDIR /build
 RUN apt-get update \
@@ -15,7 +15,7 @@ RUN apt-get update \
 COPY Cargo.toml Cargo.lock ./
 COPY ledger/ ./ledger/
 COPY operator-voting/ ./operator-voting/
-RUN cargo build --release -p operator-voting \
+RUN cargo build --locked --release -p operator-voting \
   && strip target/release/operator-voting
 
 FROM debian:bookworm-slim AS runtime
