@@ -7,6 +7,8 @@ import {
   canonicalizeForSigning,
   castVote,
   getProposal,
+  getFrozenWeight,
+  type FrozenWeightResponse,
   openProposal,
   postAnalysis,
   postComment,
@@ -15,6 +17,7 @@ import {
 import { signVotingRequest } from '@/services/votingSign'
 import type { VoteChoice } from '@/utils/votingPayload'
 import { sanitizeProposalHtml } from '@/utils/sanitizeProposalHtml'
+import { formatCl8y } from '@/utils/format'
 import { ROUTES } from '@/routes'
 import { ProposalSectionView } from '@/components/proposal/ProposalSectionFields'
 import {
@@ -61,7 +64,12 @@ export default function VoteDetailPage() {
   const [proposal, setProposal] = useState<ProposalDetail | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-  const [voted, setVoted] = useState<VoteChoice | null>(null)
+  const [frozenWeight, setFrozenWeight] = useState<FrozenWeightResponse | null>(null)
+  const [weightError, setWeightError] = useState<string | null>(null)
+  const [weightRetry, setWeightRetry] = useState(0)
+  const [voted, setVoted] = useState<{ choice: VoteChoice; address: string; chain: string } | null>(
+    null,
+  )
   const [comment, setComment] = useState('')
   const [amendFields, setAmendFields] = useState<Record<SectionKey, string> | null>(null)
   const [analysisFields, setAnalysisFields] = useState<Record<AnalysisKey, string>>(emptyAnalysis())
@@ -89,6 +97,27 @@ export default function VoteDetailPage() {
   const isProposer = Boolean(address && proposal && sameAddress(address, proposal.proposer))
   const isDraft = proposal?.status === 'draft'
   const isOpen = proposal?.status === 'open'
+  const canVote = isOpen && proposal?.snapshot_validity === 'valid'
+
+  const hasFrozenWeight = Boolean(
+    address && chain && frozenWeight && usableFrozenWeight(frozenWeight, id, address, chain),
+  )
+  useEffect(() => {
+    setFrozenWeight(null)
+    setWeightError(null)
+    if (!isOpen || !address || !chain) return
+    let cancelled = false
+    void getFrozenWeight(id, address, chain)
+      .then((weight) => {
+        if (!cancelled) setFrozenWeight(weight)
+      })
+      .catch(() => {
+        if (!cancelled) setWeightError('Unable to check frozen voting weight. Refresh and retry.')
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [id, address, chain, isOpen, weightRetry])
 
   const amendSections = useMemo(
     () => (amendFields ? htmlFromFields(amendFields) : null),
@@ -96,10 +125,17 @@ export default function VoteDetailPage() {
   )
 
   async function handleVote(choice: VoteChoice) {
-    if (!address || !chain) return
+    if (!address || !chain || !canVote || !hasFrozenWeight) return
     setBusy(true)
     setError(null)
     try {
+      const weight = await getFrozenWeight(id, address, chain)
+      setFrozenWeight(weight)
+      if (!usableFrozenWeight(weight, id, address, chain)) {
+        setError('This address has no eligible frozen voting weight in this poll.')
+        await reload()
+        return
+      }
       const signed = await signVotingRequest({
         chain,
         address,
@@ -108,7 +144,8 @@ export default function VoteDetailPage() {
         choice,
       })
       await castVote(id, { ...signed, choice })
-      setVoted(choice)
+      setVoted({ choice, address, chain })
+      await reload().catch(() => setError('Vote recorded. Refresh to load the updated tally.'))
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Vote failed')
     } finally {
@@ -239,7 +276,7 @@ export default function VoteDetailPage() {
 
   const freezeCopy =
     isOpen && proposal?.terra_height != null
-      ? `Snapshot freeze Terra height ${proposal.terra_height}, BSC block ${proposal.bsc_block}. Register before this poll opened to be in the electorate.`
+      ? `Snapshot freeze Terra height ${proposal.terra_height}, BSC block ${proposal.bsc_block}. Registration must be certified at or before the finalized checkpoint chosen for this poll. Later registration eligibility does not change its frozen weight.`
       : 'This is a draft. Vote weight is not frozen yet — register before the committee opens the poll.'
 
   return (
@@ -255,6 +292,25 @@ export default function VoteDetailPage() {
             <p className="lede">
               Offchain / advisory. {freezeCopy} Identity v1 is one address, one voter.
             </p>
+            {isOpen && !canVote && (
+              <div className="alert-error" role="status" data-testid="snapshot-review-notice">
+                <strong>
+                  {proposal.snapshot_validity === 'invalid'
+                    ? 'Snapshot invalidated'
+                    : 'Snapshot unverified'}
+                </strong>
+                <p>
+                  {proposal.snapshot_validity === 'legacy_unverified'
+                    ? 'This poll opened before canonical snapshot evidence was recorded.'
+                    : 'The snapshot needs review after a chain history or verification problem.'}{' '}
+                  New votes are disabled. Existing votes and proposal history remain available for
+                  review.
+                </p>
+                {proposal.snapshot_incident && (
+                  <p data-testid="snapshot-incident">Incident: {proposal.snapshot_incident}</p>
+                )}
+              </div>
+            )}
             <ProposalSectionView
               sections={proposal.body_sections}
               fallbackHtml={sanitizeProposalHtml(proposal.body_html)}
@@ -408,6 +464,59 @@ export default function VoteDetailPage() {
             )}
 
             {isOpen && (
+              <section data-testid="proposal-tally">
+                <h2>Recorded votes</h2>
+                {proposal.tally.length === 0 ? (
+                  <p>No votes recorded.</p>
+                ) : (
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Choice</th>
+                        <th>Weight (CL8Y)</th>
+                        <th>Wallets</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {proposal.tally.map((row) => (
+                        <tr key={row.choice}>
+                          <td>{row.choice}</td>
+                          <td>{displayVoteWeight(row.weight)}</td>
+                          <td>{row.voters}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </section>
+            )}
+            {canVote && address && (
+              <div className="lede" data-testid="frozen-weight-status">
+                {weightError ? (
+                  <>
+                    <p>{weightError}</p>
+                    <button
+                      type="button"
+                      className="btn-muted"
+                      onClick={() => setWeightRetry((at) => at + 1)}
+                    >
+                      Refresh voting weight
+                    </button>
+                  </>
+                ) : frozenWeight == null ? (
+                  <p>Checking frozen voting weight…</p>
+                ) : !hasFrozenWeight ? (
+                  <p>
+                    This address has no eligible voting weight in this poll. Its registration may
+                    have become eligible after the chosen finalized checkpoint. Register early for
+                    future polls; existing frozen weights stay unchanged.
+                  </p>
+                ) : (
+                  <p>Frozen voting weight: {displayVoteWeight(frozenWeight.weight)} CL8Y.</p>
+                )}
+              </div>
+            )}
+            {canVote && (
               <div className="cta-row" data-testid="vote-actions">
                 {(['for', 'against', 'abstain'] as VoteChoice[]).map((choice) => (
                   <button
@@ -415,7 +524,7 @@ export default function VoteDetailPage() {
                     type="button"
                     className="btn-primary"
                     data-testid={`vote-${choice}`}
-                    disabled={!address || busy}
+                    disabled={!address || busy || !hasFrozenWeight}
                     onClick={() => void handleVote(choice)}
                   >
                     {choice}
@@ -423,9 +532,9 @@ export default function VoteDetailPage() {
                 ))}
               </div>
             )}
-            {voted && (
+            {voted && address && chain === voted.chain && sameAddress(address, voted.address) && (
               <p data-testid="vote-recorded">
-                Recorded: <strong>{voted}</strong>
+                Recorded: <strong>{voted.choice}</strong>
               </p>
             )}
           </>
@@ -445,4 +554,30 @@ function visibleTextFallback(html: string): string {
     .replace(/<[^>]+>/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
+}
+
+function displayVoteWeight(raw: string): string {
+  try {
+    return formatCl8y(raw)
+  } catch {
+    return 'Unavailable'
+  }
+}
+
+function usableFrozenWeight(
+  weight: FrozenWeightResponse,
+  proposalId: string,
+  address: string,
+  chain: string,
+): boolean {
+  return (
+    weight.eligible &&
+    weight.proposal_id === proposalId &&
+    weight.chain === chain &&
+    sameAddress(weight.address, address) &&
+    typeof weight.weight === 'string' &&
+    weight.weight.length <= 78 &&
+    /^\d+$/.test(weight.weight) &&
+    BigInt(weight.weight) > 0n
+  )
 }

@@ -52,9 +52,9 @@ export default function VoteListPage() {
         <h1>Proposals</h1>
         <p className="lede">
           Votes are offchain and advisory. Register the address that holds CL8Y on that chain{' '}
-          <strong>before votes open</strong> (drafts do not freeze the electorate). Identity v1 is one
-          address, one voter — Terra and BSC wallets are never merged. Never enter a seed phrase in this
-          app.
+          <strong>before votes open</strong> (drafts do not freeze the electorate). Identity v1 is
+          one address, one voter — Terra and BSC wallets are never merged. Never enter a seed phrase
+          in this app.
         </p>
         {address && chain ? (
           <>
@@ -68,6 +68,7 @@ export default function VoteListPage() {
               {snapshot.status === 'registered' ? (
                 <span className="pill" data-testid="registration-status">
                   Registered
+                  {snapshot.snapshotEligible === false ? ' · awaiting snapshot eligibility' : ''}
                 </span>
               ) : snapshot.canRetry && !busy ? (
                 <button
@@ -97,10 +98,23 @@ export default function VoteListPage() {
                 New draft
               </Link>
             </div>
+            {snapshot.status === 'registered' && snapshot.snapshotEligible === false && (
+              <p className="lede" data-testid="snapshot-eligibility-hint">
+                Registration is recorded.{' '}
+                {chain === 'bsc'
+                  ? 'BSC snapshots wait for about 15 confirmations. '
+                  : 'The ledger is certifying the registration baseline. '}
+                Register early: eligibility must be confirmed before the checkpoint chosen when a
+                poll opens. Existing polls keep their original frozen weights.
+                <button type="button" className="btn-muted" onClick={() => void snapshot.refresh()}>
+                  Refresh eligibility
+                </button>
+              </p>
+            )}
             {snapshot.status === 'unregistered' && (
               <p className="lede" data-testid="register-hint">
-                Register to snapshot this address’s CL8Y. The ledger is 0 until that live snapshot exists — this is
-                not a wallet balance read.
+                Register to snapshot this address’s CL8Y. The ledger is 0 until that live snapshot
+                exists — this is not a wallet balance read.
               </p>
             )}
             {snapshot.status === 'pending' && snapshot.lastPollAt != null && (

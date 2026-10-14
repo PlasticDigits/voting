@@ -22,6 +22,13 @@ pub enum VoteChoice {
     Abstain,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SnapshotValidity {
+    Valid,
+    Invalid,
+    LegacyUnverified,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct Tally {
     pub choice: VoteChoice,
     pub weight: String,
@@ -34,7 +41,8 @@ pub struct ProposalListItem {
     pub proposer: String,
     pub title: String,
     pub revision: i64,
-    pub snapshot_validity: String,
+    pub snapshot_validity: SnapshotValidity,
+    pub snapshot_incident: Option<String>,
     pub summary: Option<String>,
     pub terra_height: Option<i64>,
     pub bsc_block: Option<i64>,
@@ -169,6 +177,7 @@ pub struct BalanceResponse {
     pub as_of_height: i64,
     pub balance: String,
     pub registered: bool,
+    pub snapshot_eligible: bool,
     pub pending: bool,
     pub initial_balance: Option<String>,
 }
@@ -233,4 +242,14 @@ pub struct FreezeRecord {
     pub terra_epoch: Option<i64>,
     pub bsc_epoch: Option<i64>,
     pub opened_at: String,
+}
+
+/// Immutable per-poll power. Future registration admission cannot change it.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct FrozenWeightResponse {
+    pub proposal_id: String,
+    pub chain: VotingChain,
+    pub address: String,
+    pub weight: String,
+    pub eligible: bool,
 }

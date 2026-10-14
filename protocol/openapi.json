@@ -211,6 +211,9 @@
           },
           "registered": {
             "type": "boolean"
+          },
+          "snapshot_eligible": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -220,6 +223,7 @@
           "as_of_height",
           "balance",
           "registered",
+          "snapshot_eligible",
           "pending"
         ],
         "type": "object"
@@ -531,6 +535,34 @@
         ],
         "type": "object"
       },
+      "FrozenWeightResponse": {
+        "description": "Immutable per-poll power. Future registration admission cannot change it.",
+        "properties": {
+          "address": {
+            "type": "string"
+          },
+          "chain": {
+            "$ref": "#/components/schemas/VotingChain"
+          },
+          "eligible": {
+            "type": "boolean"
+          },
+          "proposal_id": {
+            "type": "string"
+          },
+          "weight": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "proposal_id",
+          "chain",
+          "address",
+          "weight",
+          "eligible"
+        ],
+        "type": "object"
+      },
       "Health": {
         "properties": {
           "ok": {
@@ -730,8 +762,14 @@
             "format": "int64",
             "type": "integer"
           },
+          "snapshot_incident": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "snapshot_validity": {
-            "type": "string"
+            "$ref": "#/components/schemas/SnapshotValidity"
           },
           "status": {
             "$ref": "#/components/schemas/ProposalStatus"
@@ -1242,6 +1280,14 @@
         },
         "type": "object"
       },
+      "SnapshotValidity": {
+        "enum": [
+          "valid",
+          "invalid",
+          "legacy_unverified"
+        ],
+        "type": "string"
+      },
       "SnapshotWeight": {
         "properties": {
           "chain": {
@@ -1385,6 +1431,84 @@
             },
             "description": "Request body exceeds bounded limit"
           },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unsupported request content type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Invalid typed request envelope"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Service temporarily unavailable"
+          }
+        },
+        "tags": []
+      }
+    },
+    "/openapi.json": {
+      "get": {
+        "operationId": "openapi",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Generated OpenAPI document"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Origin policy rejected request"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Request body exceeds bounded limit"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unsupported request content type"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -1442,6 +1566,16 @@
               }
             },
             "description": "Request body exceeds bounded limit"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unsupported request content type"
           },
           "422": {
             "content": {
@@ -1581,6 +1715,16 @@
             },
             "description": "Request body exceeds bounded limit"
           },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unsupported request content type"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -1669,6 +1813,16 @@
             },
             "description": ""
           },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unsupported request content type"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -1736,6 +1890,16 @@
               }
             },
             "description": "Request body exceeds bounded limit"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unsupported request content type"
           },
           "422": {
             "content": {
@@ -1848,6 +2012,16 @@
               }
             },
             "description": "Request body exceeds bounded limit"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unsupported request content type"
           },
           "422": {
             "content": {
@@ -1964,6 +2138,16 @@
               }
             },
             "description": "Request body exceeds bounded limit"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unsupported request content type"
           },
           "422": {
             "content": {
@@ -2083,6 +2267,16 @@
               }
             },
             "description": "Request body exceeds bounded limit"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unsupported request content type"
           },
           "422": {
             "content": {
@@ -2205,6 +2399,16 @@
               }
             },
             "description": "Request body exceeds bounded limit"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unsupported request content type"
           },
           "422": {
             "content": {
@@ -2333,6 +2537,16 @@
             },
             "description": "Request body exceeds bounded limit"
           },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unsupported request content type"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -2454,6 +2668,16 @@
               }
             },
             "description": "Request body exceeds bounded limit"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unsupported request content type"
           },
           "422": {
             "content": {
@@ -2581,6 +2805,16 @@
               }
             },
             "description": "Request body exceeds bounded limit"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unsupported request content type"
           },
           "422": {
             "content": {
@@ -2711,6 +2945,16 @@
             },
             "description": "Request body exceeds bounded limit"
           },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unsupported request content type"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -2840,6 +3084,16 @@
             },
             "description": "Request body exceeds bounded limit"
           },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unsupported request content type"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -2968,6 +3222,16 @@
               }
             },
             "description": "Request body exceeds bounded limit"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unsupported request content type"
           },
           "422": {
             "content": {
@@ -3106,6 +3370,16 @@
             },
             "description": "Request body exceeds bounded limit"
           },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unsupported request content type"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -3135,6 +3409,123 @@
               }
             },
             "description": "Service temporarily unavailable"
+          }
+        },
+        "tags": []
+      }
+    },
+    "/v1/proposals/{id}/weights/{addr}": {
+      "get": {
+        "operationId": "get_frozen_weight",
+        "parameters": [
+          {
+            "description": "Proposal UUID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Terra or EVM address",
+            "in": "path",
+            "name": "addr",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "terra or bsc",
+            "in": "query",
+            "name": "chain",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FrozenWeightResponse"
+                }
+              }
+            },
+            "description": "Stored immutable per-poll snapshot weight"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Origin policy rejected request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": ""
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Request body exceeds bounded limit"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unsupported request content type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Invalid typed request envelope"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": ""
           }
         },
         "tags": []
@@ -3224,6 +3615,16 @@
               }
             },
             "description": "Request body exceeds bounded limit"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unsupported request content type"
           },
           "422": {
             "content": {
@@ -3343,6 +3744,16 @@
             },
             "description": "Request body exceeds bounded limit"
           },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unsupported request content type"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -3461,6 +3872,16 @@
               }
             },
             "description": "Request body exceeds bounded limit"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unsupported request content type"
           },
           "422": {
             "content": {

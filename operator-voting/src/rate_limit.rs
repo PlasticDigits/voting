@@ -18,13 +18,14 @@ use std::{
 
 const MAX_BUCKETS: usize = 10_000;
 const IDLE_TTL: Duration = Duration::from_secs(600);
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct RateLimitState {
     buckets: Arc<Mutex<HashMap<String, Bucket>>>,
     per_minute: u32,
     burst: u32,
     trusted_peers: Vec<IpNet>,
 }
+#[derive(Debug)]
 struct Bucket {
     tokens: f64,
     at: Instant,
@@ -100,38 +101,9 @@ pub async fn enforce_post_rate_limit(
     if let Err(wait) = state.check(format!("ip:{ip}"), Instant::now()) {
         return limited(wait);
     }
-    // Parse only the bounded request envelope; IP control remains mandatory even for malformed/unsigned input.
-    let (parts, body) = request.into_parts();
-    let bytes =
-        match axum::body::to_bytes(body, crate::config::MAX_BODY_BYTES + 8 * 1024).await {
-            Ok(bytes) => bytes,
-            Err(_) => return (
-                StatusCode::PAYLOAD_TOO_LARGE,
-                Json(serde_json::json!({"error":"request body too large","code":"body_too_large"})),
-            )
-                .into_response(),
-        };
-    if let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes) {
-        if let (Some(chain), Some(address)) = (value["chain"].as_str(), value["address"].as_str()) {
-            if matches!(chain, "terra" | "bsc") && address.len() <= 128 {
-                let action = parts.uri.path().rsplit('/').next().unwrap_or("");
-                let normalized = if chain == "bsc" {
-                    address.trim().to_ascii_lowercase()
-                } else {
-                    address.trim().to_string()
-                };
-                if let Err(wait) = state.check(
-                    format!("wallet:{chain}:{normalized}:{action}"),
-                    Instant::now(),
-                ) {
-                    return limited(wait);
-                }
-            }
-        }
-    }
-    next.run(Request::from_parts(parts, axum::body::Body::from(bytes)))
-        .await
+    next.run(request).await
 }
+
 fn limited(wait: u64) -> Response {
     (
         StatusCode::TOO_MANY_REQUESTS,
@@ -142,9 +114,10 @@ fn limited(wait: u64) -> Response {
 }
 
 pub fn client_ip(headers: &HeaderMap, connect: Option<SocketAddr>, peers: &[IpNet]) -> IpAddr {
-    let peer = connect
-        .map(|a| a.ip())
-        .unwrap_or(IpAddr::V4(Ipv4Addr::LOCALHOST));
+    let Some(connect) = connect else {
+        return IpAddr::V4(Ipv4Addr::LOCALHOST);
+    };
+    let peer = connect.ip();
     if !peers.iter().any(|cidr| cidr.contains(&peer)) {
         return peer;
     }
@@ -193,6 +166,17 @@ mod tests {
         );
     }
     #[test]
+    fn absent_peer_metadata_never_authorizes_forwarded_identity() {
+        let mut headers = HeaderMap::new();
+        headers.insert("x-forwarded-for", "203.0.113.7".parse().unwrap());
+        let peers = vec!["127.0.0.0/8".parse().unwrap()];
+        assert_eq!(
+            client_ip(&headers, None, &peers),
+            IpAddr::V4(Ipv4Addr::LOCALHOST)
+        );
+    }
+
+    #[test]
     fn ipv6_and_hostile_forwarding_are_bounded() {
         let peers = vec!["fd00::/64".parse().unwrap()];
         let peer = Some("[fd00::1]:443".parse().unwrap());
@@ -216,6 +200,41 @@ mod tests {
             headers.insert("x-forwarded-for", raw.parse().unwrap());
             assert_eq!(client_ip(&headers, peer, &peers), peer.unwrap().ip());
         }
+    }
+
+    #[tokio::test]
+    async fn unverified_envelopes_cannot_charge_victim_wallets() {
+        use axum::{body::Body, routing::post, Router};
+        use tower::ServiceExt;
+        let mut cfg = VotingConfig::for_tests("unused", "");
+        cfg.rate_limit_post_burst = 1;
+        let state = RateLimitState::from_config(&cfg);
+        let app = Router::new()
+            .route("/v1/register", post(|| async { "ok" }))
+            .layer(axum::middleware::from_fn_with_state(
+                state.clone(),
+                enforce_post_rate_limit,
+            ));
+        for i in 1..=3 {
+            let mut req = Request::post("/v1/register").header("content-type","application/json")
+                .body(Body::from(r#"{"chain":"terra","address":"terra1victim","payload":"forged","signature":"bad"}"#)).unwrap();
+            req.extensions_mut().insert(ConnectInfo(
+                format!("203.0.113.{i}:1234").parse::<SocketAddr>().unwrap(),
+            ));
+            assert_eq!(
+                app.clone().oneshot(req).await.unwrap().status(),
+                StatusCode::OK
+            );
+        }
+        assert!(
+            state
+                .buckets
+                .lock()
+                .unwrap()
+                .keys()
+                .all(|key| key.starts_with("ip:")),
+            "unauthenticated envelopes must not create wallet buckets"
+        );
     }
 
     #[test]

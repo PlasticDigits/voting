@@ -20,6 +20,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/openapi.json": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["openapi"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/ready": {
         parameters: {
             query?: never;
@@ -212,6 +228,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/proposals/{id}/weights/{addr}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_frozen_weight"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/receipts/{id}": {
         parameters: {
             query?: never;
@@ -322,6 +354,7 @@ export interface components {
             initial_balance?: string | null;
             pending: boolean;
             registered: boolean;
+            snapshot_eligible: boolean;
         };
         CanonicalRequest: {
             /** @enum {string} */
@@ -397,6 +430,14 @@ export interface components {
             /** Format: int64 */
             terra_height: number;
         };
+        /** @description Immutable per-poll power. Future registration admission cannot change it. */
+        FrozenWeightResponse: {
+            address: string;
+            chain: components["schemas"]["VotingChain"];
+            eligible: boolean;
+            proposal_id: string;
+            weight: string;
+        };
         Health: {
             ok: boolean;
             service: string;
@@ -449,7 +490,8 @@ export interface components {
             proposer: string;
             /** Format: int64 */
             revision: number;
-            snapshot_validity: string;
+            snapshot_incident?: string | null;
+            snapshot_validity: components["schemas"]["SnapshotValidity"];
             status: components["schemas"]["ProposalStatus"];
             summary?: string | null;
             tally: components["schemas"]["Tally"][];
@@ -572,6 +614,8 @@ export interface components {
             /** Format: int64 */
             terra_height?: number | null;
         };
+        /** @enum {string} */
+        SnapshotValidity: "valid" | "invalid" | "legacy_unverified";
         SnapshotWeight: {
             chain: components["schemas"]["VotingChain"];
             proposal_id: string;
@@ -643,6 +687,80 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
+            /** @description Unsupported request content type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Invalid typed request envelope */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Service temporarily unavailable */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    openapi: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Generated OpenAPI document */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Origin policy rejected request */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Request body exceeds bounded limit */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unsupported request content type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
             /** @description Invalid typed request envelope */
             422: {
                 headers: {
@@ -692,6 +810,15 @@ export interface operations {
             };
             /** @description Request body exceeds bounded limit */
             413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unsupported request content type */
+            415: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -808,6 +935,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
+            /** @description Unsupported request content type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
             /** @description Invalid typed request envelope */
             422: {
                 headers: {
@@ -883,6 +1019,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
+            /** @description Unsupported request content type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
             /** @description Invalid typed request envelope */
             422: {
                 headers: {
@@ -939,6 +1084,15 @@ export interface operations {
             };
             /** @description Request body exceeds bounded limit */
             413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unsupported request content type */
+            415: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1034,6 +1188,15 @@ export interface operations {
             };
             /** @description Request body exceeds bounded limit */
             413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unsupported request content type */
+            415: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1146,6 +1309,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
+            /** @description Unsupported request content type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
             /** @description Invalid typed request envelope */
             422: {
                 headers: {
@@ -1250,6 +1422,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
+            /** @description Unsupported request content type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
             /** @description Invalid typed request envelope */
             422: {
                 headers: {
@@ -1347,6 +1528,15 @@ export interface operations {
             };
             /** @description Request body exceeds bounded limit */
             413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unsupported request content type */
+            415: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1462,6 +1652,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
+            /** @description Unsupported request content type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
             /** @description Invalid typed request envelope */
             422: {
                 headers: {
@@ -1559,6 +1758,15 @@ export interface operations {
             };
             /** @description Request body exceeds bounded limit */
             413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unsupported request content type */
+            415: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1674,6 +1882,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
+            /** @description Unsupported request content type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
             /** @description Invalid typed request envelope */
             422: {
                 headers: {
@@ -1775,6 +1992,15 @@ export interface operations {
             };
             /** @description Request body exceeds bounded limit */
             413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unsupported request content type */
+            415: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1890,6 +2116,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
+            /** @description Unsupported request content type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
             /** @description Invalid typed request envelope */
             422: {
                 headers: {
@@ -1991,6 +2226,15 @@ export interface operations {
             };
             /** @description Request body exceeds bounded limit */
             413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unsupported request content type */
+            415: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2107,6 +2351,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
+            /** @description Unsupported request content type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
             /** @description Invalid typed request envelope */
             422: {
                 headers: {
@@ -2126,6 +2379,94 @@ export interface operations {
                 };
             };
             /** @description Service temporarily unavailable */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    get_frozen_weight: {
+        parameters: {
+            query?: {
+                /** @description terra or bsc */
+                chain?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Proposal UUID */
+                id: string;
+                /** @description Terra or EVM address */
+                addr: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Stored immutable per-poll snapshot weight */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FrozenWeightResponse"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Origin policy rejected request */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Request body exceeds bounded limit */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unsupported request content type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Invalid typed request envelope */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
             500: {
                 headers: {
                     [name: string]: unknown;
@@ -2204,6 +2545,15 @@ export interface operations {
             };
             /** @description Request body exceeds bounded limit */
             413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unsupported request content type */
+            415: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2316,6 +2666,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
+            /** @description Unsupported request content type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
             /** @description Invalid typed request envelope */
             422: {
                 headers: {
@@ -2413,6 +2772,15 @@ export interface operations {
             };
             /** @description Request body exceeds bounded limit */
             413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unsupported request content type */
+            415: {
                 headers: {
                     [name: string]: unknown;
                 };

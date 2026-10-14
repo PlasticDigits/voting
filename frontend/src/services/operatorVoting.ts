@@ -8,6 +8,7 @@ export type ProposalListItem = Schemas['ProposalListItem']
 export type ProposalComment = Schemas['Comment']
 export type ProposalAnalysis = Schemas['Analysis']
 export type ProposalDetail = Schemas['ProposalDetail']
+export type FrozenWeightResponse = Schemas['FrozenWeightResponse']
 export type BalanceResponse = Schemas['BalanceResponse']
 export type ChainRegistrationRow = Schemas['RegistrationRow']
 export type RegistrationLookup = Schemas['RegistrationLookup']
@@ -218,4 +219,14 @@ export async function canonicalizeForSigning(
   if ((await sha256Hex(bytes)) !== result.body_hash)
     throw new Error('Canonical response hash mismatch; signing cancelled.')
   return result
+}
+
+export function getFrozenWeight(
+  id: string,
+  address: string,
+  chain: VotingChain,
+): Promise<FrozenWeightResponse> {
+  return api(
+    `/v1/proposals/${encodeURIComponent(id)}/weights/${encodeURIComponent(address)}?${new URLSearchParams({ chain })}`,
+  )
 }

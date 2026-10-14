@@ -20,6 +20,8 @@ pub enum VotingError {
     NotFound(String),
     #[error("conflict: {0}")]
     Conflict(String),
+    #[error("rate limited")]
+    RateLimited(u64),
     #[error("database: {0}")]
     Database(#[from] sqlx::Error),
     #[error("migrate: {0}")]
@@ -36,17 +38,23 @@ pub struct ErrorBody {
 
 impl IntoResponse for VotingError {
     fn into_response(self) -> Response {
+        let retry_after = match &self {
+            VotingError::RateLimited(wait) => Some(*wait),
+            _ => None,
+        };
         let status = match &self {
             VotingError::BadRequest(_) | VotingError::InvalidConfig(_) => StatusCode::BAD_REQUEST,
             VotingError::Unauthorized(_) => StatusCode::UNAUTHORIZED,
             VotingError::Forbidden(_) => StatusCode::FORBIDDEN,
             VotingError::NotFound(_) => StatusCode::NOT_FOUND,
             VotingError::Conflict(_) => StatusCode::CONFLICT,
+            VotingError::RateLimited(_) => StatusCode::TOO_MANY_REQUESTS,
             VotingError::MissingEnv(_) | VotingError::Database(_) | VotingError::Migrate(_) => {
                 StatusCode::INTERNAL_SERVER_ERROR
             }
         };
         let (code, message) = match self {
+            VotingError::RateLimited(_) => ("rate_limited", "rate limited"),
             VotingError::BadRequest(_) => ("bad_request", "invalid request"),
             VotingError::InvalidConfig(_) | VotingError::MissingEnv(_) => {
                 ("configuration_error", "service configuration error")
@@ -60,7 +68,7 @@ impl IntoResponse for VotingError {
             }
         };
         // Never format database/provider/request internals into responses or logs.
-        (
+        let mut response = (
             status,
             Json(ErrorBody {
                 error: message.into(),
@@ -68,7 +76,14 @@ impl IntoResponse for VotingError {
                 request_id: None,
             }),
         )
-            .into_response()
+            .into_response();
+        if let Some(wait) = retry_after {
+            response.headers_mut().insert(
+                axum::http::header::RETRY_AFTER,
+                wait.to_string().parse().unwrap(),
+            );
+        }
+        response
     }
 }
 

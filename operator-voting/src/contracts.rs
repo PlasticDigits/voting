@@ -123,6 +123,7 @@ pub fn openapi() -> Value {
             for (status, description) in [
                 ("403", "Origin policy rejected request"),
                 ("413", "Request body exceeds bounded limit"),
+                ("415", "Unsupported request content type"),
                 ("422", "Invalid typed request envelope"),
                 ("500", "Service temporarily unavailable"),
             ] {

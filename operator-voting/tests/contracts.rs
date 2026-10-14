@@ -9,6 +9,8 @@ fn generated_document_covers_actual_domain_routes_and_typed_statuses() {
     );
     for (route, method, success) in [
         ("/health", "get", "200"),
+        ("/openapi.json", "get", "200"),
+        ("/v1/proposals/{id}/weights/{addr}", "get", "200"),
         ("/ready", "get", "200"),
         ("/v1/register", "post", "200"),
         ("/v1/registration/{addr}", "get", "200"),

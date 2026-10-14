@@ -12,8 +12,7 @@ export type MockOperatorOpts = {
   snapshotNeverReady?: boolean
 }
 
-const SECTION_HTML =
-  '<p>This draft section has forty visible characters for the template.</p>'
+const SECTION_HTML = '<p>This draft section has forty visible characters for the template.</p>'
 
 export async function mockOperatorVoting(page: Page, opts: MockOperatorOpts = {}) {
   let ledgerReady = false
@@ -34,25 +33,59 @@ export async function mockOperatorVoting(page: Page, opts: MockOperatorOpts = {}
     tally: Record<string, string>
     advisory: boolean
     body_sections: Record<string, string>
-    comments: Array<{ id: string; chain: string; wallet_address: string; body_html: string; created_at: string }>
+    comments: Array<{
+      id: string
+      chain: string
+      wallet_address: string
+      body_html: string
+      created_at: string
+    }>
     analysis: unknown[]
   }> = []
   const votes = new Map<string, string>()
-  await page.route('**/v1/metadata', async (route) => route.fulfill({ json: { protocol_version: 2, min_proposal_raw: '1000000000000000000000', decimals: 18, capabilities: ['canonicalize'] } }))
+  await page.route('**/v1/metadata', async (route) =>
+    route.fulfill({
+      json: {
+        protocol_version: 2,
+        min_proposal_raw: '1000000000000000000000',
+        decimals: 18,
+        capabilities: ['canonicalize'],
+      },
+    }),
+  )
   await page.route('**/v1/canonicalize', async (route) => {
-    const body = route.request().postDataJSON() as { kind: string; sections?: Record<string, string>; body_html?: string }
-    const sections = body.sections ? Object.fromEntries(Object.keys(body.sections).sort().map((key) => [key, body.sections![key]])) : null
+    const body = route.request().postDataJSON() as {
+      kind: string
+      sections?: Record<string, string>
+      body_html?: string
+    }
+    const sections = body.sections
+      ? Object.fromEntries(
+          Object.keys(body.sections)
+            .sort()
+            .map((key) => [key, body.sections![key]]),
+        )
+      : null
     const canonical_json = sections ? JSON.stringify(sections) : null
     const body_html = body.body_html ?? ''
-    await route.fulfill({ json: { protocol_version: 2, sections, canonical_json, body_html, body_hash: createHash('sha256').update(canonical_json ?? body_html).digest('hex') } })
+    await route.fulfill({
+      json: {
+        protocol_version: 2,
+        sections,
+        canonical_json,
+        body_html,
+        body_hash: createHash('sha256')
+          .update(canonical_json ?? body_html)
+          .digest('hex'),
+      },
+    })
   })
-
 
   await page.route('**/v1/proposals', async (route) => {
     if (route.request().method() === 'GET') {
       await route.fulfill({
         json: proposals.map(
-          ({ body_html: _b, body_sections: _s, comments: _c, analysis: _a, ...rest }) => rest
+          ({ body_html: _b, body_sections: _s, comments: _c, analysis: _a, ...rest }) => rest,
         ),
       })
       return
@@ -65,7 +98,11 @@ export async function mockOperatorVoting(page: Page, opts: MockOperatorOpts = {}
     proposals.push({
       id: E2E_PROPOSAL_ID,
       revision: 1,
-      body_hash: createHash('sha256').update(JSON.stringify(body.body_sections ?? {})).digest('hex'),
+      snapshot_validity: 'valid',
+      snapshot_incident: null,
+      body_hash: createHash('sha256')
+        .update(JSON.stringify(body.body_sections ?? {}))
+        .digest('hex'),
       chain: 'terra',
       proposer: body.address,
       title: body.title,
@@ -76,7 +113,7 @@ export async function mockOperatorVoting(page: Page, opts: MockOperatorOpts = {}
       created_at: new Date().toISOString(),
       opened_at: null,
       status: 'draft',
-      tally: {},
+      tally: [],
       advisory: true,
       body_sections: body.body_sections ?? {
         context: '',
@@ -95,6 +132,20 @@ export async function mockOperatorVoting(page: Page, opts: MockOperatorOpts = {}
     })
   })
 
+  await page.route('**/v1/proposals/*/weights/*', async (route) => {
+    const url = new URL(route.request().url())
+    const id = url.pathname.split('/v1/proposals/')[1]?.split('/')[0]
+    const address = decodeURIComponent(url.pathname.split('/weights/')[1] ?? '')
+    await route.fulfill({
+      json: {
+        proposal_id: id,
+        address,
+        chain: url.searchParams.get('chain') ?? 'terra',
+        weight: '1000000000000000000000',
+        eligible: true,
+      },
+    })
+  })
   await page.route('**/v1/proposals/*/votes', async (route) => {
     const body = route.request().postDataJSON() as { choice: string; address: string }
     votes.set(body.address, body.choice)
@@ -194,6 +245,7 @@ export async function mockOperatorVoting(page: Page, opts: MockOperatorOpts = {}
         as_of_height: ledgerReady ? 10 : 0,
         balance: ledgerReady ? '1000000000000000000000' : '0',
         registered: ledgerReady,
+        snapshot_eligible: ledgerReady,
         pending: registerPosted && !ledgerReady,
         initial_balance: ledgerReady ? '1000000000000000000000' : null,
       },

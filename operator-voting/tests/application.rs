@@ -117,12 +117,14 @@ async fn configured_metadata_and_canonicalization_are_real_routes() {
     assert_eq!(response.status(), StatusCode::OK);
     let value: serde_json::Value =
         serde_json::from_slice(&response.into_body().collect().await.unwrap().to_bytes()).unwrap();
+    capture_response("GET", "/v1/metadata", StatusCode::OK, &value);
     assert_eq!(value["min_proposal_raw"], "1000000000000000000000");
     assert_eq!(value["protocol_version"], 2);
     let response=app(5).oneshot(Request::post("/v1/canonicalize").header("content-type","application/json").body(Body::from(r#"{"kind":"comment","body_html":"<div><p onclick='x()'>safe 🚀</p><a href='javascript:x()'>link</a></div>"}"#)).unwrap()).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
     let value: serde_json::Value =
         serde_json::from_slice(&response.into_body().collect().await.unwrap().to_bytes()).unwrap();
+    capture_response("POST", "/v1/canonicalize", StatusCode::OK, &value);
     assert!(!value["body_html"].as_str().unwrap().contains("onclick"));
     assert!(!value["body_html"].as_str().unwrap().contains("javascript:"));
     assert_eq!(
@@ -225,5 +227,62 @@ async fn extractor_routing_and_content_rejections_have_safe_correlated_contracts
         let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(value["code"], code, "{path}");
         assert_eq!(value["request_id"], request_id);
+    }
+}
+
+/// Optional synthetic response evidence for external JSON Schema validation.
+fn capture_response(method: &str, path: &str, status: StatusCode, body: &serde_json::Value) {
+    let Ok(pathname) = std::env::var("VOTING_CONTRACT_CAPTURE_PATH") else {
+        return;
+    };
+    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _lock = LOCK.lock().unwrap();
+    let mut options = std::fs::OpenOptions::new();
+    options.create(true).append(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = options
+        .open(pathname)
+        .expect("open optional synthetic contract capture");
+    let mut bytes = serde_json::to_vec(
+        &serde_json::json!({"method":method,"path":path,"status":status.as_u16(),"body":body}),
+    )
+    .unwrap();
+    bytes.push(b'\n');
+    use std::io::Write;
+    file.write_all(&bytes)
+        .expect("write optional synthetic contract capture");
+}
+#[tokio::test]
+async fn canonical_proposal_and_analysis_responses_match_generated_contract() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../protocol/fixtures/canonical-v2.json")).unwrap();
+    let text =
+        "<p>This independent analysis has enough visible detail for the required minimum.</p>";
+    for body in [
+        serde_json::json!({"kind":"proposal","sections":fixture["vectors"][0]["raw"]}),
+        serde_json::json!({"kind":"analysis","sections":{"benefits":text,"long_term":text,"risks":text,"short_term":text,"what":text}}),
+    ] {
+        let response = app(5)
+            .oneshot(
+                Request::post("/v1/canonicalize")
+                    .header("content-type", "application/json")
+                    .body(Body::from(serde_json::to_vec(&body).unwrap()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let value: serde_json::Value =
+            serde_json::from_slice(&response.into_body().collect().await.unwrap().to_bytes())
+                .unwrap();
+        assert_eq!(
+            value["body_hash"],
+            operator_voting::payload::body_hash(value["canonical_json"].as_str().unwrap())
+        );
+        capture_response("POST", "/v1/canonicalize", StatusCode::OK, &value);
     }
 }
