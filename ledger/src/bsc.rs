@@ -10,6 +10,8 @@ use serde_json::{json, Value};
 pub const BSC_FINALITY_DEPTH: i64 = 15;
 /// Per-observation header fanout; the entire observation stays on one provider.
 pub const BSC_HASH_CONCURRENCY: usize = 8;
+/// Headers plus the independently validated end hash and log request.
+pub const BSC_RANGE_RPC_CONCURRENCY: usize = BSC_HASH_CONCURRENCY + 2;
 #[derive(Clone)]
 pub struct BscClient {
     http: reqwest::Client,
@@ -99,41 +101,8 @@ impl BscClient {
         let mut last = LedgerError::Provider("no_bsc_provider");
         for url in &self.urls {
             let observation = async {
-                if self.at(url, "eth_chainId", json!([])).await?.as_str() != Some("0x38") {
-                    return Err(LedgerError::Provider("wrong_bsc_network"));
-                }
-                let height = quantity(
-                    &self.at(url, "eth_blockNumber", json!([])).await?,
-                    "invalid_block_number",
-                )?;
-                let block = self
-                    .at(
-                        url,
-                        "eth_getBlockByNumber",
-                        json!([format!("0x{height:x}"), false]),
-                    )
-                    .await?;
-                if quantity(
-                    block
-                        .get("number")
-                        .ok_or(LedgerError::Provider("missing_block_number"))?,
-                    "invalid_block_number",
-                )? != height
-                {
-                    return Err(LedgerError::Provider("wrong_head_block"));
-                }
-                hash(block.get("hash"), "invalid_block_hash")?;
-                let timestamp = quantity(
-                    block
-                        .get("timestamp")
-                        .ok_or(LedgerError::Provider("missing_block_time"))?,
-                    "invalid_block_time",
-                )?;
-                crate::health::validate_head_time(timestamp)?;
-                if height < minimum {
-                    return Err(LedgerError::Provider("provider_head_regressed"));
-                }
-                Ok(height)
+                self.check_network_at(url).await?;
+                self.head_at(url, minimum).await
             }
             .await;
             match observation {
@@ -142,6 +111,83 @@ impl BscClient {
             }
         }
         Err(last)
+    }
+    async fn check_network_at(&self, url: &str) -> LedgerResult<()> {
+        if self.at(url, "eth_chainId", json!([])).await?.as_str() != Some("0x38") {
+            return Err(LedgerError::Provider("wrong_bsc_network"));
+        }
+        Ok(())
+    }
+    // Caller validates the network around the complete pinned observation.
+    async fn head_at(&self, url: &str, minimum: i64) -> LedgerResult<i64> {
+        let height = quantity(
+            &self.at(url, "eth_blockNumber", json!([])).await?,
+            "invalid_block_number",
+        )?;
+        let block = self
+            .at(
+                url,
+                "eth_getBlockByNumber",
+                json!([format!("0x{height:x}"), false]),
+            )
+            .await?;
+        if quantity(
+            block
+                .get("number")
+                .ok_or(LedgerError::Provider("missing_block_number"))?,
+            "invalid_block_number",
+        )? != height
+        {
+            return Err(LedgerError::Provider("wrong_head_block"));
+        }
+        hash(block.get("hash"), "invalid_block_hash")?;
+        let timestamp = quantity(
+            block
+                .get("timestamp")
+                .ok_or(LedgerError::Provider("missing_block_time"))?,
+            "invalid_block_time",
+        )?;
+        crate::health::validate_head_time(timestamp)?;
+        if height < minimum {
+            return Err(LedgerError::Provider("provider_head_regressed"));
+        }
+        Ok(height)
+    }
+    async fn block_hash_at(&self, url: &str, height: i64) -> LedgerResult<String> {
+        let block = self
+            .at(
+                url,
+                "eth_getBlockByNumber",
+                json!([format!("0x{height:x}"), false]),
+            )
+            .await?;
+        if quantity(
+            block
+                .get("number")
+                .ok_or(LedgerError::Provider("missing_block_number"))?,
+            "invalid_block_number",
+        )? != height
+        {
+            return Err(LedgerError::Provider("wrong_block_number"));
+        }
+        hash(block.get("hash"), "invalid_block_hash")
+    }
+    /// Final same-source check runs after accounting SQL, before publication.
+    pub async fn finish_range(&self, height: i64, expected_hash: &str) -> LedgerResult<i64> {
+        let url = self
+            .urls
+            .first()
+            .filter(|_| self.urls.len() == 1)
+            .ok_or(LedgerError::Provider("unpinned_bsc_observation"))?;
+        self.check_network_at(url).await?;
+        let (tip, end_hash) = tokio::try_join!(
+            self.head_at(url, height.saturating_add(BSC_FINALITY_DEPTH)),
+            self.block_hash_at(url, height)
+        )?;
+        if end_hash != expected_hash {
+            return Err(LedgerError::Provider("bsc_changed_during_ingest"));
+        }
+        Ok(tip)
     }
     pub async fn block_hash(&self, height: i64) -> LedgerResult<String> {
         let v = self
@@ -369,6 +415,28 @@ impl BscClient {
         to: i64,
         baselines: &[(i64, Option<String>)],
     ) -> LedgerResult<BscRangeSnapshot> {
+        self.canonical_range_plan(token, from, to, baselines, false)
+            .await
+    }
+    /// A bounded forward range chooses its end from the selected source's fresh head.
+    pub async fn canonical_next_range(
+        &self,
+        token: &str,
+        from: i64,
+        maximum_to: i64,
+        baselines: &[(i64, Option<String>)],
+    ) -> LedgerResult<BscRangeSnapshot> {
+        self.canonical_range_plan(token, from, maximum_to, baselines, true)
+            .await
+    }
+    async fn canonical_range_plan(
+        &self,
+        token: &str,
+        from: i64,
+        maximum_to: i64,
+        baselines: &[(i64, Option<String>)],
+        plan: bool,
+    ) -> LedgerResult<BscRangeSnapshot> {
         let mut last = LedgerError::Provider("no_bsc_provider");
         let mut orphaned = false;
         for url in &self.urls {
@@ -377,30 +445,62 @@ impl BscClient {
                 urls: vec![url.clone()],
             };
             let observed = async {
-                let tip = source.block_number().await?;
-                if to > tip.saturating_sub(BSC_FINALITY_DEPTH) {
+                source.check_network_at(url).await?;
+                let tip = source
+                    .head_at(url, from.saturating_add(BSC_FINALITY_DEPTH))
+                    .await?;
+                let to = if plan {
+                    maximum_to.min(tip.saturating_sub(BSC_FINALITY_DEPTH))
+                } else {
+                    maximum_to
+                };
+                if to > tip.saturating_sub(BSC_FINALITY_DEPTH) || from > to {
                     return Err(LedgerError::Provider("unfinalized_bsc_range"));
                 }
-                for (height, expected) in baselines {
-                    if expected.as_ref() != Some(&source.block_hash(*height).await?) {
+                for (height, expected) in baselines.iter().filter(|(height, _)| *height <= to) {
+                    if expected.as_ref() != Some(&source.block_hash_at(url, *height).await?) {
                         return Err(LedgerError::Provider("registration_baseline_orphaned"));
                     }
                 }
-                let end_hash = source.block_hash(to).await?;
-                let logs = source.transfer_logs(token, from, to).await?;
-                // block_number validated chain identity before this pinned observation;
-                // the existing post-range block_hash validates it again before return.
                 let heights = (from.max(to.saturating_sub(128))..=to).collect::<Vec<_>>();
-                let hashes = source.block_hashes_at(url, &heights).await?;
-                if source.block_hash(to).await? != end_hash {
+                let (end_hash, raw_logs, hashes) = tokio::join!(
+                    source.block_hash_at(url, to),
+                    source.transfer_logs_inner(token, from, to, Some(url)),
+                    source.block_hashes_at(url, &heights)
+                );
+                let (end_hash, raw_logs, hashes) = (end_hash?, raw_logs?, hashes?);
+                let mut by_height = hashes
+                    .iter()
+                    .cloned()
+                    .collect::<std::collections::HashMap<_, _>>();
+                for (log, expected_hash) in &raw_logs {
+                    // Standalone callers may request a range larger than retained
+                    // history; validate each older log block once without retaining it.
+                    if !by_height.contains_key(&log.block_number) {
+                        by_height.insert(
+                            log.block_number,
+                            source.block_hash_at(url, log.block_number).await?,
+                        );
+                    }
+                    if by_height.get(&log.block_number) != Some(expected_hash) {
+                        return Err(LedgerError::Provider("wrong_log_block_hash"));
+                    }
+                }
+                if by_height.get(&to) != Some(&end_hash) {
                     return Err(LedgerError::Provider("bsc_changed_during_ingest"));
                 }
-                Ok((tip, end_hash, logs, hashes))
+                source.check_network_at(url).await?;
+                if source.block_hash_at(url, to).await? != end_hash {
+                    return Err(LedgerError::Provider("bsc_changed_during_ingest"));
+                }
+                let logs = raw_logs.into_iter().map(|(log, _)| log).collect();
+                Ok((to, tip, end_hash, logs, hashes))
             }
             .await;
             match observed {
-                Ok((tip, end_hash, logs, hashes)) => {
+                Ok((to, tip, end_hash, logs, hashes)) => {
                     return Ok(BscRangeSnapshot {
+                        to,
                         tip,
                         end_hash,
                         logs,
@@ -426,6 +526,20 @@ impl BscClient {
         from: i64,
         to: i64,
     ) -> LedgerResult<Vec<Bep20Log>> {
+        Ok(self
+            .transfer_logs_inner(token, from, to, None)
+            .await?
+            .into_iter()
+            .map(|(log, _)| log)
+            .collect())
+    }
+    async fn transfer_logs_inner(
+        &self,
+        token: &str,
+        from: i64,
+        to: i64,
+        pinned_url: Option<&str>,
+    ) -> LedgerResult<Vec<(Bep20Log, String)>> {
         let token = normalize_evm_addr(token)?;
         let mut ranges = vec![(from, to)];
         let mut out = Vec::new();
@@ -435,7 +549,14 @@ impl BscClient {
             if requests > 4096 || out.len() > 100_000 {
                 return Err(LedgerError::Provider("log_work_limit"));
             }
-            let response=self.rpc("eth_getLogs",json!([{"address":token,"fromBlock":format!("0x{lo:x}"),"toBlock":format!("0x{hi:x}"),"topics":[TRANSFER_TOPIC]}])).await;
+            let params = json!([{"address":token,"fromBlock":format!("0x{lo:x}"),"toBlock":format!("0x{hi:x}"),"topics":[TRANSFER_TOPIC]}]);
+            let response = match pinned_url {
+                Some(url) => self
+                    .at(url, "eth_getLogs", params.clone())
+                    .await
+                    .and_then(|v| validate_rpc_result("eth_getLogs", &v, &params).map(|_| v)),
+                None => self.rpc("eth_getLogs", params).await,
+            };
             let v = match response {
                 Ok(v) => v,
                 Err(_) if lo < hi => {
@@ -455,12 +576,12 @@ impl BscClient {
                 {
                     return Err(LedgerError::Provider("wrong_token_or_log_range"));
                 }
-                out.push(log);
+                out.push((log, hash(item.get("blockHash"), "invalid_log_block_hash")?));
             }
         }
-        out.sort_by_key(|l| (l.block_number, l.log_index));
+        out.sort_by_key(|(l, _)| (l.block_number, l.log_index));
         let mut identities = std::collections::HashSet::new();
-        for l in &out {
+        for (l, _) in &out {
             if !identities.insert((l.block_number, l.log_index)) {
                 return Err(LedgerError::Provider("duplicate_log_identity"));
             }
@@ -650,6 +771,7 @@ fn validate_rpc_result(method: &str, v: &Value, params: &Value) -> LedgerResult<
 
 #[derive(Clone)]
 pub struct BscRangeSnapshot {
+    pub to: i64,
     pub tip: i64,
     pub end_hash: String,
     pub logs: Vec<Bep20Log>,

@@ -1,0 +1,16 @@
+{
+  "toolchain": "Rust1.88.0",
+  "command": "CARGO_BUILD_JOBS=2 scripts/verify-release.sh",
+  "release_run": 13,
+  "fresh_scram_postgres": true,
+  "rust_unit_supervisor_tests": 74,
+  "integration_tests": 121,
+  "ledger_hardening_tests": 66,
+  "schema_validated_responses": 245,
+  "every_declared_api_operation_success": true,
+  "frontend_tests": 146,
+  "production_build": true,
+  "both_nginx_checks": true,
+  "gitleaks": true,
+  "passed": true
+}

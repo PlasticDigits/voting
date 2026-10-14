@@ -14,6 +14,19 @@ pub async fn poll_chain(
     cfg: &LedgerConfig,
     chain: Chain,
 ) -> Result<(), LedgerError> {
+    poll_chain_progress(pool, lcd, bsc, cfg, chain)
+        .await
+        .map(|_| ())
+}
+/// True only when successful forward progress still exceeds the readiness lag budget.
+/// Supervisors yield and immediately continue bounded catch-up instead of sleeping.
+pub async fn poll_chain_progress(
+    pool: &sqlx::PgPool,
+    lcd: &Option<LcdClient>,
+    bsc: &BscClient,
+    cfg: &LedgerConfig,
+    chain: Chain,
+) -> Result<bool, LedgerError> {
     let cursor = match chain {
         Chain::Terra => db::indexed_terra_height(pool).await?,
         Chain::Bsc => db::indexed_bsc_block(pool).await?,
@@ -63,7 +76,7 @@ pub async fn poll_chain(
                 }
             }
             Chain::Bsc => {
-                ingest::ingest_bsc_range(pool, bsc, cfg, w.start, w.end).await?;
+                ingest::ingest_bsc_next_range(pool, bsc, cfg, w.start).await?;
             }
         }
     } else if after_rewind == tip && tip > 0 {
@@ -90,5 +103,13 @@ pub async fn poll_chain(
     } else {
         return Err(LedgerError::Provider("provider_head_regressed"));
     }
-    Ok(())
+    let behind: bool = sqlx::query_scalar(
+        "SELECT height>$2 AND network_tip-height>$3 FROM ledger_checkpoints WHERE chain=$1",
+    )
+    .bind(chain.as_str())
+    .bind(after_rewind)
+    .bind(if chain == Chain::Bsc { 17_i64 } else { 2_i64 })
+    .fetch_one(pool)
+    .await?;
+    Ok(behind)
 }

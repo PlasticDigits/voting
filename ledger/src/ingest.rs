@@ -63,6 +63,33 @@ pub async fn ingest_bsc_range(
     from: i64,
     to: i64,
 ) -> LedgerResult<usize> {
+    ingest_bsc_range_plan(pool, bsc, cfg, from, to, false).await
+}
+/// Worker ranges advance at most one chunk, planned from the pinned provider's head.
+pub async fn ingest_bsc_next_range(
+    pool: &PgPool,
+    bsc: &BscClient,
+    cfg: &LedgerConfig,
+    from: i64,
+) -> LedgerResult<usize> {
+    ingest_bsc_range_plan(
+        pool,
+        bsc,
+        cfg,
+        from,
+        from.saturating_add(INGEST_CHUNK - 1),
+        true,
+    )
+    .await
+}
+async fn ingest_bsc_range_plan(
+    pool: &PgPool,
+    bsc: &BscClient,
+    cfg: &LedgerConfig,
+    from: i64,
+    to: i64,
+    plan: bool,
+) -> LedgerResult<usize> {
     if from > to {
         return Ok(0);
     }
@@ -74,10 +101,14 @@ pub async fn ingest_bsc_range(
         .iter()
         .map(|(_, h, hash)| (*h, hash.clone()))
         .collect::<Vec<_>>();
-    let range = match bsc
-        .canonical_range(&cfg.bsc_cl8y_token_address, from, to, &expected)
-        .await
-    {
+    let observation = if plan {
+        bsc.canonical_next_range(&cfg.bsc_cl8y_token_address, from, to, &expected)
+            .await
+    } else {
+        bsc.canonical_range(&cfg.bsc_cl8y_token_address, from, to, &expected)
+            .await
+    };
+    let range = match observation {
         Ok(range) => range,
         Err(e) => {
             if matches!(e, LedgerError::Provider("registration_baseline_orphaned")) {
@@ -86,7 +117,8 @@ pub async fn ingest_bsc_range(
             return Err(e);
         }
     };
-    for (wallet, _, _) in baselines {
+    let to = range.to;
+    for (wallet, _, _) in baselines.into_iter().filter(|(_, height, _)| *height <= to) {
         sqlx::query("UPDATE voting_registrations SET baseline_verified=true WHERE chain='bsc' AND wallet_address=$1").bind(wallet).execute(&mut *tx).await?;
     }
     let registered: Vec<String> = sqlx::query_scalar(
@@ -105,13 +137,7 @@ pub async fn ingest_bsc_range(
     for (height, hash) in &range.hashes {
         sqlx::query("INSERT INTO ledger_canonical_blocks(chain,height,block_hash) VALUES('bsc',$1,$2) ON CONFLICT(chain,height) DO UPDATE SET block_hash=$2").bind(height).bind(hash).execute(&mut *tx).await?;
     }
-    if range.source.block_hash(to).await? != range.end_hash {
-        return Err(LedgerError::Provider("bsc_changed_during_ingest"));
-    }
-    let tip = range.source.block_number().await?;
-    if to > tip.saturating_sub(crate::bsc::BSC_FINALITY_DEPTH) {
-        return Err(LedgerError::Provider("bsc_head_regressed"));
-    }
+    let tip = range.source.finish_range(to, &range.end_hash).await?;
     db::publish_checkpoint(&mut tx, Chain::Bsc, to, &range.end_hash, tip).await?;
     tx.commit().await?;
     Ok(count)

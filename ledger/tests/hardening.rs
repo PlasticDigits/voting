@@ -4728,6 +4728,11 @@ async fn process_database_session_loss_fails_readiness_then_restores_without_new
         }
     })
     .await;
+    let restored_after: chrono::DateTime<chrono::Utc> =
+        sqlx::query_scalar("SELECT clock_timestamp()")
+            .fetch_one(&mut control)
+            .await
+            .unwrap();
     // Always restore admission before checking fault assertions, including a failed observation.
     sqlx::query(&format!(
         "ALTER DATABASE \"{quoted}\" ALLOW_CONNECTIONS true"
@@ -4740,18 +4745,32 @@ async fn process_database_session_loss_fails_readiness_then_restores_without_new
         unavailable.unwrap().unwrap(),
         "running readiness must expose actual database failure"
     );
-    let restart = if let Some(exit) = child.try_wait().unwrap() {
-        assert!(
-            !exit.success(),
-            "a fatal DB progress failure requests supervisor restart"
-        );
-        child = launch_test_ledger(&terra, &rpc, &address.to_string(), child_url.as_str());
-        true
-    } else {
-        false
-    };
+    // An in-flight DB failure can request fatal supervision *after* admission
+    // returns. Observe that allowed exit throughout recovery, not just once.
+    // Require fresh passes from both chains and intents after restoration, so
+    // healthy HTTP backed only by old metadata cannot satisfy this barrier.
+    let restart=tokio::time::timeout(Duration::from_secs(8),async {
+        let mut restarted=false;
+        let mut ready_since=None;
+        loop {
+            if let Some(exit)=child.try_wait().unwrap() {
+                assert!(!exit.success(),"fatal DB progress failure must request a nonzero supervised restart");
+                assert!(!restarted,"DB restoration must not produce a restart loop");
+                child=launch_test_ledger(&terra,&rpc,&address.to_string(),child_url.as_str());
+                restarted=true;
+                ready_since=None;
+            }
+            let fresh:bool=sqlx::query_scalar("SELECT (SELECT count(*)=2 FROM public.ledger_checkpoints WHERE observed_at>=$1 AND complete AND canonical AND degraded_reason IS NULL) AND EXISTS(SELECT 1 FROM public.indexer_state WHERE key='intents_ok' AND value='true' AND updated_at>=$1)")
+                .bind(restored_after).fetch_one(&pool).await.unwrap();
+            let ready=http.get(format!("{base}/ready")).send().await.is_ok_and(|response|response.status()==reqwest::StatusCode::OK);
+            if fresh&&ready {
+                let since=ready_since.get_or_insert_with(std::time::Instant::now);
+                if since.elapsed()>=Duration::from_millis(300) && child.try_wait().unwrap().is_none() {break restarted;}
+            }else{ready_since=None;}
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    }).await.expect("restored DB must regain fresh dual-chain/intent progress and sustained readiness with at most one supervised restart");
     println!("database_session_loss supervisor_restart={restart}");
-    wait_child_status(&mut child, &http, &base, reqwest::StatusCode::OK).await;
     wait_child_cursors(&mut child, &pool, 110, 105).await;
     let after: Vec<(String, i64, i64)> =
         sqlx::query_as("SELECT chain,height,epoch FROM ledger_checkpoints ORDER BY chain")
@@ -5352,7 +5371,7 @@ async fn delayed_bsc_range_hashes_use_bounded_pinned_concurrency_and_constant_ne
         chain_calls <= 4,
         "validate network around the pinned observation, not once per historical header"
     );
-    assert!((2..=voting_ledger::bsc::BSC_HASH_CONCURRENCY).contains(&concurrency));
+    assert!((2..=voting_ledger::bsc::BSC_RANGE_RPC_CONCURRENCY).contains(&concurrency));
 }
 
 #[tokio::test]
@@ -5459,10 +5478,12 @@ async fn interior_hash_batch_failure_rolls_back_entire_ingest_and_pins_failover_
             (101..=132).map(|h| (h, block_hash(h))).collect::<Vec<_>>()
         );
         assert!(
-            bad.maximum_active.load(Ordering::SeqCst) <= voting_ledger::bsc::BSC_HASH_CONCURRENCY
+            bad.maximum_active.load(Ordering::SeqCst)
+                <= voting_ledger::bsc::BSC_RANGE_RPC_CONCURRENCY
         );
         assert!(
-            good.maximum_active.load(Ordering::SeqCst) <= voting_ledger::bsc::BSC_HASH_CONCURRENCY
+            good.maximum_active.load(Ordering::SeqCst)
+                <= voting_ledger::bsc::BSC_RANGE_RPC_CONCURRENCY
         );
         bad_server.abort();
         good_server.abort();
@@ -5724,4 +5745,285 @@ async fn mutable_lcd_cache_bypass_avoids_false_refusals_and_incoherent_origin_st
         }
         server.abort();
     }
+}
+
+#[derive(Clone)]
+struct MovingHeadRpc {
+    started: std::time::Instant,
+    mode: Arc<std::sync::atomic::AtomicUsize>,
+    heads: Arc<tokio::sync::Mutex<Vec<i64>>>,
+    ranges: Arc<tokio::sync::Mutex<Vec<(i64, i64)>>>,
+}
+impl MovingHeadRpc {
+    fn new() -> Self {
+        Self {
+            started: std::time::Instant::now(),
+            mode: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            heads: Arc::new(tokio::sync::Mutex::new(Vec::new())),
+            ranges: Arc::new(tokio::sync::Mutex::new(Vec::new())),
+        }
+    }
+    fn tip(&self) -> i64 {
+        115 + (self.started.elapsed().as_millis() / 450) as i64
+    }
+}
+async fn moving_head_rpc(
+    State(state): State<MovingHeadRpc>,
+    Json(body): Json<serde_json::Value>,
+) -> Json<serde_json::Value> {
+    tokio::time::sleep(Duration::from_millis(90)).await;
+    let mode = state.mode.load(Ordering::Relaxed);
+    let number = |v: &serde_json::Value| {
+        i64::from_str_radix(v.as_str().unwrap().trim_start_matches("0x"), 16).unwrap()
+    };
+    let result = match body["method"].as_str().unwrap() {
+        "eth_chainId" => serde_json::json!(if mode == 4 { "0x1" } else { "0x38" }),
+        "eth_blockNumber" => {
+            let tip = state.tip();
+            state.heads.lock().await.push(tip);
+            serde_json::json!(format!("0x{tip:x}"))
+        }
+        "eth_getBlockByNumber" => {
+            let height = number(&body["params"][0]);
+            serde_json::json!({"number":format!("0x{:x}",height-if mode==3 && height>=115{1}else{0}),"hash":block_hash(height+if mode==1{100000}else{0}),"timestamp":format!("0x{:x}",chrono::Utc::now().timestamp()-if mode==2{121}else{0})})
+        }
+        "eth_getLogs" => {
+            let filter = &body["params"][0];
+            let from = number(&filter["fromBlock"]);
+            let to = number(&filter["toBlock"]);
+            state.ranges.lock().await.push((from, to));
+            serde_json::json!((from..=to).map(|height|serde_json::json!({"address":DEFAULT_CL8Y_BEP20,"topics":[voting_ledger::parser::TRANSFER_TOPIC,format!("0x{:0>64}",EVM.trim_start_matches("0x")),format!("0x{:0>64}","2222222222222222222222222222222222222222")],"data":format!("0x{:064x}",1),"blockNumber":format!("0x{height:x}"),"blockHash":block_hash(height),"transactionHash":block_hash(10000+height),"logIndex":"0x0","removed":false})).collect::<Vec<_>>())
+        }
+        _ => panic!("unexpected moving-head RPC method"),
+    };
+    Json(serde_json::json!({"jsonrpc":"2.0","id":1,"result":result}))
+}
+async fn moving_head_server(state: MovingHeadRpc) -> (String, tokio::task::JoinHandle<()>) {
+    let app = Router::new()
+        .fallback(axum::routing::post(moving_head_rpc))
+        .with_state(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    (
+        url,
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() }),
+    )
+}
+#[tokio::test]
+async fn moving_bsc_head_at_production_latency_commits_true_tip_within_unchanged_freshness_budget()
+{
+    let Some((pool, _lock)) = setup().await else {
+        return;
+    };
+    let state = MovingHeadRpc::new();
+    let (url, server) = moving_head_server(state.clone()).await;
+    let client = voting_ledger::bsc::BscClient::new(vec![url.clone()]);
+    let cfg = config(&url);
+    seed_registration(&pool, Chain::Bsc, EVM, 100, &BigInt::from(1000), None)
+        .await
+        .unwrap();
+    let future = "0x3333333333333333333333333333333333333333";
+    db::insert_registration(&pool, Chain::Bsc, future, 131, &BigInt::from(0), None)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE voting_registrations SET baseline_block_hash=$1,baseline_verified=false WHERE wallet_address=$2").bind(block_hash(100131)).bind(future).execute(&pool).await.unwrap();
+    let mut tx = pool.begin().await.unwrap();
+    db::publish_checkpoint(&mut tx, Chain::Bsc, 100, &block_hash(100), 115)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    tokio::time::sleep(Duration::from_millis(450)).await;
+    let mut previous = 100;
+    for _ in 0..5 {
+        let before = state.heads.lock().await.len();
+        let started = std::time::Instant::now();
+        let catch_up =
+            voting_ledger::worker::poll_chain_progress(&pool, &None, &client, &cfg, Chain::Bsc)
+                .await
+                .unwrap();
+        let (height,tip,complete,canonical):(i64,i64,bool,bool)=sqlx::query_as("SELECT height,network_tip,complete,canonical FROM ledger_checkpoints WHERE chain='bsc'").fetch_one(&pool).await.unwrap();
+        let observed = state.heads.lock().await[before..].to_vec();
+        assert_eq!(
+            observed.len(),
+            3,
+            "outer selection, pinned plan and final checked head"
+        );
+        assert_eq!(
+            height,
+            (observed[1] - 15).min(previous + 32),
+            "plan uses its own fresh pinned head"
+        );
+        assert_eq!(
+            tip, observed[2],
+            "publication must retain the actual final observed head"
+        );
+        assert!(
+            (15..=17).contains(&(tip - height)),
+            "true finalized lag {} exceeds unchanged policy",
+            tip - height
+        );
+        assert!(height > previous && complete && canonical && !catch_up);
+        assert_eq!(
+            state.ranges.lock().await.last().copied(),
+            Some((previous + 1, height))
+        );
+        assert_eq!(
+            db::balance_at(&pool, Chain::Bsc, EVM, height)
+                .await
+                .unwrap(),
+            BigInt::from(1100 - height)
+        );
+        let verified: bool = sqlx::query_scalar(
+            "SELECT baseline_verified FROM voting_registrations WHERE wallet_address=$1",
+        )
+        .bind(future)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert!(
+            !verified && height < 131,
+            "future baseline outside actual selected end must remain pending"
+        );
+        println!(
+            "moving_head poll_ms={} range={}-{} true_tip={tip} lag={}",
+            started.elapsed().as_millis(),
+            previous + 1,
+            height,
+            tip - height
+        );
+        previous = height;
+        tokio::time::sleep(Duration::from_millis(1000)).await;
+    }
+    server.abort();
+}
+#[tokio::test]
+async fn final_bsc_same_source_recheck_after_sql_rejects_fork_stale_header_wrong_height_and_network_atomically(
+) {
+    for (mode, expected) in [
+        (1, "bsc_changed_during_ingest"),
+        (2, "stale_or_future_provider_head"),
+        (3, "wrong_head_block"),
+        (4, "wrong_bsc_network"),
+    ] {
+        let Some((pool, _lock)) = setup().await else {
+            return;
+        };
+        let state = MovingHeadRpc::new();
+        let (url, server) = moving_head_server(state.clone()).await;
+        seed_registration(&pool, Chain::Bsc, EVM, 100, &BigInt::from(1000), None)
+            .await
+            .unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        db::publish_checkpoint(&mut tx, Chain::Bsc, 100, &block_hash(100), 115)
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+        // Advance the simulated starting time so101 is safely finalized before the pass.
+        tokio::time::sleep(Duration::from_millis(450)).await;
+        let before:(i64,i64,String,i64,chrono::DateTime<chrono::Utc>)=sqlx::query_as("SELECT height,network_tip,block_hash,epoch,observed_at FROM ledger_checkpoints WHERE chain='bsc'").fetch_one(&pool).await.unwrap();
+        let mut gate = install_ingest_gate(&pool, Chain::Bsc, 1).await;
+        let p = pool.clone();
+        let cfg = config(&url);
+        let client = voting_ledger::bsc::BscClient::new(vec![url]);
+        let write =
+            tokio::spawn(
+                async move { ingest::ingest_bsc_range(&p, &client, &cfg, 101, 101).await },
+            );
+        wait_advisory_query(&pool, INGEST_GATE_CLASS, 1).await;
+        state.mode.store(mode, Ordering::Relaxed);
+        release_ingest_gate(&mut gate, 1).await;
+        let error = write.await.unwrap().unwrap_err();
+        assert!(
+            matches!(error,LedgerError::Provider(class) if class==expected),
+            "expected {expected}, got {error:?}"
+        );
+        let after:(i64,i64,String,i64,chrono::DateTime<chrono::Utc>)=sqlx::query_as("SELECT height,network_tip,block_hash,epoch,observed_at FROM ledger_checkpoints WHERE chain='bsc'").fetch_one(&pool).await.unwrap();
+        assert_eq!(after, before);
+        assert_eq!(
+            db::balance_at(&pool, Chain::Bsc, EVM, 101).await.unwrap(),
+            BigInt::from(1000)
+        );
+        let events: i64 = sqlx::query_scalar("SELECT count(*) FROM cl8y_bep20_transfers")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(events, 0);
+        let hashes: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM ledger_canonical_blocks WHERE chain='bsc'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(hashes, 1);
+        remove_ingest_gate(&pool, Chain::Bsc, 1).await;
+        server.abort();
+    }
+}
+#[tokio::test]
+async fn process_successful_terra_backlog_repolls_without_interval_sleep_and_keeps_sibling_and_intents_healthy(
+) {
+    let Some((pool, _lock)) = setup().await else {
+        return;
+    };
+    let (terra, state, terra_server) = terra_fork_server(180).await;
+    let (rpc, _tip, rpc_server) = rpc_server_with_tip(147).await;
+    seed_terra_fork_electorate(&pool, &state, false).await;
+    let socket = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let bind = socket.local_addr().unwrap().to_string();
+    drop(socket);
+    let started = std::time::Instant::now();
+    let mut child = tokio::process::Command::new(env!("CARGO_BIN_EXE_voting-ledger"))
+        .kill_on_drop(true)
+        .env_clear()
+        .env(
+            "DATABASE_URL",
+            std::env::var("LEDGER_TEST_DATABASE_URL").unwrap(),
+        )
+        .env("RUN_MODE", "prod")
+        .env("TERRA_LCD_URL", &terra)
+        .env("BSC_RPC_URLS", &rpc)
+        .env("API_BIND", &bind)
+        .env("POLL_INTERVAL_MS", "5000")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(4), async {
+        loop {
+            assert!(child.try_wait().unwrap().is_none());
+            if db::indexed_terra_height(&pool).await.unwrap() == 180
+                && db::indexed_bsc_block(&pool).await.unwrap() == 132
+            {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("successful backlog must repoll before the configured five-second sleep");
+    assert!(started.elapsed() < Duration::from_secs(5));
+    let http = reqwest::Client::new();
+    wait_child_status(
+        &mut child,
+        &http,
+        &format!("http://{bind}"),
+        reqwest::StatusCode::OK,
+    )
+    .await;
+    assert_eq!(
+        db::balance_at(&pool, Chain::Terra, ALICE, 180)
+            .await
+            .unwrap(),
+        BigInt::from(920)
+    );
+    assert_eq!(
+        db::balance_at(&pool, Chain::Bsc, EVM, 132).await.unwrap(),
+        BigInt::from(968)
+    );
+    assert_eq!(
+        db::get_state(&pool, "intents_ok").await.unwrap(),
+        Some("true".into())
+    );
+    terminate_child(&mut child).await;
+    terra_server.abort();
+    rpc_server.abort();
 }
