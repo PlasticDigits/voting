@@ -31,13 +31,16 @@ test:rust-integration:
   variables:
     POSTGRES_USER: voting
     POSTGRES_PASSWORD: voting
-    POSTGRES_DB: voting
-    LEDGER_TEST_DATABASE_URL: postgres://voting:voting@postgres:5432/voting
+    POSTGRES_DB: voting_test_ci
+    LEDGER_TEST_DATABASE_URL: postgres://voting:voting@postgres:5432/voting_test_ci
+    LEDGER_TEST_ALLOW_DESTRUCTIVE: "1"
+    LEDGER_TEST_REQUIRED: "1"
+    LEDGER_TEST_ALLOW_CI_SERVICE: "1"
   before_script:
     - apt-get update && apt-get install -y --no-install-recommends pkg-config libssl-dev postgresql-client
     - |
       for i in $(seq 1 30); do
-        pg_isready -h postgres -U voting -d voting && break
+        pg_isready -h postgres -U voting -d voting_test_ci && break
         sleep 2
       done
   script:

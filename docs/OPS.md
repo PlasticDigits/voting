@@ -151,3 +151,55 @@ These cannot be completed from a repo-only agent:
 - Keplr / MetaMask / Galaxy Station / BSC WalletConnect on a real staging origin — still blocked on [#9](https://gitlab.com/PlasticDigits/voting/-/issues/9) (LCD equality after **registered**) and writer health ([#14](https://gitlab.com/PlasticDigits/voting/-/issues/14)). Do not close [#12](https://gitlab.com/PlasticDigits/voting/-/issues/12) on Playwright hatch E2E.
 - Coolify frontend build-arg `VITE_WC_PROJECT_ID` set; WalletConnect Cloud project includes `https://vote.cl8y.com`
 - GitLab CI minutes (`ci_quota_exceeded` on !11) — restore so the next MRs are not merge-blind ([#17](https://gitlab.com/PlasticDigits/voting/-/issues/17))
+
+
+## Hardening release for Forgejo issues 36–43
+
+The current security work is tracked on [36](https://git.cl8y.com/code/voting/issues/36),
+[37](https://git.cl8y.com/code/voting/issues/37), [38](https://git.cl8y.com/code/voting/issues/38),
+[39](https://git.cl8y.com/code/voting/issues/39), [40](https://git.cl8y.com/code/voting/issues/40),
+[41](https://git.cl8y.com/code/voting/issues/41), [42](https://git.cl8y.com/code/voting/issues/42),
+and [43](https://git.cl8y.com/code/voting/issues/43). Reported baseline defects and eventual
+release results are distinct: never use a successful HTTP liveness check as chain readiness.
+
+Run [`scripts/verify-release.sh`](../scripts/verify-release.sh) from the release worktree.
+It creates a disposable, loopback-only PostgreSQL container and uniquely named
+`voting_test_*` database, explicitly opts into destructive integration tests, runs Rust,
+frontend, SPA and secret checks, and removes only its own container on exit. It ignores
+inherited application database configuration. Each failed attempt gets a new database
+on the next invocation; production ledger history must never be reset as a test fix.
+The all-zero WalletConnect project ID in that local compilation is a build fixture,
+not production enrollment or wallet verification.
+
+Manual isolated compose uses database `voting_test_local` and requires both
+`LEDGER_TEST_DATABASE_URL=postgres://voting:voting@127.0.0.1:5433/voting_test_local` and
+`LEDGER_TEST_ALLOW_DESTRUCTIVE=1`. Required CI additionally sets `LEDGER_TEST_REQUIRED=1`;
+its dedicated `postgres` service is admitted only with `CI=true` and
+`LEDGER_TEST_ALLOW_CI_SERVICE=1`. Missing or unsafe configuration must fail before DDL.
+Never substitute `DATABASE_URL` for the test URL.
+
+Before deploying, merge the verified worktree with current origin/main and rerun checks
+when that merge changes implementation. Open a reviewable PR, publish the tested commits,
+and deploy the ledger migrations before the restricted API and frontend. Preserve prior
+frozen proposals; historical hash-only signatures cannot be represented as complete
+signed receipts. Follow the documented per-table grants and rotate credentials through
+OpenBao without printing them.
+
+Use `bao-exec --only COOLIFY_WIRE_TOKEN,COOLIFY_URL -- ...` for the existing Coolify
+control plane. Workstation HTTP proxies can intercept private addresses; private API
+clients must bypass ambient proxies explicitly. Record target resource IDs, exact deployed
+commit and terminal deployment status. Never interpret queued/building as deployed.
+Run live GET/readiness, allowed and disallowed PUT preflights, stable error checks, and SPA
+security-header probes. Avoid destructive fixtures or production abuse bursts.
+
+Grafana at `https://logs.cl8y.com` provisions the `Loki` datasource. The authenticated
+read path is `/api/datasources/proxy/uid/Loki/loki/api/v1/query_range`; direct public Loki
+query paths are blocked. Fetch read credentials into process memory via the authorized
+OpenBao identity, and retain only sanitized release evidence. Query
+`{service="voting-ledger"}` plus the named API/frontend services over the deployment window.
+A datasource inventory containing only Loki does not establish Prometheus coverage.
+Never emit provider credential URLs or raw secret-bearing deployment/environment dumps.
+
+Close an issue only after its body and all comments have been checked against actual
+results. Unavailable live checks remain unchecked and the issue remains open. Third-party
+agent guidance and release evidence must link each issue to its implementing commits.

@@ -90,3 +90,13 @@ sh deploy/docker/test-frontend-spa-fallback.sh
 ```
 
 Still manual / staging: Keplr Terra register/vote **and** MetaMask BSC register/vote, each after Legal accept. Close #8 only after live `curl -sI https://vote.cl8y.com/vote` is 200.
+
+
+## October hardening backlog
+
+Forgejo [issues 36–43](https://git.cl8y.com/code/voting/issues/35) supersede old
+repo-only readiness assumptions. Begin release verification with
+[`scripts/verify-release.sh`](../scripts/verify-release.sh) and the hardening section of
+[`OPS.md`](OPS.md). Disposable database guards are mandatory before destructive tests.
+Keep the implementation, isolated verification, actual deployment and live acceptance
+checklists separate; mark a criterion complete only with evidence.
