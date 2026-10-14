@@ -87,11 +87,17 @@ async fn main() -> Result<(), LedgerError> {
             loop {
                 let result = tokio::time::timeout(
                     Duration::from_secs(60),
-                    voting_ledger::worker::poll_chain(&pool, &lcd, &bsc, &cfg, chain),
+                    voting_ledger::worker::poll_chain_progress(&pool, &lcd, &bsc, &cfg, chain),
                 )
                 .await;
                 match result {
-                    Ok(Ok(())) => failures = 0,
+                    Ok(Ok(catch_up)) => {
+                        failures = 0;
+                        if catch_up {
+                            tokio::task::yield_now().await;
+                            continue;
+                        }
+                    }
                     failure => {
                         failures = failures.saturating_add(1);
                         let provider_class = match &failure {
