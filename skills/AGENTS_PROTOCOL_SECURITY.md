@@ -38,3 +38,9 @@ LEDGER_TEST_DATABASE_URL=postgres://voting:voting@127.0.0.1:55438/voting_test_pr
 ```
 
 The browser fixture starts the real application middleware and uses an explicitly public, unfunded test wallet. It changes only a local `voting_test_` database. Live wallet signing, proxy topology and provider log checks need distinct dated evidence; local tests cannot stand in for them.
+
+## One vote and signing wire compatibility
+
+A poll keeps one immutable vote per address/chain. Load `/v1/proposals/:id/votes/:addr?chain=…` before offering signing controls and again immediately before signing. An accepted vote remains visible after reload and is scoped to its wallet, never a connected replacement account. Response-loss retries reuse exactly the original signed bytes and nonce; they do not request another wallet signature. Fresh-nonce duplicates conflict without appending signatures or votes.
+
+[payload-v2.json](../protocol/fixtures/payload-v2.json) is the shared wire fixture, separate from HTML canonical fixtures. Regenerate via `cargo run -p operator-voting --example export_payload_vectors`. Both Rust and TypeScript verify exact serialized bytes, EIP-191 digest and ADR-36 sign-document/SHA256 for Terra/BSC register/amend/open, including Unicode titles, revision and optional-field omission. Do not reorder keys or rewrite persisted raw signed bytes. Title limits are UTF8 bytes; visible summary limits are Unicode scalars.

@@ -1,5 +1,5 @@
 import SafeHtml from '@/components/proposal/SafeHtml'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useConnectedIdentity } from '@/hooks/useConnectedIdentity'
 import {
@@ -8,6 +8,7 @@ import {
   castVote,
   getProposal,
   getFrozenWeight,
+  getRecordedVote,
   type FrozenWeightResponse,
   openProposal,
   postAnalysis,
@@ -61,22 +62,28 @@ function analysisFromFields(raw: Record<AnalysisKey, string>): AnalysisSections 
 export default function VoteDetailPage() {
   const { id = '' } = useParams()
   const { address, chain } = useConnectedIdentity()
+  const contextKey = `${id}:${chain ?? ''}:${address?.trim().toLowerCase() ?? ''}`
+  const currentContext = useRef(contextKey)
+  currentContext.current = contextKey
   const [proposal, setProposal] = useState<ProposalDetail | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [frozenWeight, setFrozenWeight] = useState<FrozenWeightResponse | null>(null)
   const [weightError, setWeightError] = useState<string | null>(null)
   const [weightRetry, setWeightRetry] = useState(0)
-  const [voted, setVoted] = useState<{ choice: VoteChoice; address: string; chain: string } | null>(
-    null,
-  )
+  const [voted, setVoted] = useState<{
+    choice: VoteChoice
+    address: string
+    chain: string
+    proposalId: string
+  } | null>(null)
   const [comment, setComment] = useState('')
   const [amendFields, setAmendFields] = useState<Record<SectionKey, string> | null>(null)
   const [analysisFields, setAnalysisFields] = useState<Record<AnalysisKey, string>>(emptyAnalysis())
 
   async function reload() {
     const p = await getProposal(id)
-    setProposal(p)
+    if (currentContext.current === contextKey) setProposal(p)
     return p
   }
 
@@ -99,6 +106,13 @@ export default function VoteDetailPage() {
   const isOpen = proposal?.status === 'open'
   const canVote = isOpen && proposal?.snapshot_validity === 'valid'
 
+  const hasRecordedVote = Boolean(
+    voted &&
+      voted.proposalId === id &&
+      address &&
+      chain === voted.chain &&
+      sameAddress(address, voted.address),
+  )
   const hasFrozenWeight = Boolean(
     address && chain && frozenWeight && usableFrozenWeight(frozenWeight, id, address, chain),
   )
@@ -107,12 +121,16 @@ export default function VoteDetailPage() {
     setWeightError(null)
     if (!isOpen || !address || !chain) return
     let cancelled = false
-    void getFrozenWeight(id, address, chain)
-      .then((weight) => {
-        if (!cancelled) setFrozenWeight(weight)
+    void Promise.all([getFrozenWeight(id, address, chain), getRecordedVote(id, address, chain)])
+      .then(([weight, recorded]) => {
+        if (!cancelled) {
+          setFrozenWeight(weight)
+          setVoted(recorded ? { choice: recorded.choice, address, chain, proposalId: id } : null)
+        }
       })
       .catch(() => {
-        if (!cancelled) setWeightError('Unable to check frozen voting weight. Refresh and retry.')
+        if (!cancelled)
+          setWeightError('Unable to check frozen voting weight and prior vote. Refresh and retry.')
       })
     return () => {
       cancelled = true
@@ -125,17 +143,26 @@ export default function VoteDetailPage() {
   )
 
   async function handleVote(choice: VoteChoice) {
-    if (!address || !chain || !canVote || !hasFrozenWeight) return
+    if (!address || !chain || !canVote || !hasFrozenWeight || hasRecordedVote) return
     setBusy(true)
     setError(null)
     try {
-      const weight = await getFrozenWeight(id, address, chain)
+      const [weight, recorded] = await Promise.all([
+        getFrozenWeight(id, address, chain),
+        getRecordedVote(id, address, chain),
+      ])
       setFrozenWeight(weight)
+      if (recorded) {
+        setVoted({ choice: recorded.choice, address, chain, proposalId: id })
+        await reload()
+        return
+      }
       if (!usableFrozenWeight(weight, id, address, chain)) {
         setError('This address has no eligible frozen voting weight in this poll.')
         await reload()
         return
       }
+      if (currentContext.current !== contextKey) return
       const signed = await signVotingRequest({
         chain,
         address,
@@ -144,10 +171,22 @@ export default function VoteDetailPage() {
         choice,
       })
       await castVote(id, { ...signed, choice })
-      setVoted({ choice, address, chain })
+      setVoted({ choice, address, chain, proposalId: id })
       await reload().catch(() => setError('Vote recorded. Refresh to load the updated tally.'))
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Vote failed')
+      // A response can be lost after commit. Read immutable state before offering
+      // another signature, and keep the recorded choice attached to its voter.
+      const recorded = await getRecordedVote(id, address, chain).catch(() => null)
+      if (recorded) {
+        setVoted({ choice: recorded.choice, address, chain, proposalId: id })
+        await reload().catch(() => setError('Vote recorded. Refresh to load the updated tally.'))
+      } else {
+        setFrozenWeight(null)
+        setWeightError(
+          'Vote submission could not be verified. Refresh voting weight and recorded state before signing again.',
+        )
+        setError(err instanceof Error ? err.message : 'Vote failed')
+      }
     } finally {
       setBusy(false)
     }
@@ -270,7 +309,7 @@ export default function VoteDetailPage() {
     }
   }
 
-  if (!proposal && !error) {
+  if ((!proposal || proposal.id !== id) && !error) {
     return <p className="panel">Loading…</p>
   }
 
@@ -516,7 +555,7 @@ export default function VoteDetailPage() {
                 )}
               </div>
             )}
-            {canVote && (
+            {canVote && !hasRecordedVote && (
               <div className="cta-row" data-testid="vote-actions">
                 {(['for', 'against', 'abstain'] as VoteChoice[]).map((choice) => (
                   <button
@@ -532,11 +571,15 @@ export default function VoteDetailPage() {
                 ))}
               </div>
             )}
-            {voted && address && chain === voted.chain && sameAddress(address, voted.address) && (
-              <p data-testid="vote-recorded">
-                Recorded: <strong>{voted.choice}</strong>
-              </p>
-            )}
+            {voted &&
+              voted.proposalId === id &&
+              address &&
+              chain === voted.chain &&
+              sameAddress(address, voted.address) && (
+                <p data-testid="vote-recorded">
+                  Recorded: <strong>{voted.choice}</strong>
+                </p>
+              )}
           </>
         )}
         {error && (

@@ -152,6 +152,16 @@ export async function mockOperatorVoting(page: Page, opts: MockOperatorOpts = {}
     await route.fulfill({ json: { ok: true, weight: '1000000000000000000000' } })
   })
 
+  await page.route('**/v1/proposals/*/votes/*', async (route) => {
+    const url = new URL(route.request().url())
+    const address = decodeURIComponent(url.pathname.split('/votes/')[1] ?? '')
+    const choice = votes.get(address)
+    await route.fulfill(
+      choice
+        ? { json: { choice, weight: '1000000000000000000000' } }
+        : { status: 404, json: { error: 'vote not found', code: 'not_found' } },
+    )
+  })
   await page.route('**/v1/proposals/*/comments', async (route) => {
     const id = route.request().url().split('/v1/proposals/')[1]?.split('/')[0]
     const found = proposals.find((p) => p.id === id)

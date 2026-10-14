@@ -47,13 +47,14 @@ export default function VoteNewPage() {
   const sections = useMemo(() => sectionsFromPlain(plain), [plain])
   const sectionCheck = useMemo(() => validateSections(sections), [sections])
 
+  const titleTooLong = new TextEncoder().encode(title).length > 200
   const registered = snapshot.status === 'registered'
   const gated =
     !registered ||
     snapshot.balance == null ||
     !metadata ||
     !canPropose(snapshot.balance, BigInt(metadata.min_proposal_raw))
-  const canSubmit = !gated && !busy && Boolean(title.trim()) && sectionCheck.ok
+  const canSubmit = !gated && !busy && Boolean(title.trim()) && !titleTooLong && sectionCheck.ok
 
   async function handleSubmit() {
     if (!address || !chain || !canSubmit) return
@@ -133,11 +134,17 @@ export default function VoteNewPage() {
           <span>Title</span>
           <input
             value={title}
+            disabled={busy}
             onChange={(e) => setTitle(e.target.value)}
             maxLength={200}
             data-testid="proposal-title"
           />
         </label>
+        {titleTooLong && (
+          <p className="field-error" role="status" data-testid="title-too-long">
+            Title is too long. Shorten it before signing.
+          </p>
+        )}
         <ProposalSectionFields
           values={plain}
           errors={sectionCheck.errors}

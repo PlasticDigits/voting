@@ -1,0 +1,125 @@
+{
+  "protocol_version": 2,
+  "vectors": [
+    {
+      "adr36_doc": "{\"account_number\":\"0\",\"chain_id\":\"\",\"fee\":{\"amount\":[],\"gas\":\"0\"},\"memo\":\"\",\"msgs\":[{\"type\":\"sign/MsgSignData\",\"value\":{\"data\":\"eyJ2ZXJzaW9uIjoyLCJub25jZSI6IjExMTExMTExLTExMTEtMTExMS0xMTExLTExMTExMTExMTExMSIsImFwcCI6ImNsOHktdm90aW5nIiwiY2hhaW4iOiJ0ZXJyYSIsImNoYWluX2lkIjoiY29sdW1idXMtNSIsInB1cnBvc2UiOiJyZWdpc3RlciIsImFkZHJlc3MiOiJ0ZXJyYTE4MHBnNm12am15cm5sZDByNGg2Z3o3Mjc0YXp4aG5oZDMwc3B6dCIsImlzc3VlZF9hdCI6MTcwMDAwMDAwMCwiZXhwaXJlc19hdCI6MTcwMDAwMDYwMH0=\",\"signer\":\"terra180pg6mvjmyrnld0r4h6gz7274azxhnhd30spzt\"}}],\"sequence\":\"0\"}",
+      "adr36_sha256": "1ccf8b314ff567ea2712092b5ca612ae57f34760d622f7894b399bf46297c80a",
+      "canonical_json": "{\"version\":2,\"nonce\":\"11111111-1111-1111-1111-111111111111\",\"app\":\"cl8y-voting\",\"chain\":\"terra\",\"chain_id\":\"columbus-5\",\"purpose\":\"register\",\"address\":\"terra180pg6mvjmyrnld0r4h6gz7274azxhnhd30spzt\",\"issued_at\":1700000000,\"expires_at\":1700000600}",
+      "eip191_hash": "8b9d02215b0e554e6bbdd790ef1c3adaaf4befef76d19e9ba8b54772a653c2a5",
+      "payload": {
+        "address": "terra180pg6mvjmyrnld0r4h6gz7274azxhnhd30spzt",
+        "app": "cl8y-voting",
+        "chain": "terra",
+        "chain_id": "columbus-5",
+        "expires_at": 1700000600,
+        "issued_at": 1700000000,
+        "nonce": "11111111-1111-1111-1111-111111111111",
+        "purpose": "register",
+        "version": 2
+      }
+    },
+    {
+      "adr36_doc": "{\"account_number\":\"0\",\"chain_id\":\"\",\"fee\":{\"amount\":[],\"gas\":\"0\"},\"memo\":\"\",\"msgs\":[{\"type\":\"sign/MsgSignData\",\"value\":{\"data\":\"eyJ2ZXJzaW9uIjoyLCJub25jZSI6IjIyMjIyMjIyLTIyMjItMjIyMi0yMjIyLTIyMjIyMjIyMjIyMiIsImFwcCI6ImNsOHktdm90aW5nIiwiY2hhaW4iOiJ0ZXJyYSIsImNoYWluX2lkIjoiY29sdW1idXMtNSIsInB1cnBvc2UiOiJhbWVuZCIsImFkZHJlc3MiOiJ0ZXJyYTE4MHBnNm12am15cm5sZDByNGg2Z3o3Mjc0YXp4aG5oZDMwc3B6dCIsImlzc3VlZF9hdCI6MTcwMDAwMDAwMCwiZXhwaXJlc19hdCI6MTcwMDAwMDYwMCwicmV2aXNpb24iOjcsInRpdGxlIjoi7KCc7JWIIPCfmoAgZcyBIFwicXVvdGVkXCJcbnJldmlldyIsImJvZHlfaGFzaCI6ImFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWEiLCJwcm9wb3NhbF9pZCI6IjQ0NDQ0NDQ0LTQ0NDQtNDQ0NC00NDQ0LTQ0NDQ0NDQ0NDQ0NCIsInByZXZfYm9keV9oYXNoIjoiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYiJ9\",\"signer\":\"terra180pg6mvjmyrnld0r4h6gz7274azxhnhd30spzt\"}}],\"sequence\":\"0\"}",
+      "adr36_sha256": "bd5d42ab1877aec3261dce6d5d1e995fcf51d8351d07d9f5fed3add419e82771",
+      "canonical_json": "{\"version\":2,\"nonce\":\"22222222-2222-2222-2222-222222222222\",\"app\":\"cl8y-voting\",\"chain\":\"terra\",\"chain_id\":\"columbus-5\",\"purpose\":\"amend\",\"address\":\"terra180pg6mvjmyrnld0r4h6gz7274azxhnhd30spzt\",\"issued_at\":1700000000,\"expires_at\":1700000600,\"revision\":7,\"title\":\"제안 🚀 é \\\"quoted\\\"\\nreview\",\"body_hash\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"proposal_id\":\"44444444-4444-4444-4444-444444444444\",\"prev_body_hash\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"}",
+      "eip191_hash": "1bc293a76367f72f661008625e966d30752f7196eecedac60fb044a8b8f91582",
+      "payload": {
+        "address": "terra180pg6mvjmyrnld0r4h6gz7274azxhnhd30spzt",
+        "app": "cl8y-voting",
+        "body_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "chain": "terra",
+        "chain_id": "columbus-5",
+        "expires_at": 1700000600,
+        "issued_at": 1700000000,
+        "nonce": "22222222-2222-2222-2222-222222222222",
+        "prev_body_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "proposal_id": "44444444-4444-4444-4444-444444444444",
+        "purpose": "amend",
+        "revision": 7,
+        "title": "제안 🚀 é \"quoted\"\nreview",
+        "version": 2
+      }
+    },
+    {
+      "adr36_doc": "{\"account_number\":\"0\",\"chain_id\":\"\",\"fee\":{\"amount\":[],\"gas\":\"0\"},\"memo\":\"\",\"msgs\":[{\"type\":\"sign/MsgSignData\",\"value\":{\"data\":\"eyJ2ZXJzaW9uIjoyLCJub25jZSI6IjMzMzMzMzMzLTMzMzMtMzMzMy0zMzMzLTMzMzMzMzMzMzMzMyIsImFwcCI6ImNsOHktdm90aW5nIiwiY2hhaW4iOiJ0ZXJyYSIsImNoYWluX2lkIjoiY29sdW1idXMtNSIsInB1cnBvc2UiOiJvcGVuX3ZvdGUiLCJhZGRyZXNzIjoidGVycmExODBwZzZtdmpteXJubGQwcjRoNmd6NzI3NGF6eGhuaGQzMHNwenQiLCJpc3N1ZWRfYXQiOjE3MDAwMDAwMDAsImV4cGlyZXNfYXQiOjE3MDAwMDA2MDAsInJldmlzaW9uIjo4LCJ0aXRsZSI6IuygnOyViCDwn5qAIGXMgSBcInF1b3RlZFwiXG5yZXZpZXciLCJib2R5X2hhc2giOiJhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhIiwicHJvcG9zYWxfaWQiOiI0NDQ0NDQ0NC00NDQ0LTQ0NDQtNDQ0NC00NDQ0NDQ0NDQ0NDQifQ==\",\"signer\":\"terra180pg6mvjmyrnld0r4h6gz7274azxhnhd30spzt\"}}],\"sequence\":\"0\"}",
+      "adr36_sha256": "5377a3c3937bac12a5483cdb46737f117dee228a7f9b001be950885b93242bc2",
+      "canonical_json": "{\"version\":2,\"nonce\":\"33333333-3333-3333-3333-333333333333\",\"app\":\"cl8y-voting\",\"chain\":\"terra\",\"chain_id\":\"columbus-5\",\"purpose\":\"open_vote\",\"address\":\"terra180pg6mvjmyrnld0r4h6gz7274azxhnhd30spzt\",\"issued_at\":1700000000,\"expires_at\":1700000600,\"revision\":8,\"title\":\"제안 🚀 é \\\"quoted\\\"\\nreview\",\"body_hash\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"proposal_id\":\"44444444-4444-4444-4444-444444444444\"}",
+      "eip191_hash": "bbf80dd25297626617cfa4847e9a7953ed6554a17ba2ddc89f1f01f7e638068b",
+      "payload": {
+        "address": "terra180pg6mvjmyrnld0r4h6gz7274azxhnhd30spzt",
+        "app": "cl8y-voting",
+        "body_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "chain": "terra",
+        "chain_id": "columbus-5",
+        "expires_at": 1700000600,
+        "issued_at": 1700000000,
+        "nonce": "33333333-3333-3333-3333-333333333333",
+        "proposal_id": "44444444-4444-4444-4444-444444444444",
+        "purpose": "open_vote",
+        "revision": 8,
+        "title": "제안 🚀 é \"quoted\"\nreview",
+        "version": 2
+      }
+    },
+    {
+      "adr36_doc": "{\"account_number\":\"0\",\"chain_id\":\"\",\"fee\":{\"amount\":[],\"gas\":\"0\"},\"memo\":\"\",\"msgs\":[{\"type\":\"sign/MsgSignData\",\"value\":{\"data\":\"eyJ2ZXJzaW9uIjoyLCJub25jZSI6IjExMTExMTExLTExMTEtMTExMS0xMTExLTExMTExMTExMTExMSIsImFwcCI6ImNsOHktdm90aW5nIiwiY2hhaW4iOiJic2MiLCJjaGFpbl9pZCI6IjU2IiwicHVycG9zZSI6InJlZ2lzdGVyIiwiYWRkcmVzcyI6IjB4MTllN2UzNzZlN2MyMTNiN2U3ZTdlNDZjYzcwYTVkZDA4NmRhZmYyYSIsImlzc3VlZF9hdCI6MTcwMDAwMDAwMCwiZXhwaXJlc19hdCI6MTcwMDAwMDYwMH0=\",\"signer\":\"0x19e7e376e7c213b7e7e7e46cc70a5dd086daff2a\"}}],\"sequence\":\"0\"}",
+      "adr36_sha256": "32de08916f73148f173685313f385e64fe56118c28e24510e6efce2d20d5abac",
+      "canonical_json": "{\"version\":2,\"nonce\":\"11111111-1111-1111-1111-111111111111\",\"app\":\"cl8y-voting\",\"chain\":\"bsc\",\"chain_id\":\"56\",\"purpose\":\"register\",\"address\":\"0x19e7e376e7c213b7e7e7e46cc70a5dd086daff2a\",\"issued_at\":1700000000,\"expires_at\":1700000600}",
+      "eip191_hash": "0ec1cb0c022bad0c0e3fc4b7e16b736991958c4d9da320c985e32c51360d2d7f",
+      "payload": {
+        "address": "0x19e7e376e7c213b7e7e7e46cc70a5dd086daff2a",
+        "app": "cl8y-voting",
+        "chain": "bsc",
+        "chain_id": "56",
+        "expires_at": 1700000600,
+        "issued_at": 1700000000,
+        "nonce": "11111111-1111-1111-1111-111111111111",
+        "purpose": "register",
+        "version": 2
+      }
+    },
+    {
+      "adr36_doc": "{\"account_number\":\"0\",\"chain_id\":\"\",\"fee\":{\"amount\":[],\"gas\":\"0\"},\"memo\":\"\",\"msgs\":[{\"type\":\"sign/MsgSignData\",\"value\":{\"data\":\"eyJ2ZXJzaW9uIjoyLCJub25jZSI6IjIyMjIyMjIyLTIyMjItMjIyMi0yMjIyLTIyMjIyMjIyMjIyMiIsImFwcCI6ImNsOHktdm90aW5nIiwiY2hhaW4iOiJic2MiLCJjaGFpbl9pZCI6IjU2IiwicHVycG9zZSI6ImFtZW5kIiwiYWRkcmVzcyI6IjB4MTllN2UzNzZlN2MyMTNiN2U3ZTdlNDZjYzcwYTVkZDA4NmRhZmYyYSIsImlzc3VlZF9hdCI6MTcwMDAwMDAwMCwiZXhwaXJlc19hdCI6MTcwMDAwMDYwMCwicmV2aXNpb24iOjcsInRpdGxlIjoi7KCc7JWIIPCfmoAgZcyBIFwicXVvdGVkXCJcbnJldmlldyIsImJvZHlfaGFzaCI6ImFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWEiLCJwcm9wb3NhbF9pZCI6IjQ0NDQ0NDQ0LTQ0NDQtNDQ0NC00NDQ0LTQ0NDQ0NDQ0NDQ0NCIsInByZXZfYm9keV9oYXNoIjoiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYiJ9\",\"signer\":\"0x19e7e376e7c213b7e7e7e46cc70a5dd086daff2a\"}}],\"sequence\":\"0\"}",
+      "adr36_sha256": "0880c003e24699a819c3d6a01250340213ef2cdbf57e7c1d8833739c513196ab",
+      "canonical_json": "{\"version\":2,\"nonce\":\"22222222-2222-2222-2222-222222222222\",\"app\":\"cl8y-voting\",\"chain\":\"bsc\",\"chain_id\":\"56\",\"purpose\":\"amend\",\"address\":\"0x19e7e376e7c213b7e7e7e46cc70a5dd086daff2a\",\"issued_at\":1700000000,\"expires_at\":1700000600,\"revision\":7,\"title\":\"제안 🚀 é \\\"quoted\\\"\\nreview\",\"body_hash\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"proposal_id\":\"44444444-4444-4444-4444-444444444444\",\"prev_body_hash\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"}",
+      "eip191_hash": "0d02f816b1bd667752d67548d6facdff740c436da8c433b01c5a33ef5d59a500",
+      "payload": {
+        "address": "0x19e7e376e7c213b7e7e7e46cc70a5dd086daff2a",
+        "app": "cl8y-voting",
+        "body_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "chain": "bsc",
+        "chain_id": "56",
+        "expires_at": 1700000600,
+        "issued_at": 1700000000,
+        "nonce": "22222222-2222-2222-2222-222222222222",
+        "prev_body_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "proposal_id": "44444444-4444-4444-4444-444444444444",
+        "purpose": "amend",
+        "revision": 7,
+        "title": "제안 🚀 é \"quoted\"\nreview",
+        "version": 2
+      }
+    },
+    {
+      "adr36_doc": "{\"account_number\":\"0\",\"chain_id\":\"\",\"fee\":{\"amount\":[],\"gas\":\"0\"},\"memo\":\"\",\"msgs\":[{\"type\":\"sign/MsgSignData\",\"value\":{\"data\":\"eyJ2ZXJzaW9uIjoyLCJub25jZSI6IjMzMzMzMzMzLTMzMzMtMzMzMy0zMzMzLTMzMzMzMzMzMzMzMyIsImFwcCI6ImNsOHktdm90aW5nIiwiY2hhaW4iOiJic2MiLCJjaGFpbl9pZCI6IjU2IiwicHVycG9zZSI6Im9wZW5fdm90ZSIsImFkZHJlc3MiOiIweDE5ZTdlMzc2ZTdjMjEzYjdlN2U3ZTQ2Y2M3MGE1ZGQwODZkYWZmMmEiLCJpc3N1ZWRfYXQiOjE3MDAwMDAwMDAsImV4cGlyZXNfYXQiOjE3MDAwMDA2MDAsInJldmlzaW9uIjo4LCJ0aXRsZSI6IuygnOyViCDwn5qAIGXMgSBcInF1b3RlZFwiXG5yZXZpZXciLCJib2R5X2hhc2giOiJhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhIiwicHJvcG9zYWxfaWQiOiI0NDQ0NDQ0NC00NDQ0LTQ0NDQtNDQ0NC00NDQ0NDQ0NDQ0NDQifQ==\",\"signer\":\"0x19e7e376e7c213b7e7e7e46cc70a5dd086daff2a\"}}],\"sequence\":\"0\"}",
+      "adr36_sha256": "2000fc2647021ac2cbf28e57e7bf72f6f6821558a03659c993813a5d366cfe4d",
+      "canonical_json": "{\"version\":2,\"nonce\":\"33333333-3333-3333-3333-333333333333\",\"app\":\"cl8y-voting\",\"chain\":\"bsc\",\"chain_id\":\"56\",\"purpose\":\"open_vote\",\"address\":\"0x19e7e376e7c213b7e7e7e46cc70a5dd086daff2a\",\"issued_at\":1700000000,\"expires_at\":1700000600,\"revision\":8,\"title\":\"제안 🚀 é \\\"quoted\\\"\\nreview\",\"body_hash\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"proposal_id\":\"44444444-4444-4444-4444-444444444444\"}",
+      "eip191_hash": "de136a7b3ff794fc1129e70c77937ac34a800c6ad26de197d5c9dd9c0b9c8688",
+      "payload": {
+        "address": "0x19e7e376e7c213b7e7e7e46cc70a5dd086daff2a",
+        "app": "cl8y-voting",
+        "body_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "chain": "bsc",
+        "chain_id": "56",
+        "expires_at": 1700000600,
+        "issued_at": 1700000000,
+        "nonce": "33333333-3333-3333-3333-333333333333",
+        "proposal_id": "44444444-4444-4444-4444-444444444444",
+        "purpose": "open_vote",
+        "revision": 8,
+        "title": "제안 🚀 é \"quoted\"\nreview",
+        "version": 2
+      }
+    }
+  ]
+}

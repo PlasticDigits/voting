@@ -39,7 +39,6 @@ export default function ProposalSectionFields({ values, errors, disabled, onChan
               onChange={(e) => onChange(key, e.target.value)}
               disabled={disabled}
               rows={key === 'summary' ? 3 : 5}
-              maxLength={key === 'summary' ? MAX_SUMMARY_VISIBLE_CHARS + 80 : undefined}
               data-testid={`proposal-section-${key}`}
             />
             <span className="field-count" data-testid={`section-count-${key}`}>

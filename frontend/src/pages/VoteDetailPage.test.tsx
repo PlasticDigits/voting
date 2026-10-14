@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { castVote } from '@/services/operatorVoting'
 import { signVotingRequest } from '@/services/votingSign'
 import VoteDetailPage from '@/pages/VoteDetailPage'
 import type { ProposalDetail } from '@/services/operatorVoting'
@@ -49,6 +50,7 @@ let currentWeight = {
   weight: '1000000000000000000000',
   eligible: true,
 }
+let currentRecorded: { choice: 'for' | 'against' | 'abstain'; weight: string } | null = null
 beforeEach(() => {
   currentWeight = {
     proposal_id: base.id,
@@ -57,7 +59,16 @@ beforeEach(() => {
     weight: '1000000000000000000000',
     eligible: true,
   }
-  vi.mocked(signVotingRequest).mockClear()
+  currentRecorded = null
+  vi.mocked(castVote).mockReset()
+  vi.mocked(signVotingRequest)
+    .mockReset()
+    .mockResolvedValue({
+      chain: 'terra',
+      address: identity.address,
+      payload: 'synthetic signed payload',
+      signature: 'synthetic',
+    })
 })
 vi.mock('@/services/votingSign', () => ({ signVotingRequest: vi.fn() }))
 
@@ -70,6 +81,7 @@ vi.mock('@/hooks/useConnectedIdentity', () => ({
 vi.mock('@/services/operatorVoting', () => ({
   getProposal: async () => current,
   getFrozenWeight: async () => currentWeight,
+  getRecordedVote: async () => currentRecorded,
   castVote: vi.fn(),
   postComment: vi.fn(),
   postAnalysis: vi.fn(),
@@ -192,4 +204,49 @@ it('rechecks exact frozen weight before asking the wallet to sign', async () => 
   await screen.findByRole('alert')
   expect(signVotingRequest).not.toHaveBeenCalled()
   expect(screen.getByTestId('vote-for')).toBeDisabled()
+})
+
+it('shows an immutable recorded vote on reload without offering another signature', async () => {
+  current = { ...base, status: 'open' }
+  currentRecorded = { choice: 'for', weight: '1000000000000000000000' }
+  renderDetail()
+  expect(await screen.findByTestId('vote-recorded')).toHaveTextContent('for')
+  expect(screen.queryByTestId('vote-actions')).toBeNull()
+  expect(signVotingRequest).not.toHaveBeenCalled()
+})
+it('recovers a vote whose response was lost without asking for another signature', async () => {
+  current = { ...base, status: 'open' }
+  vi.mocked(castVote).mockImplementation(async () => {
+    currentRecorded = { choice: 'for', weight: '1000000000000000000000' }
+    throw new TypeError('connection lost after commit')
+  })
+  renderDetail()
+  await waitFor(() => expect(screen.getByTestId('vote-for')).toBeEnabled())
+  fireEvent.click(screen.getByTestId('vote-for'))
+  expect(await screen.findByTestId('vote-recorded')).toHaveTextContent('for')
+  expect(screen.queryByTestId('vote-actions')).toBeNull()
+  expect(signVotingRequest).toHaveBeenCalledOnce()
+})
+it('keeps recorded choices scoped to the current wallet', async () => {
+  current = { ...base, status: 'open' }
+  currentRecorded = { choice: 'for', weight: '1000000000000000000000' }
+  const view = renderDetail()
+  await screen.findByTestId('vote-recorded')
+  const oldAddress = identity.address
+  try {
+    identity.address = 'terra1anotherwalletxxxxxxxxxxxxxxxxxxxxxxxxxxx'
+    currentRecorded = null
+    currentWeight = { ...currentWeight, address: identity.address }
+    view.rerender(
+      <MemoryRouter initialEntries={[`/${base.id}`]}>
+        <Routes>
+          <Route path="/:id" element={<VoteDetailPage />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+    await waitFor(() => expect(screen.getByTestId('vote-for')).toBeEnabled())
+    expect(screen.queryByTestId('vote-recorded')).toBeNull()
+  } finally {
+    identity.address = oldAddress
+  }
 })

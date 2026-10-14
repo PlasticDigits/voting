@@ -253,6 +253,7 @@ describe('ConnectedTermsGate', () => {
     )
 
     const accept = await screen.findByRole('button', { name: /accept terms/i })
+    await waitFor(() => expect(accept).toBeEnabled())
     // jsdom cannot navigate. Verify the URL built by the actual Accept handler instead.
     const urlBuilder = vi.mocked(buildSignUrl)
     urlBuilder.mockClear()

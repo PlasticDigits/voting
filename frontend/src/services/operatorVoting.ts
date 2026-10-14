@@ -9,6 +9,7 @@ export type ProposalComment = Schemas['Comment']
 export type ProposalAnalysis = Schemas['Analysis']
 export type ProposalDetail = Schemas['ProposalDetail']
 export type FrozenWeightResponse = Schemas['FrozenWeightResponse']
+export type RecordedVote = Schemas['Vote']
 export type BalanceResponse = Schemas['BalanceResponse']
 export type ChainRegistrationRow = Schemas['RegistrationRow']
 export type RegistrationLookup = Schemas['RegistrationLookup']
@@ -57,11 +58,27 @@ export async function registerWallet(req: SignedRequest): Promise<RegistrationRe
   return api('/v1/register', { method: 'POST', body: JSON.stringify(req) })
 }
 
-export async function getRegistration(address: string): Promise<RegistrationLookup | null> {
-  const res = await fetch(`${operatorVotingUrl()}/v1/registration/${encodeURIComponent(address)}`)
-  if (res.status === 404) return null
-  if (!res.ok) throw new Error(`registration lookup failed: ${res.status}`)
-  return res.json() as Promise<RegistrationLookup>
+async function getOptional<T>(path: string): Promise<T | null> {
+  const response = await fetch(`${operatorVotingUrl()}${path}`, {
+    headers: { Accept: 'application/json' },
+  })
+  if (response.status === 404) return null
+  if (!response.ok) throw new Error(`lookup failed: ${response.status}`)
+  return response.json() as Promise<T>
+}
+
+export function getRegistration(address: string): Promise<RegistrationLookup | null> {
+  return getOptional(`/v1/registration/${encodeURIComponent(address)}`)
+}
+
+export function getRecordedVote(
+  id: string,
+  address: string,
+  chain: VotingChain,
+): Promise<RecordedVote | null> {
+  return getOptional(
+    `/v1/proposals/${encodeURIComponent(id)}/votes/${encodeURIComponent(address)}?${new URLSearchParams({ chain })}`,
+  )
 }
 
 export function chainRegistration(
@@ -183,10 +200,16 @@ export async function castVote(
   id: string,
   req: SignedRequest & { choice: VoteChoice },
 ): Promise<Schemas['VoteResponse']> {
-  return api(`/v1/proposals/${encodeURIComponent(id)}/votes`, {
-    method: 'POST',
-    body: JSON.stringify(req),
-  })
+  const path = `/v1/proposals/${encodeURIComponent(id)}/votes`
+  const init = { method: 'POST', body: JSON.stringify(req) }
+  try {
+    return await api(path, init)
+  } catch (error) {
+    // A lost response is retried once with the exact signed nonce and bytes.
+    // HTTP refusals are deliberate and are never automatically retried.
+    if (!(error instanceof TypeError)) throw error
+    return api(path, init)
+  }
 }
 
 export async function getBalance(
