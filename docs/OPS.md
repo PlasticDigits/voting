@@ -252,10 +252,3 @@ the peer and header replacement after proxy/network changes; never broaden this
 trust to an entire private subnet. Database
 identity additionally requires comment `cl8y-voting-ephemeral-test` before destructive
 DDL. The marker must be installed only by initialization of a dedicated test database.
-
-Production chain polling uses `POLL_INTERVAL_MS=1000`. The previous 12000ms
-interval plus sequential BSC header reads could not clear the live backlog; an
-actual inspection showed canonical BSC lag278 while Terra and intent checks were
-healthy. Poll cadence and bounded header batches must sustain the current BSC
-block rate. Validate real readiness after changing either; never compensate by
-weakening finality, freshness or admission lag limits.

@@ -1,0 +1,441 @@
+{
+  "resource_uuid": "s6j6fx1870zbsmhbu2do1yiz",
+  "configured_commit": "6a1755a674ee88e8a8ff0f735023724ed849abbd",
+  "observed_at": "2026-10-14T11:10:41.457911+00:00",
+  "capabilities": {
+    "read_only": true,
+    "probe_complete": true,
+    "providers": [
+      {
+        "hostname": "bsc.publicnode.com",
+        "chain_id": 56,
+        "head": 127584343,
+        "finalized_height": 127584328,
+        "head_age_seconds": 3,
+        "head_fresh": true,
+        "header_ok": true,
+        "finalized_header_ok": true,
+        "same_candidate_hash_consistent": true,
+        "log_count": 0,
+        "logs_ok": true,
+        "call_ok": true,
+        "complete": true,
+        "pass": true,
+        "requests": [
+          {
+            "phase": "chain_id",
+            "http_status": 200,
+            "rpc_code": null,
+            "curl_code": 0,
+            "elapsed_ms": 88,
+            "json_valid": true,
+            "id_present": true,
+            "envelope_ok": true
+          },
+          {
+            "phase": "transfer_logs",
+            "http_status": 200,
+            "rpc_code": null,
+            "curl_code": 0,
+            "elapsed_ms": 89,
+            "json_valid": true,
+            "id_present": true,
+            "envelope_ok": true
+          },
+          {
+            "phase": "head_header",
+            "http_status": 200,
+            "rpc_code": null,
+            "curl_code": 0,
+            "elapsed_ms": 86,
+            "json_valid": true,
+            "id_present": true,
+            "envelope_ok": true
+          },
+          {
+            "phase": "finalized_recheck",
+            "http_status": 200,
+            "rpc_code": null,
+            "curl_code": 0,
+            "elapsed_ms": 90,
+            "json_valid": true,
+            "id_present": true,
+            "envelope_ok": true
+          },
+          {
+            "phase": "token_call",
+            "http_status": 200,
+            "rpc_code": null,
+            "curl_code": 0,
+            "elapsed_ms": 98,
+            "json_valid": true,
+            "id_present": true,
+            "envelope_ok": true
+          },
+          {
+            "phase": "head_number",
+            "http_status": 200,
+            "rpc_code": null,
+            "curl_code": 0,
+            "elapsed_ms": 86,
+            "json_valid": true,
+            "id_present": true,
+            "envelope_ok": true
+          },
+          {
+            "phase": "finalized_header",
+            "http_status": 200,
+            "rpc_code": null,
+            "curl_code": 0,
+            "elapsed_ms": 111,
+            "json_valid": true,
+            "id_present": true,
+            "envelope_ok": true
+          }
+        ]
+      },
+      {
+        "hostname": "bsc-rpc.publicnode.com",
+        "chain_id": 56,
+        "head": 127584349,
+        "finalized_height": 127584334,
+        "head_age_seconds": 2,
+        "head_fresh": true,
+        "header_ok": true,
+        "finalized_header_ok": true,
+        "same_candidate_hash_consistent": true,
+        "log_count": 0,
+        "logs_ok": true,
+        "call_ok": true,
+        "complete": true,
+        "pass": true,
+        "requests": [
+          {
+            "phase": "chain_id",
+            "http_status": 200,
+            "rpc_code": null,
+            "curl_code": 0,
+            "elapsed_ms": 86,
+            "json_valid": true,
+            "id_present": true,
+            "envelope_ok": true
+          },
+          {
+            "phase": "transfer_logs",
+            "http_status": 200,
+            "rpc_code": null,
+            "curl_code": 0,
+            "elapsed_ms": 84,
+            "json_valid": true,
+            "id_present": true,
+            "envelope_ok": true
+          },
+          {
+            "phase": "head_header",
+            "http_status": 200,
+            "rpc_code": null,
+            "curl_code": 0,
+            "elapsed_ms": 92,
+            "json_valid": true,
+            "id_present": true,
+            "envelope_ok": true
+          },
+          {
+            "phase": "finalized_recheck",
+            "http_status": 200,
+            "rpc_code": null,
+            "curl_code": 0,
+            "elapsed_ms": 114,
+            "json_valid": true,
+            "id_present": true,
+            "envelope_ok": true
+          },
+          {
+            "phase": "token_call",
+            "http_status": 200,
+            "rpc_code": null,
+            "curl_code": 0,
+            "elapsed_ms": 100,
+            "json_valid": true,
+            "id_present": true,
+            "envelope_ok": true
+          },
+          {
+            "phase": "head_number",
+            "http_status": 200,
+            "rpc_code": null,
+            "curl_code": 0,
+            "elapsed_ms": 91,
+            "json_valid": true,
+            "id_present": true,
+            "envelope_ok": true
+          },
+          {
+            "phase": "finalized_header",
+            "http_status": 200,
+            "rpc_code": null,
+            "curl_code": 0,
+            "elapsed_ms": 102,
+            "json_valid": true,
+            "id_present": true,
+            "envelope_ok": true
+          }
+        ]
+      },
+      {
+        "hostname": "public.1rpc.io",
+        "chain_id": null,
+        "head": null,
+        "finalized_height": null,
+        "head_age_seconds": null,
+        "head_fresh": false,
+        "header_ok": false,
+        "finalized_header_ok": false,
+        "same_candidate_hash_consistent": false,
+        "log_count": null,
+        "logs_ok": false,
+        "call_ok": false,
+        "complete": false,
+        "pass": false,
+        "requests": [
+          {
+            "phase": "chain_id",
+            "http_status": 403,
+            "rpc_code": null,
+            "curl_code": 0,
+            "elapsed_ms": 776,
+            "json_valid": false,
+            "id_present": false,
+            "envelope_ok": false
+          },
+          {
+            "phase": "head_number",
+            "http_status": 403,
+            "rpc_code": null,
+            "curl_code": 0,
+            "elapsed_ms": 222,
+            "json_valid": false,
+            "id_present": false,
+            "envelope_ok": false
+          }
+        ]
+      },
+      {
+        "hostname": "bsc.drpc.org",
+        "chain_id": null,
+        "head": null,
+        "finalized_height": null,
+        "head_age_seconds": null,
+        "head_fresh": false,
+        "header_ok": false,
+        "finalized_header_ok": false,
+        "same_candidate_hash_consistent": false,
+        "log_count": null,
+        "logs_ok": false,
+        "call_ok": false,
+        "complete": false,
+        "pass": false,
+        "requests": [
+          {
+            "phase": "chain_id",
+            "http_status": 429,
+            "rpc_code": 15,
+            "curl_code": 0,
+            "elapsed_ms": 95,
+            "json_valid": true,
+            "id_present": true,
+            "envelope_ok": false
+          },
+          {
+            "phase": "head_number",
+            "http_status": 429,
+            "rpc_code": 15,
+            "curl_code": 0,
+            "elapsed_ms": 97,
+            "json_valid": true,
+            "id_present": true,
+            "envelope_ok": false
+          }
+        ]
+      },
+      {
+        "hostname": "bsc-rpc.blockreq.com",
+        "chain_id": 56,
+        "head": 127584356,
+        "finalized_height": 127584341,
+        "head_age_seconds": 4,
+        "head_fresh": true,
+        "header_ok": true,
+        "finalized_header_ok": true,
+        "same_candidate_hash_consistent": true,
+        "log_count": 0,
+        "logs_ok": true,
+        "call_ok": true,
+        "complete": true,
+        "pass": true,
+        "requests": [
+          {
+            "phase": "chain_id",
+            "http_status": 200,
+            "rpc_code": null,
+            "curl_code": 0,
+            "elapsed_ms": 127,
+            "json_valid": true,
+            "id_present": true,
+            "envelope_ok": true
+          },
+          {
+            "phase": "transfer_logs",
+            "http_status": 200,
+            "rpc_code": null,
+            "curl_code": 0,
+            "elapsed_ms": 114,
+            "json_valid": true,
+            "id_present": true,
+            "envelope_ok": true
+          },
+          {
+            "phase": "head_header",
+            "http_status": 200,
+            "rpc_code": null,
+            "curl_code": 0,
+            "elapsed_ms": 126,
+            "json_valid": true,
+            "id_present": true,
+            "envelope_ok": true
+          },
+          {
+            "phase": "finalized_recheck",
+            "http_status": 200,
+            "rpc_code": null,
+            "curl_code": 0,
+            "elapsed_ms": 95,
+            "json_valid": true,
+            "id_present": true,
+            "envelope_ok": true
+          },
+          {
+            "phase": "token_call",
+            "http_status": 200,
+            "rpc_code": null,
+            "curl_code": 0,
+            "elapsed_ms": 117,
+            "json_valid": true,
+            "id_present": true,
+            "envelope_ok": true
+          },
+          {
+            "phase": "head_number",
+            "http_status": 200,
+            "rpc_code": null,
+            "curl_code": 0,
+            "elapsed_ms": 101,
+            "json_valid": true,
+            "id_present": true,
+            "envelope_ok": true
+          },
+          {
+            "phase": "finalized_header",
+            "http_status": 200,
+            "rpc_code": null,
+            "curl_code": 0,
+            "elapsed_ms": 110,
+            "json_valid": true,
+            "id_present": true,
+            "envelope_ok": true
+          }
+        ]
+      },
+      {
+        "hostname": "bsc.blockrazor.xyz",
+        "chain_id": 56,
+        "head": 127584365,
+        "finalized_height": 127584350,
+        "head_age_seconds": 2,
+        "head_fresh": true,
+        "header_ok": true,
+        "finalized_header_ok": true,
+        "same_candidate_hash_consistent": true,
+        "log_count": 0,
+        "logs_ok": true,
+        "call_ok": true,
+        "complete": true,
+        "pass": true,
+        "requests": [
+          {
+            "phase": "chain_id",
+            "http_status": 200,
+            "rpc_code": null,
+            "curl_code": 0,
+            "elapsed_ms": 87,
+            "json_valid": true,
+            "id_present": true,
+            "envelope_ok": true
+          },
+          {
+            "phase": "transfer_logs",
+            "http_status": 200,
+            "rpc_code": null,
+            "curl_code": 0,
+            "elapsed_ms": 83,
+            "json_valid": true,
+            "id_present": true,
+            "envelope_ok": true
+          },
+          {
+            "phase": "head_header",
+            "http_status": 200,
+            "rpc_code": null,
+            "curl_code": 0,
+            "elapsed_ms": 91,
+            "json_valid": true,
+            "id_present": true,
+            "envelope_ok": true
+          },
+          {
+            "phase": "finalized_recheck",
+            "http_status": 200,
+            "rpc_code": null,
+            "curl_code": 0,
+            "elapsed_ms": 87,
+            "json_valid": true,
+            "id_present": true,
+            "envelope_ok": true
+          },
+          {
+            "phase": "token_call",
+            "http_status": 200,
+            "rpc_code": null,
+            "curl_code": 0,
+            "elapsed_ms": 97,
+            "json_valid": true,
+            "id_present": true,
+            "envelope_ok": true
+          },
+          {
+            "phase": "head_number",
+            "http_status": 200,
+            "rpc_code": null,
+            "curl_code": 0,
+            "elapsed_ms": 88,
+            "json_valid": true,
+            "id_present": true,
+            "envelope_ok": true
+          },
+          {
+            "phase": "finalized_header",
+            "http_status": 200,
+            "rpc_code": null,
+            "curl_code": 0,
+            "elapsed_ms": 78,
+            "json_valid": true,
+            "id_present": true,
+            "envelope_ok": true
+          }
+        ]
+      }
+    ]
+  },
+  "temporary_tasks_deleted": true,
+  "temporary_code_deleted": true
+}
