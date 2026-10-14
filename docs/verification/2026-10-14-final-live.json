@@ -1,0 +1,514 @@
+{
+  "observed_at": "2026-10-14T14:13:16.268685+00:00",
+  "code_commit": "5cd9363307dc1607de952ac3243193c1a16304c7",
+  "implementation_prs": [
+    53,
+    54,
+    55,
+    56,
+    57,
+    58,
+    59
+  ],
+  "release_suite": "2026-10-14-release13.json",
+  "deployment_status": {
+    "code_commit": "5cd9363307dc1607de952ac3243193c1a16304c7",
+    "deployments": [
+      {
+        "resource": "ledger",
+        "deployment": "piobe79bj2zuxmu2d88ecbqu",
+        "status": "finished",
+        "commit": "5cd9363307dc1607de952ac3243193c1a16304c7",
+        "created_at": "2026-10-14T13:52:57.000000Z",
+        "updated_at": "2026-10-14T13:58:22.000000Z"
+      },
+      {
+        "resource": "operator",
+        "deployment": "ow3kpfaidr6koytys7bcjwpl",
+        "status": "finished",
+        "commit": "5cd9363307dc1607de952ac3243193c1a16304c7",
+        "created_at": "2026-10-14T13:53:01.000000Z",
+        "updated_at": "2026-10-14T13:56:17.000000Z"
+      },
+      {
+        "resource": "frontend",
+        "deployment": "brvev0xzykgf1snah5vrmltt",
+        "status": "finished",
+        "commit": "5cd9363307dc1607de952ac3243193c1a16304c7",
+        "created_at": "2026-10-14T13:53:04.000000Z",
+        "updated_at": "2026-10-14T13:58:00.000000Z"
+      }
+    ],
+    "finished": true
+  },
+  "build_logs": {
+    "code_commit": "5cd9363307dc1607de952ac3243193c1a16304c7",
+    "deployments": [
+      {
+        "resource": "ledger",
+        "deployment": "piobe79bj2zuxmu2d88ecbqu",
+        "status": "finished",
+        "commit": "5cd9363307dc1607de952ac3243193c1a16304c7",
+        "log_records": 277,
+        "error_codes": [],
+        "classifications": {
+          "failed": 0,
+          "error": 8,
+          "unhealthy": 0,
+          "migration": 2,
+          "compiling": 158,
+          "finished": 1,
+          "npm": 0,
+          "rustc": 1,
+          "permission denied": 0,
+          "rate limit": 0,
+          "timeout": 2
+        },
+        "version_requirements": []
+      },
+      {
+        "resource": "operator",
+        "deployment": "ow3kpfaidr6koytys7bcjwpl",
+        "status": "finished",
+        "commit": "5cd9363307dc1607de952ac3243193c1a16304c7",
+        "log_records": 364,
+        "error_codes": [],
+        "classifications": {
+          "failed": 0,
+          "error": 7,
+          "unhealthy": 0,
+          "migration": 7,
+          "compiling": 227,
+          "finished": 1,
+          "npm": 0,
+          "rustc": 1,
+          "permission denied": 0,
+          "rate limit": 0,
+          "timeout": 2
+        },
+        "version_requirements": []
+      },
+      {
+        "resource": "frontend",
+        "deployment": "brvev0xzykgf1snah5vrmltt",
+        "status": "finished",
+        "commit": "5cd9363307dc1607de952ac3243193c1a16304c7",
+        "log_records": 107,
+        "error_codes": [],
+        "classifications": {
+          "failed": 0,
+          "error": 1,
+          "unhealthy": 0,
+          "migration": 0,
+          "compiling": 0,
+          "finished": 0,
+          "npm": 28,
+          "rustc": 0,
+          "permission denied": 0,
+          "rate limit": 0,
+          "timeout": 2
+        },
+        "version_requirements": []
+      }
+    ],
+    "passed": true
+  },
+  "runtime_configuration": {
+    "observed_at": "2026-10-14T13:59:22.088314+00:00",
+    "code_commit": "5cd9363307dc1607de952ac3243193c1a16304c7",
+    "resources": [
+      {
+        "resource": "ledger",
+        "uuid": "s6j6fx1870zbsmhbu2do1yiz",
+        "status": "running:healthy",
+        "commit": "5cd9363307dc1607de952ac3243193c1a16304c7",
+        "same_commit": true,
+        "runtime_config": {
+          "TERRA_LCD_URL": "https://api-lunc-lcd.binodes.com,https://terra-classic-lcd.publicnode.com",
+          "BSC_RPC_URLS": "https://bsc.publicnode.com,https://bsc.blockrazor.xyz,https://bsc-rpc.publicnode.com",
+          "POLL_INTERVAL_MS": "1000",
+          "LEDGER_RECONCILE_LIVE_BASELINE": "false",
+          "LEDGER_INSPECT_STORAGE_ONLY": "false"
+        },
+        "expected_runtime_config": true
+      },
+      {
+        "resource": "operator",
+        "uuid": "x5j1g2xuc5p508g26ff003q0",
+        "status": "running:healthy",
+        "commit": "5cd9363307dc1607de952ac3243193c1a16304c7",
+        "same_commit": true,
+        "runtime_config": {
+          "RATE_LIMIT_POST_PER_MINUTE": "60",
+          "RATE_LIMIT_POST_BURST": "20",
+          "RATE_LIMIT_TRUST_FORWARDED": "true",
+          "RATE_LIMIT_TRUSTED_PROXY_CIDRS": "10.0.17.2/32",
+          "VOTING_API_REPLICAS": "1"
+        },
+        "expected_runtime_config": true
+      },
+      {
+        "resource": "frontend",
+        "uuid": "svvxk9gd93d8kwezvcrekdq0",
+        "status": "running:healthy",
+        "commit": "5cd9363307dc1607de952ac3243193c1a16304c7",
+        "same_commit": true,
+        "native_nginx_image_mode": true
+      }
+    ],
+    "passed": true
+  },
+  "live_smoke": {
+    "observed_at": "2026-10-14T13:59:32.205508+00:00",
+    "api": "https://operator.vote.cl8y.com",
+    "frontend": "https://vote.cl8y.com",
+    "checks": [
+      {
+        "check": "API liveness",
+        "passed": true,
+        "detail": 200
+      },
+      {
+        "check": "dual-chain readiness",
+        "passed": true,
+        "detail": 200
+      },
+      {
+        "check": "configured protocol metadata",
+        "passed": true,
+        "detail": 200
+      },
+      {
+        "check": "generated OpenAPI",
+        "passed": true,
+        "detail": 18
+      },
+      {
+        "check": "proposal read",
+        "passed": true,
+        "detail": 200
+      },
+      {
+        "check": "allowed PUT preflight",
+        "passed": true,
+        "detail": 200
+      },
+      {
+        "check": "untrusted origin rejected",
+        "passed": true,
+        "detail": 403
+      },
+      {
+        "check": "stable public error",
+        "passed": true,
+        "detail": 400
+      },
+      {
+        "check": "SPA /",
+        "passed": true,
+        "detail": 200
+      },
+      {
+        "check": "SPA /new",
+        "passed": true,
+        "detail": 200
+      },
+      {
+        "check": "SPA /vote",
+        "passed": true,
+        "detail": 200
+      },
+      {
+        "check": "SPA /vote/new",
+        "passed": true,
+        "detail": 200
+      },
+      {
+        "check": "missing asset is 404",
+        "passed": true,
+        "detail": 404
+      }
+    ],
+    "passed": true
+  },
+  "canonical_signing_fixtures": {
+    "observed_at": "2026-10-14T13:59:35.743123+00:00",
+    "api": "https://operator.vote.cl8y.com",
+    "checks": [
+      {
+        "case": 0,
+        "status": 200,
+        "canonical_json_matches": true,
+        "body_hash_matches": true,
+        "sections_match": true,
+        "protocol_v2": true,
+        "valid_request_id": true
+      },
+      {
+        "case": 1,
+        "status": 200,
+        "canonical_json_matches": true,
+        "body_hash_matches": true,
+        "sections_match": true,
+        "protocol_v2": true,
+        "valid_request_id": true
+      },
+      {
+        "case": 2,
+        "status": 200,
+        "canonical_json_matches": true,
+        "body_hash_matches": true,
+        "sections_match": true,
+        "protocol_v2": true,
+        "valid_request_id": true
+      },
+      {
+        "case": 3,
+        "status": 200,
+        "canonical_json_matches": true,
+        "body_hash_matches": true,
+        "sections_match": true,
+        "protocol_v2": true,
+        "valid_request_id": true
+      }
+    ],
+    "passed": true
+  },
+  "expired_exact_receipt_retries": {
+    "observed_at": "2026-10-14T13:59:39.349149+00:00",
+    "checks": [
+      {
+        "chain": "terra",
+        "receipt_id": "6db32451-4db7-40ba-b205-52155d9e828a",
+        "past_signed_expiry": true,
+        "status": 200,
+        "original_persisted_response_retained": true
+      },
+      {
+        "chain": "bsc",
+        "receipt_id": "8c7ea6c4-a2fb-4db7-b797-0a0da7a92c8f",
+        "past_signed_expiry": true,
+        "status": 200,
+        "original_persisted_response_retained": true
+      }
+    ],
+    "passed": true
+  },
+  "current_independent_receipt_and_registered_balance_checks": {
+    "observed_at": "2026-10-14T14:11:56.638853+00:00",
+    "checks": [
+      {
+        "chain": "terra",
+        "receipt_id": "6db32451-4db7-40ba-b205-52155d9e828a",
+        "independent_offline_signature_verification": true,
+        "registered": true,
+        "pending": false,
+        "snapshot_eligible": true,
+        "balance": "0",
+        "positive_as_of_height": true,
+        "passed": true
+      },
+      {
+        "chain": "bsc",
+        "receipt_id": "8c7ea6c4-a2fb-4db7-b797-0a0da7a92c8f",
+        "independent_offline_signature_verification": true,
+        "registered": true,
+        "pending": false,
+        "snapshot_eligible": true,
+        "balance": "0",
+        "positive_as_of_height": true,
+        "passed": true
+      }
+    ],
+    "passed": true
+  },
+  "private_readiness": [
+    {
+      "round": 1,
+      "saved_at": "2026-10-14T14:00:34.184794+00:00",
+      "read_only": true,
+      "temporary_task_deleted": true,
+      "sample_count": 240,
+      "unready_count": 0,
+      "bad_states": [],
+      "maximum_lag": {
+        "terra": 1,
+        "bsc": 17
+      }
+    },
+    {
+      "round": 2,
+      "saved_at": "2026-10-14T14:02:45.105025+00:00",
+      "read_only": true,
+      "temporary_task_deleted": true,
+      "sample_count": 240,
+      "unready_count": 0,
+      "bad_states": [],
+      "maximum_lag": {
+        "terra": 2,
+        "bsc": 17
+      }
+    },
+    {
+      "round": 3,
+      "saved_at": "2026-10-14T14:07:04.922760+00:00",
+      "read_only": true,
+      "temporary_task_deleted": true,
+      "sample_count": 600,
+      "unready_count": 0,
+      "bad_states": [],
+      "maximum_lag": {
+        "terra": 2,
+        "bsc": 17
+      }
+    }
+  ],
+  "public_readiness": [
+    {
+      "round": 1,
+      "sample_count": 45,
+      "start": "2026-10-14T13:59:21.136081+00:00",
+      "end": "2026-10-14T14:01:27.498462+00:00",
+      "passed": false,
+      "failure_frames": [
+        {
+          "observed_at": "2026-10-14T14:00:58.805988+00:00",
+          "status": 503,
+          "ready": false
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "sample_count": 45,
+      "start": "2026-10-14T14:01:57.597108+00:00",
+      "end": "2026-10-14T14:04:03.947119+00:00",
+      "passed": true,
+      "failure_frames": []
+    },
+    {
+      "round": 3,
+      "sample_count": 45,
+      "start": "2026-10-14T14:05:14.634973+00:00",
+      "end": "2026-10-14T14:07:21.118800+00:00",
+      "passed": true,
+      "failure_frames": []
+    }
+  ],
+  "final_readiness_accepted": true,
+  "initial_public_failure_cause": "unexplained; outside private sampling windows; next public observation recovered; not counted as a pass",
+  "grafana_loki": {
+    "observed_at": "2026-10-14T14:07:43.895552+00:00",
+    "acceptance_window_start": "2026-10-14T13:58:22+00:00",
+    "grafana": "https://logs.cl8y.com",
+    "datasource": "Loki",
+    "prometheus_datasource_available": false,
+    "streams": [
+      {
+        "service": "voting-ledger",
+        "query_success": true,
+        "entries": 0,
+        "degraded_frames": [],
+        "safe_class_counts": {
+          "panic": 0,
+          "chain worker degraded": 0,
+          "accounting_corruption": 0,
+          "permission denied": 0,
+          "database error": 0,
+          "future_terra_height": 0,
+          "voting ingress peer observed": 0,
+          "200": 0,
+          "400": 0,
+          "403": 0,
+          "404": 0,
+          "429": 0,
+          "503": 0
+        }
+      },
+      {
+        "service": "cl8y-voting-operator",
+        "query_success": true,
+        "entries": 5,
+        "degraded_frames": [],
+        "safe_class_counts": {
+          "panic": 0,
+          "chain worker degraded": 0,
+          "accounting_corruption": 0,
+          "permission denied": 0,
+          "database error": 0,
+          "future_terra_height": 0,
+          "voting ingress peer observed": 1,
+          "200": 0,
+          "400": 1,
+          "403": 2,
+          "404": 0,
+          "429": 0,
+          "503": 2
+        }
+      },
+      {
+        "service": "cl8y-voting-frontend",
+        "query_success": true,
+        "entries": 81,
+        "degraded_frames": [],
+        "safe_class_counts": {
+          "panic": 0,
+          "chain worker degraded": 0,
+          "accounting_corruption": 0,
+          "permission denied": 0,
+          "database error": 0,
+          "future_terra_height": 0,
+          "voting ingress peer observed": 0,
+          "200": 80,
+          "400": 0,
+          "403": 0,
+          "404": 1,
+          "429": 0,
+          "503": 0
+        }
+      },
+      {
+        "service": "cl8y-voting-pg-db",
+        "query_success": true,
+        "entries": 4,
+        "degraded_frames": [],
+        "safe_class_counts": {
+          "panic": 0,
+          "chain worker degraded": 0,
+          "accounting_corruption": 0,
+          "permission denied": 0,
+          "database error": 0,
+          "future_terra_height": 0,
+          "voting ingress peer observed": 0,
+          "200": 0,
+          "400": 0,
+          "403": 0,
+          "404": 0,
+          "429": 0,
+          "503": 0
+        }
+      }
+    ],
+    "queries_passed": true
+  },
+  "direct_runtime_diagnostics": {
+    "observed_at": "2026-10-14T14:06:47.638659+00:00",
+    "degraded_frames": [
+      {
+        "emitted_at": "2026-10-14T13:56:21.413910Z",
+        "chain": "bsc",
+        "reason": "provider_or_accounting_failure",
+        "provider_class": "rpc_missing_result"
+      }
+    ]
+  },
+  "storage_evidence": "2026-10-14-final-storage-inventory.json",
+  "limits": [
+    "No Prometheus datasource provisioned; Loki queried successfully.",
+    "Funded-holder/committee live actions, hardware/mobile wallets and live human Legal QA not executed.",
+    "Destructive migration/privilege/credential-rotation attacks used isolated guarded databases only.",
+    "Legacy hash-only receipts cannot recover missing signed bytes; uncertified historical snapshots remain explicitly limited.",
+    "Readiness can refuse provider/database faults; final windows do not promise permanent availability."
+  ],
+  "passed": true
+}
