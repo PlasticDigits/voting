@@ -20,7 +20,11 @@ async fn main() -> Result<(), LedgerError> {
         .with_env_filter(EnvFilter::from_default_env().add_directive("info".parse().unwrap()))
         .init();
     let cfg = LedgerConfig::from_env()?;
+    let inspect = voting_ledger::storage::requested_from_env()?;
     let pool = db::connect(&cfg.database_url).await?;
+    if inspect {
+        return inspect_storage_only(pool, &cfg.api_bind).await;
+    }
     db::migrate(&pool).await?;
     let lcd = if cfg.terra_lcd_urls.is_empty() {
         None
@@ -172,6 +176,37 @@ async fn shutdown_signal() {
     {
         let _ = tokio::signal::ctrl_c().await;
     }
+}
+
+async fn inspect_storage_only(pool: sqlx::PgPool, bind: &str) -> Result<(), LedgerError> {
+    let inventory = voting_ledger::storage::inventory(&pool).await?;
+    let json = serde_json::to_string(&inventory)
+        .map_err(|_| LedgerError::Provider("storage_inspection_serialization"))?;
+    println!("VOTING_STORAGE_INVENTORY {json}");
+    let unavailable = || async {
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({
+                "ok": false, "ready": false, "reason": "storage_inspection"
+            })),
+        )
+    };
+    let app = Router::new()
+        .route(
+            "/live",
+            get(|| async { Json(serde_json::json!({"ok": true})) }),
+        )
+        .route("/ready", get(unavailable))
+        .route("/health", get(unavailable));
+    let addr: SocketAddr = bind
+        .parse()
+        .map_err(|_| LedgerError::InvalidConfig("invalid API_BIND".into()))?;
+    let listener = TcpListener::bind(addr).await?;
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal())
+        .await?;
+    let _ = tokio::time::timeout(Duration::from_secs(3), pool.close()).await;
+    Ok(())
 }
 async fn readiness(
     State(state): State<AppState>,

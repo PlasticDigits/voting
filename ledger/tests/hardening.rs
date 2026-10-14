@@ -3065,3 +3065,279 @@ async fn writer_pool_pins_every_connection_against_startup_search_path_shadow_ta
         .await
         .unwrap();
 }
+
+#[tokio::test]
+async fn process_storage_inspection_precedes_migrations_and_never_starts_accounting() {
+    let Some((pool, _lock)) = setup().await else {
+        return;
+    };
+    seed_registration(&pool, Chain::Terra, ALICE, 100, &BigInt::from(100), None)
+        .await
+        .unwrap();
+    for chain in [Chain::Terra, Chain::Bsc] {
+        let mut tx = pool.begin().await.unwrap();
+        db::lock_chain(&mut tx, chain).await.unwrap();
+        db::publish_checkpoint(
+            &mut tx,
+            chain,
+            100,
+            &if chain == Chain::Terra {
+                "A".repeat(64)
+            } else {
+                block_hash(100)
+            },
+            if chain == Chain::Terra { 100 } else { 115 },
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+    }
+    let (proposal, signature) = signed_draft_fixture(&pool).await;
+    sqlx::query("SELECT * FROM voting.freeze_proposal($1,$2)")
+        .bind(proposal)
+        .bind(signature)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let frozen_before:Vec<(String,String)>=sqlx::query_as("SELECT wallet_address,weight::text FROM voting.proposal_snapshots WHERE proposal_id=$1 ORDER BY wallet_address")
+        .bind(proposal).fetch_all(&pool).await.unwrap();
+    sqlx::query("CREATE TABLE voting.voting_registrations(chain text,wallet_address text,registered_at_height bigint,initial_balance numeric,status text,private_sentinel text)").execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO voting.voting_registrations VALUES('terra',$1,100,999,'active','SENTINEL_PRIVATE_COLUMN_VALUE')").bind(ALICE).execute(&pool).await.unwrap();
+    sqlx::query("CREATE TABLE voting.indexer_state(key text,value text)")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO voting.indexer_state VALUES('last_indexed_height','200'),('last_indexed_bsc_block','201'),('private_provider_url','SENTINEL_PRIVATE_STATE_VALUE')").execute(&pool).await.unwrap();
+    sqlx::query("CREATE TABLE voting._sqlx_migrations(version bigint)")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO voting._sqlx_migrations VALUES(13)")
+        .execute(&pool)
+        .await
+        .unwrap();
+    // If the entrypoint ran migrate first, it would create/replay tracking and fail on old objects.
+    sqlx::query("ALTER TABLE public._sqlx_migrations RENAME TO inspection_saved_migrations")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let count = calls.clone();
+    let app = Router::new().fallback(move || {
+        let count = count.clone();
+        async move {
+            count.fetch_add(1, Ordering::Relaxed);
+            Json(serde_json::json!({}))
+        }
+    });
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let provider = format!("http://{}", listener.local_addr().unwrap());
+    let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let reserve = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = reserve.local_addr().unwrap();
+    drop(reserve);
+    let mut child = tokio::process::Command::new(env!("CARGO_BIN_EXE_voting-ledger"))
+        .kill_on_drop(true)
+        .env_clear()
+        .env(
+            "DATABASE_URL",
+            std::env::var("LEDGER_TEST_DATABASE_URL").unwrap(),
+        )
+        .env("RUN_MODE", "prod")
+        .env("API_BIND", address.to_string())
+        .env("TERRA_LCD_URL", &provider)
+        .env("TERRA_RPC_URLS", &provider)
+        .env("BSC_RPC_URLS", &provider)
+        .env("LEDGER_INSPECT_STORAGE_ONLY", "true")
+        .env("LEDGER_RECONCILE_LIVE_BASELINE", "true")
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    let http = reqwest::Client::new();
+    let base = format!("http://{address}");
+    tokio::time::timeout(Duration::from_secs(8), async {
+        loop {
+            assert!(
+                child.try_wait().unwrap().is_none(),
+                "inspection process exited"
+            );
+            if http
+                .get(format!("{base}/live"))
+                .send()
+                .await
+                .is_ok_and(|r| r.status().is_success())
+            {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .unwrap();
+    for path in ["/ready", "/health"] {
+        let response = http.get(format!("{base}{path}")).send().await.unwrap();
+        assert_eq!(response.status(), reqwest::StatusCode::SERVICE_UNAVAILABLE);
+        let body: serde_json::Value = response.json().await.unwrap();
+        assert_eq!(body["ready"], false);
+        assert_eq!(body["reason"], "storage_inspection");
+    }
+    tokio::time::sleep(Duration::from_millis(250)).await;
+    assert_eq!(
+        calls.load(Ordering::Relaxed),
+        0,
+        "no provider/registration/recovery workers start"
+    );
+    let canonical = db::connect(&std::env::var("LEDGER_TEST_DATABASE_URL").unwrap())
+        .await
+        .unwrap();
+    assert_eq!(db::indexed_terra_height(&canonical).await.unwrap(), 100);
+    assert_eq!(db::indexed_bsc_block(&canonical).await.unwrap(), 100);
+    canonical.close().await;
+    let missing: bool =
+        sqlx::query_scalar("SELECT pg_catalog.to_regclass('public._sqlx_migrations') IS NULL")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert!(
+        missing,
+        "inspection never creates migration tracking or runs DDL"
+    );
+    let public: String = sqlx::query_scalar(
+        "SELECT initial_balance::text FROM public.voting_registrations WHERE wallet_address=$1",
+    )
+    .bind(ALICE)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let shadow: String = sqlx::query_scalar(
+        "SELECT initial_balance::text FROM voting.voting_registrations WHERE wallet_address=$1",
+    )
+    .bind(ALICE)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!((public, shadow), ("100".into(), "999".into()));
+    let frozen_after:Vec<(String,String)>=sqlx::query_as("SELECT wallet_address,weight::text FROM voting.proposal_snapshots WHERE proposal_id=$1 ORDER BY wallet_address")
+        .bind(proposal).fetch_all(&pool).await.unwrap();
+    assert_eq!(frozen_after, frozen_before);
+    assert!(std::process::Command::new("kill")
+        .arg("-TERM")
+        .arg(child.id().unwrap().to_string())
+        .status()
+        .unwrap()
+        .success());
+    let output = tokio::time::timeout(Duration::from_secs(6), child.wait_with_output())
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let markers: Vec<_> = stdout
+        .lines()
+        .filter_map(|line| line.strip_prefix("VOTING_STORAGE_INVENTORY "))
+        .collect();
+    assert_eq!(markers.len(), 1);
+    let inventory: serde_json::Value = serde_json::from_str(markers[0]).unwrap();
+    assert_eq!(inventory["read_only"], true);
+    let relations = inventory["relations"].as_array().unwrap();
+    assert_eq!(relations.len(), 14);
+    let find = |schema: &str, table: &str| {
+        relations
+            .iter()
+            .find(|r| r["schema"] == schema && r["table"] == table)
+            .unwrap()
+    };
+    assert_eq!(find("public", "voting_registrations")["row_count"], 1);
+    assert_eq!(find("voting", "voting_registrations")["row_count"], 1);
+    assert_eq!(
+        find("public", "voting_registrations")["baseline_height_present"],
+        true
+    );
+    assert_eq!(
+        find("voting", "voting_registrations")["baseline_height_present"],
+        false
+    );
+    assert_eq!(find("voting", "indexer_state")["last_indexed_height"], 200);
+    assert_eq!(
+        find("voting", "indexer_state")["last_indexed_bsc_block"],
+        201
+    );
+    assert_eq!(find("public", "_sqlx_migrations")["exists"], false);
+    assert_eq!(
+        find("voting", "_sqlx_migrations")["migration_max_version"],
+        13
+    );
+    let difference = inventory["comparisons"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["table"] == "voting_registrations")
+        .unwrap();
+    assert_eq!(difference["public_only_rows"], 1);
+    assert_eq!(difference["voting_only_rows"], 1);
+    for secret in [
+        ALICE,
+        "SENTINEL",
+        "private_sentinel",
+        "private_provider_url",
+        &provider,
+    ] {
+        assert!(!stdout.contains(secret));
+    }
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(!stderr.contains("SENTINEL"));
+    sqlx::query(
+        "DROP TABLE voting.voting_registrations,voting.indexer_state,voting._sqlx_migrations",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query("ALTER TABLE public.inspection_saved_migrations RENAME TO _sqlx_migrations")
+        .execute(&pool)
+        .await
+        .unwrap();
+    // A normal existing tracker is also inspected without changing its version history.
+    let completed = voting_ledger::storage::inventory(&pool).await.unwrap();
+    assert!(completed
+        .relations
+        .iter()
+        .find(|r| r.schema == "public" && r.table == "_sqlx_migrations")
+        .unwrap()
+        .migration_max_version
+        .is_some());
+    let mut lock = pool.begin().await.unwrap();
+    sqlx::query("LOCK TABLE public.cl8y_balances IN ACCESS EXCLUSIVE MODE")
+        .execute(&mut *lock)
+        .await
+        .unwrap();
+    let bounded = tokio::time::timeout(
+        Duration::from_secs(3),
+        voting_ledger::storage::inventory(&pool),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert!(
+        bounded
+            .relations
+            .iter()
+            .find(|r| r.schema == "public" && r.table == "cl8y_balances")
+            .unwrap()
+            .row_count
+            .is_none(),
+        "an unavailable count is null, never a false zero"
+    );
+    assert!(
+        bounded
+            .relations
+            .iter()
+            .find(|r| r.schema == "public" && r.table == "voting_registrations")
+            .unwrap()
+            .row_count
+            .is_some(),
+        "a bounded query failure does not poison the inventory transaction"
+    );
+    lock.rollback().await.unwrap();
+    server.abort();
+}
