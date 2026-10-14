@@ -1,8 +1,10 @@
+import SafeHtml from '@/components/proposal/SafeHtml'
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useConnectedIdentity } from '@/hooks/useConnectedIdentity'
 import {
   amendProposal,
+  canonicalizeForSigning,
   castVote,
   getProposal,
   openProposal,
@@ -12,7 +14,7 @@ import {
 } from '@/services/operatorVoting'
 import { signVotingRequest } from '@/services/votingSign'
 import type { VoteChoice } from '@/utils/votingPayload'
-import { sanitizeProposalHtml, sha256Hex } from '@/utils/sanitizeProposalHtml'
+import { sanitizeProposalHtml } from '@/utils/sanitizeProposalHtml'
 import { ROUTES } from '@/routes'
 import { ProposalSectionView } from '@/components/proposal/ProposalSectionFields'
 import {
@@ -20,8 +22,6 @@ import {
   CANONICAL_ANALYSIS_KEYS,
   CANONICAL_SECTION_KEYS,
   SECTION_DISPLAY_ORDER,
-  canonicalizeAnalysisSections,
-  canonicalizeProposalSections,
   emptyAnalysis,
   emptySections,
   SECTION_LABELS,
@@ -92,7 +92,7 @@ export default function VoteDetailPage() {
 
   const amendSections = useMemo(
     () => (amendFields ? htmlFromFields(amendFields) : null),
-    [amendFields]
+    [amendFields],
   )
 
   async function handleVote(choice: VoteChoice) {
@@ -121,8 +121,11 @@ export default function VoteDetailPage() {
     setBusy(true)
     setError(null)
     try {
-      const body_html = textToSectionHtml(comment)
-      const body_hash = await sha256Hex(body_html)
+      const canonical = await canonicalizeForSigning({
+        kind: 'comment',
+        body_html: textToSectionHtml(comment),
+      })
+      const { body_html, body_hash } = canonical
       const signed = await signVotingRequest({
         chain,
         address,
@@ -145,21 +148,26 @@ export default function VoteDetailPage() {
     setBusy(true)
     setError(null)
     try {
-      const prev = proposal.body_sections
-        ? canonicalizeProposalSections(sanitizeSections(proposal.body_sections))
-        : ''
-      const prev_body_hash = await sha256Hex(prev)
-      const body_hash = await sha256Hex(canonicalizeProposalSections(amendSections))
+      if (!proposal.body_hash)
+        throw new Error('Proposal canonical content unavailable; reload before signing.')
+      const prev_body_hash = proposal.body_hash
+      const canonical = await canonicalizeForSigning({ kind: 'proposal', sections: amendSections })
+      const { body_hash } = canonical
       const signed = await signVotingRequest({
         chain,
         address,
         purpose: 'amend',
+        revision: proposal.revision,
         title: proposal.title,
         proposal_id: id,
         body_hash,
         prev_body_hash,
       })
-      await amendProposal(id, { ...signed, title: proposal.title, body_sections: amendSections })
+      await amendProposal(id, {
+        ...signed,
+        title: proposal.title,
+        body_sections: canonical.sections as ProposalSections,
+      })
       setAmendFields(null)
       await reload()
     } catch (err) {
@@ -174,13 +182,15 @@ export default function VoteDetailPage() {
     setBusy(true)
     setError(null)
     try {
-      const body_hash = await sha256Hex(
-        canonicalizeProposalSections(sanitizeSections(proposal.body_sections))
-      )
+      if (!proposal.body_hash)
+        throw new Error('Proposal canonical content unavailable; reload before signing.')
+      const body_hash = proposal.body_hash
       const signed = await signVotingRequest({
         chain,
         address,
         purpose: 'open_vote',
+        title: proposal.title,
+        revision: proposal.revision,
         proposal_id: id,
         body_hash,
       })
@@ -198,12 +208,18 @@ export default function VoteDetailPage() {
     setBusy(true)
     setError(null)
     try {
-      const sections = analysisFromFields(analysisFields)
-      const body_hash = await sha256Hex(canonicalizeAnalysisSections(sections))
+      if (!proposal) return
+      const canonical = await canonicalizeForSigning({
+        kind: 'analysis',
+        sections: analysisFromFields(analysisFields),
+      })
+      const sections = canonical.sections as AnalysisSections
+      const { body_hash } = canonical
       const signed = await signVotingRequest({
         chain,
         address,
         purpose: 'analyze',
+        revision: proposal.revision,
         proposal_id: id,
         body_hash,
       })
@@ -260,10 +276,7 @@ export default function VoteDetailPage() {
                   {CANONICAL_ANALYSIS_KEYS.map((key) => (
                     <div key={key}>
                       <h3>{ANALYSIS_LABELS[key]}</h3>
-                      <div
-                        className="proposal-body"
-                        dangerouslySetInnerHTML={{ __html: item.sections?.[key] ?? '' }}
-                      />
+                      <SafeHtml className="proposal-body" html={item.sections?.[key] ?? ''} />
                     </div>
                   ))}
                 </article>
@@ -275,7 +288,7 @@ export default function VoteDetailPage() {
               {(proposal.comments ?? []).map((c) => (
                 <li key={c.id}>
                   <span className="lede">{c.wallet_address}</span>
-                  <div className="proposal-body" dangerouslySetInnerHTML={{ __html: c.body_html }} />
+                  <SafeHtml className="proposal-body" html={c.body_html} />
                 </li>
               ))}
             </ul>
@@ -310,7 +323,12 @@ export default function VoteDetailPage() {
                         <span>{SECTION_LABELS[key]}</span>
                         <textarea
                           value={amendFields[key]}
-                          onChange={(e) => setAmendFields((prev) => ({ ...(prev ?? emptySections()), [key]: e.target.value }))}
+                          onChange={(e) =>
+                            setAmendFields((prev) => ({
+                              ...(prev ?? emptySections()),
+                              [key]: e.target.value,
+                            }))
+                          }
                           data-testid={`amend-${key}`}
                           rows={4}
                         />
@@ -351,16 +369,18 @@ export default function VoteDetailPage() {
               <div className="field">
                 <h2>Committee actions</h2>
                 <p className="lede">
-                  Only addresses in the server committee allowlist can attach independent analysis or open
-                  the poll. The proposer cannot write the independent analysis record. Opening does not
-                  require 1000 CL8Y. Non-allowlisted signatures return 403.
+                  Only addresses in the server committee allowlist can attach independent analysis
+                  or open the poll. The proposer cannot write the independent analysis record.
+                  Opening does not require 1000 CL8Y. Non-allowlisted signatures return 403.
                 </p>
                 {CANONICAL_ANALYSIS_KEYS.map((key) => (
                   <label className="field" key={key}>
                     <span>{ANALYSIS_LABELS[key]}</span>
                     <textarea
                       value={analysisFields[key]}
-                      onChange={(e) => setAnalysisFields((prev) => ({ ...prev, [key]: e.target.value }))}
+                      onChange={(e) =>
+                        setAnalysisFields((prev) => ({ ...prev, [key]: e.target.value }))
+                      }
                       data-testid={`analysis-${key}`}
                       rows={3}
                     />
@@ -421,5 +441,8 @@ export default function VoteDetailPage() {
 }
 
 function visibleTextFallback(html: string): string {
-  return html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+  return html
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
 }

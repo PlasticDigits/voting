@@ -1,17 +1,20 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useConnectedIdentity } from '@/hooks/useConnectedIdentity'
 import { useVotingSnapshot } from '@/hooks/useVotingSnapshot'
-import { createProposal } from '@/services/operatorVoting'
+import {
+  canonicalizeForSigning,
+  createProposal,
+  getMetadata,
+  type VotingMetadata,
+} from '@/services/operatorVoting'
 import { signVotingRequest } from '@/services/votingSign'
 import { canPropose } from '@/utils/votingPayload'
-import { MIN_PROPOSAL_CL8Y, MIN_PROPOSAL_RAW } from '@/utils/constants'
 import { formatCl8y } from '@/utils/format'
 import { ROUTES } from '@/routes'
 import {
   type SectionKey,
   emptySections,
-  hashSections,
   sectionsFromPlain,
   validateSections,
 } from '@/utils/proposalSections'
@@ -28,11 +31,28 @@ export default function VoteNewPage() {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
+  const [metadata, setMetadata] = useState<VotingMetadata | null>(null)
+  useEffect(() => {
+    void getMetadata()
+      .then((m) => {
+        if (m.protocol_version !== 2 || !/^\d+$/.test(m.min_proposal_raw))
+          throw new Error('Unsupported voting metadata')
+        setMetadata(m)
+      })
+      .catch((err: unknown) =>
+        setError(err instanceof Error ? err.message : 'Voting metadata unavailable'),
+      )
+  }, [])
+  const threshold = metadata ? formatCl8y(metadata.min_proposal_raw) : '…'
   const sections = useMemo(() => sectionsFromPlain(plain), [plain])
   const sectionCheck = useMemo(() => validateSections(sections), [sections])
 
   const registered = snapshot.status === 'registered'
-  const gated = !registered || snapshot.balance == null || !canPropose(snapshot.balance, MIN_PROPOSAL_RAW)
+  const gated =
+    !registered ||
+    snapshot.balance == null ||
+    !metadata ||
+    !canPropose(snapshot.balance, BigInt(metadata.min_proposal_raw))
   const canSubmit = !gated && !busy && Boolean(title.trim()) && sectionCheck.ok
 
   async function handleSubmit() {
@@ -40,7 +60,8 @@ export default function VoteNewPage() {
     setBusy(true)
     setError(null)
     try {
-      const body_hash = await hashSections(sections)
+      const canonical = await canonicalizeForSigning({ kind: 'proposal', sections })
+      const { body_hash } = canonical
       const signed = await signVotingRequest({
         chain,
         address,
@@ -48,7 +69,11 @@ export default function VoteNewPage() {
         title,
         body_hash,
       })
-      const created = await createProposal({ ...signed, title, body_sections: sections })
+      const created = await createProposal({
+        ...signed,
+        title,
+        body_sections: canonical.sections as typeof sections,
+      })
       navigate(ROUTES.proposal(created.id))
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Draft failed')
@@ -74,13 +99,13 @@ export default function VoteNewPage() {
         <h1>New draft</h1>
         <p className="lede">
           Starts as a <strong>draft</strong>, not a votable poll. The snapshot freezes only when a
-          committee wallet opens voting. Server is the source of truth for the {MIN_PROPOSAL_CL8Y} CL8Y
-          gate and required sections. {label} and the other chain are never summed. Never enter a seed
+          committee wallet opens voting. Server is the source of truth for the {threshold} CL8Y gate
+          and required sections. {label} and the other chain are never summed. Never enter a seed
           phrase.
         </p>
         {registered && snapshot.balance != null && (
           <p data-testid="propose-balance">
-            Balance {formatCl8y(snapshot.balance)} CL8Y {gated ? `(need ${MIN_PROPOSAL_CL8Y})` : ''}
+            Balance {formatCl8y(snapshot.balance)} CL8Y {gated ? `(need ${threshold})` : ''}
           </p>
         )}
         {snapshot.status === 'unregistered' && (

@@ -1,3 +1,4 @@
+import SafeHtml from './SafeHtml'
 import {
   SECTION_DISPLAY_ORDER,
   SECTION_HELP,
@@ -83,7 +84,7 @@ export function ProposalSectionView({
           return (
             <section key={key} data-testid={`proposal-section-view-${key}`}>
               <h2>{SECTION_LABELS[key as SectionKey] ?? key}</h2>
-              <div dangerouslySetInnerHTML={{ __html: html }} />
+              <SafeHtml html={html} />
             </section>
           )
         })}
@@ -92,10 +93,10 @@ export function ProposalSectionView({
   }
   if (fallbackHtml) {
     return (
-      <article
+      <SafeHtml
         className="proposal-body"
         data-testid="proposal-legacy-body"
-        dangerouslySetInnerHTML={{ __html: fallbackHtml }}
+        html={fallbackHtml}
       />
     )
   }

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { type Page } from '@playwright/test'
 
 export const E2E_TERRA_ADDR = 'terra1testxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
@@ -37,6 +38,15 @@ export async function mockOperatorVoting(page: Page, opts: MockOperatorOpts = {}
     analysis: unknown[]
   }> = []
   const votes = new Map<string, string>()
+  await page.route('**/v1/metadata', async (route) => route.fulfill({ json: { protocol_version: 2, min_proposal_raw: '1000000000000000000000', decimals: 18, capabilities: ['canonicalize'] } }))
+  await page.route('**/v1/canonicalize', async (route) => {
+    const body = route.request().postDataJSON() as { kind: string; sections?: Record<string, string>; body_html?: string }
+    const sections = body.sections ? Object.fromEntries(Object.keys(body.sections).sort().map((key) => [key, body.sections![key]])) : null
+    const canonical_json = sections ? JSON.stringify(sections) : null
+    const body_html = body.body_html ?? ''
+    await route.fulfill({ json: { protocol_version: 2, sections, canonical_json, body_html, body_hash: createHash('sha256').update(canonical_json ?? body_html).digest('hex') } })
+  })
+
 
   await page.route('**/v1/proposals', async (route) => {
     if (route.request().method() === 'GET') {
@@ -54,6 +64,8 @@ export async function mockOperatorVoting(page: Page, opts: MockOperatorOpts = {}
     }
     proposals.push({
       id: E2E_PROPOSAL_ID,
+      revision: 1,
+      body_hash: createHash('sha256').update(JSON.stringify(body.body_sections ?? {})).digest('hex'),
       chain: 'terra',
       proposer: body.address,
       title: body.title,

@@ -31,3 +31,7 @@ Values are ammonia-cleaned HTML; empty-visible → `""`. Golden vector is in OPE
 ## UI
 
 Labeled fields on `/new`. List shows TL;DR as text. Detail uses display order (summary first). Legacy rows (`body_sections` null) render sanitized `body_html`.
+
+## Protocol version 2 (#41/#43)
+
+For new signing, server `/v1/canonicalize` is authoritative; client display sanitation is independent. Do not attempt to duplicate ammonia byte serialization with DOMPurify. See [AGENTS_PROTOCOL_SECURITY.md](AGENTS_PROTOCOL_SECURITY.md) P5–P10 and the shared canonical fixtures. Metadata supplies the configured threshold; revision/nonce binding follows [AGENTS_DRAFT_REVIEW.md](AGENTS_DRAFT_REVIEW.md).

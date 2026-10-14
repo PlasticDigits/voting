@@ -1,87 +1,17 @@
+import { sha256Hex } from '@/utils/sanitizeProposalHtml'
 import { inferVotingChain, type VoteChoice, type VotingChain } from '@/utils/votingPayload'
 import type { AnalysisSections, ProposalSections } from '@/utils/proposalSections'
 
-export type SignedRequest = {
-  chain: VotingChain
-  address: string
-  payload: string
-  signature: string
-  pubkey?: string
-}
-
-export type ProposalListItem = {
-  id: string
-  chain: string
-  proposer: string
-  title: string
-  summary?: string | null
-  terra_height: number | null
-  bsc_block: number | null
-  created_at: string
-  opened_at?: string | null
-  status: string
-  tally: { choice: string; weight: string }[] | Record<string, string>
-}
-
-export type ProposalComment = {
-  id: string
-  chain: string
-  wallet_address: string
-  body_html: string
-  created_at: string
-}
-
-export type ProposalAnalysis = {
-  id: string
-  chain: string
-  wallet_address: string
-  body_html: string
-  source: string
-  created_at: string
-  sections: AnalysisSections
-  machine_generated?: boolean
-}
-
-export type ProposalDetail = ProposalListItem & {
-  body_html: string
-  body_sections?: ProposalSections | null
-  comments?: ProposalComment[]
-  analysis?: ProposalAnalysis[]
-  advisory: boolean
-}
-
-export type BalanceResponse = {
-  chain: string
-  address: string
-  height: number
-  as_of_height?: number
-  balance: string
-  /** Absent on a pre-OV-B6 image — treat as unknown, never as a live 0. */
-  registered?: boolean
-  pending?: boolean
-  initial_balance?: string | null
-}
-
-export type ChainRegistrationRow = {
-  chain: string
-  wallet_address?: string
-  address?: string
-  registered_at_height: number
-  status: string
-}
-
-export type RegistrationLookup = {
-  terra?: ChainRegistrationRow | null
-  bsc?: ChainRegistrationRow | null
-  pending?: { terra?: boolean; bsc?: boolean }
-}
-
-export type RegistrationResponse = {
-  ok: boolean
-  pending?: boolean
-  signature_id?: string
-  registration?: { chain: string; address: string; registered_at_height: number; status: string } | null
-}
+type Schemas = import('./generated/votingApi').components['schemas']
+export type SignedRequest = Schemas['SignedRequest']
+export type ProposalListItem = Schemas['ProposalListItem']
+export type ProposalComment = Schemas['Comment']
+export type ProposalAnalysis = Schemas['Analysis']
+export type ProposalDetail = Schemas['ProposalDetail']
+export type BalanceResponse = Schemas['BalanceResponse']
+export type ChainRegistrationRow = Schemas['RegistrationRow']
+export type RegistrationLookup = Schemas['RegistrationLookup']
+export type RegistrationResponse = Schemas['RegistrationResponse']
 
 export const REGISTER_POLL_INTERVAL_MS = 1_000
 export const REGISTER_POLL_MAX_INTERVAL_MS = 8_000
@@ -135,12 +65,15 @@ export async function getRegistration(address: string): Promise<RegistrationLook
 
 export function chainRegistration(
   lookup: RegistrationLookup | null,
-  chain: VotingChain
+  chain: VotingChain,
 ): ChainRegistrationRow | null {
   return lookup?.[chain] ?? null
 }
 
-export function isRegistrationPending(lookup: RegistrationLookup | null, chain: VotingChain): boolean {
+export function isRegistrationPending(
+  lookup: RegistrationLookup | null,
+  chain: VotingChain,
+): boolean {
   return Boolean(lookup?.pending?.[chain])
 }
 
@@ -167,7 +100,7 @@ export async function waitForLedgerRegistration(
     lookup?: (address: string) => Promise<RegistrationLookup | null>
     signal?: AbortSignal
     onAttempt?: (at: number) => void
-  }
+  },
 ): Promise<RegistrationLookup> {
   const timeoutMs = opts?.timeoutMs ?? REGISTER_POLL_TIMEOUT_MS
   const maxIntervalMs = opts?.maxIntervalMs ?? REGISTER_POLL_MAX_INTERVAL_MS
@@ -200,15 +133,15 @@ export async function getProposal(id: string): Promise<ProposalDetail> {
 }
 
 export async function createProposal(
-  req: SignedRequest & { title: string; body_sections: ProposalSections }
-): Promise<{ id: string; status: string; terra_height: number | null; bsc_block: number | null }> {
+  req: SignedRequest & { title: string; body_sections: ProposalSections },
+): Promise<Schemas['DraftResponse']> {
   return api('/v1/proposals', { method: 'POST', body: JSON.stringify(req) })
 }
 
 export async function amendProposal(
   id: string,
-  req: SignedRequest & { title: string; body_sections: ProposalSections }
-): Promise<{ ok: boolean; body_hash: string }> {
+  req: SignedRequest & { title: string; body_sections: ProposalSections },
+): Promise<Schemas['AmendResponse']> {
   return api(`/v1/proposals/${encodeURIComponent(id)}/sections`, {
     method: 'PUT',
     body: JSON.stringify(req),
@@ -217,8 +150,8 @@ export async function amendProposal(
 
 export async function postComment(
   id: string,
-  req: SignedRequest & { body_html: string }
-): Promise<{ id: string }> {
+  req: SignedRequest & { body_html: string },
+): Promise<Schemas['CommentResponse']> {
   return api(`/v1/proposals/${encodeURIComponent(id)}/comments`, {
     method: 'POST',
     body: JSON.stringify(req),
@@ -227,8 +160,8 @@ export async function postComment(
 
 export async function postAnalysis(
   id: string,
-  req: SignedRequest & { sections: AnalysisSections }
-): Promise<{ id: string; source: string }> {
+  req: SignedRequest & { sections: AnalysisSections },
+): Promise<Schemas['AnalysisResponse']> {
   return api(`/v1/proposals/${encodeURIComponent(id)}/analysis`, {
     method: 'POST',
     body: JSON.stringify(req),
@@ -237,8 +170,8 @@ export async function postAnalysis(
 
 export async function openProposal(
   id: string,
-  req: SignedRequest
-): Promise<{ ok: boolean; status: string; terra_height: number; bsc_block: number }> {
+  req: SignedRequest,
+): Promise<Schemas['OpenResponse']> {
   return api(`/v1/proposals/${encodeURIComponent(id)}/open`, {
     method: 'POST',
     body: JSON.stringify(req),
@@ -247,8 +180,8 @@ export async function openProposal(
 
 export async function castVote(
   id: string,
-  req: SignedRequest & { choice: VoteChoice }
-): Promise<{ ok: boolean; weight: string }> {
+  req: SignedRequest & { choice: VoteChoice },
+): Promise<Schemas['VoteResponse']> {
   return api(`/v1/proposals/${encodeURIComponent(id)}/votes`, {
     method: 'POST',
     body: JSON.stringify(req),
@@ -257,8 +190,32 @@ export async function castVote(
 
 export async function getBalance(
   address: string,
-  chain: VotingChain = inferVotingChain(address)
+  chain: VotingChain = inferVotingChain(address),
 ): Promise<BalanceResponse> {
   const q = new URLSearchParams({ chain })
   return api(`/v1/balances/${encodeURIComponent(address)}?${q}`)
+}
+
+export type VotingMetadata = Schemas['Metadata']
+export function getMetadata(): Promise<VotingMetadata> {
+  return api('/v1/metadata')
+}
+export type CanonicalResponse = Schemas['CanonicalResponse']
+export async function canonicalizeForSigning(
+  request:
+    | { kind: 'proposal'; sections: ProposalSections }
+    | { kind: 'analysis'; sections: AnalysisSections }
+    | { kind: 'comment'; body_html: string },
+): Promise<CanonicalResponse> {
+  const result = await api<CanonicalResponse>('/v1/canonicalize', {
+    method: 'POST',
+    body: JSON.stringify(request),
+  })
+  if (result.protocol_version !== 2)
+    throw new Error('Unsupported signing protocol; refresh before signing.')
+  const bytes = result.canonical_json ?? result.body_html
+
+  if ((await sha256Hex(bytes)) !== result.body_hash)
+    throw new Error('Canonical response hash mismatch; signing cancelled.')
+  return result
 }

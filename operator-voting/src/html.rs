@@ -4,12 +4,28 @@ pub fn sanitize_proposal_html(raw: &str) -> String {
     builder
         .tags(
             [
-                "p", "br", "strong", "b", "em", "i", "u", "h1", "h2", "h3", "ul", "ol", "li",
-                "blockquote", "code", "pre", "a",
+                "p",
+                "br",
+                "strong",
+                "b",
+                "em",
+                "i",
+                "u",
+                "h1",
+                "h2",
+                "h3",
+                "ul",
+                "ol",
+                "li",
+                "blockquote",
+                "code",
+                "pre",
+                "a",
             ]
             .into_iter()
             .collect(),
         )
+        .generic_attributes(std::collections::HashSet::new())
         .link_rel(Some("noopener noreferrer"))
         .url_schemes(["http", "https", "mailto"].into_iter().collect());
     builder.clean(raw).to_string()

@@ -8,7 +8,8 @@ import {
   VOTING_APP,
 } from './constants'
 
-export type VotingChain = 'terra' | 'bsc'
+export type VotingChain =
+  import('@/services/generated/votingApi').components['schemas']['VotingChain']
 export type VotingPurpose =
   | 'register'
   | 'propose'
@@ -18,21 +19,16 @@ export type VotingPurpose =
   | 'analyze'
   | 'open_vote'
   | 'vote'
-export type VoteChoice = 'for' | 'against' | 'abstain'
+export type VoteChoice =
+  import('@/services/generated/votingApi').components['schemas']['VoteChoice']
 
-export type SignedPayload = {
-  app: string
-  chain: VotingChain
-  chain_id: string
+type ContractPayload =
+  import('@/services/generated/votingApi').components['schemas']['SignedPayload']
+type PresentPayload = { [K in keyof ContractPayload]: Exclude<ContractPayload[K], null> }
+export type SignedPayload = Omit<PresentPayload, 'version' | 'nonce' | 'purpose'> & {
+  version: 2
+  nonce: string
   purpose: VotingPurpose
-  address: string
-  issued_at: number
-  expires_at: number
-  title?: string
-  body_hash?: string
-  proposal_id?: string
-  choice?: VoteChoice
-  prev_body_hash?: string
 }
 
 export function votingChainId(chain: VotingChain): string {
@@ -43,7 +39,9 @@ export function votingChainId(chain: VotingChain): string {
 }
 
 export function inferVotingChain(address: string): VotingChain {
-  return address.trim().startsWith('0x') || address.trim().startsWith('0X') ? BSC_CHAIN : TERRA_CHAIN
+  return address.trim().startsWith('0x') || address.trim().startsWith('0X')
+    ? BSC_CHAIN
+    : TERRA_CHAIN
 }
 
 export function buildSignedPayload(input: {
@@ -51,6 +49,8 @@ export function buildSignedPayload(input: {
   purpose: VotingPurpose
   address: string
   now?: number
+  nonce?: string
+  revision?: number
   title?: string
   body_hash?: string
   proposal_id?: string
@@ -59,6 +59,8 @@ export function buildSignedPayload(input: {
 }): SignedPayload {
   const issued_at = input.now ?? Math.floor(Date.now() / 1000)
   const payload: SignedPayload = {
+    version: 2,
+    nonce: input.nonce ?? crypto.randomUUID(),
     app: VOTING_APP,
     chain: input.chain,
     chain_id: votingChainId(input.chain),
@@ -67,6 +69,7 @@ export function buildSignedPayload(input: {
     issued_at,
     expires_at: issued_at + SIGNATURE_TTL_SECS,
   }
+  if (input.revision !== undefined) payload.revision = input.revision
   if (input.title !== undefined) payload.title = input.title
   if (input.body_hash !== undefined) payload.body_hash = input.body_hash
   if (input.proposal_id !== undefined) payload.proposal_id = input.proposal_id
@@ -78,6 +81,8 @@ export function buildSignedPayload(input: {
 /** Canonical JSON matching operator-voting serde field order + skip_serializing_if. */
 export function canonicalizePayload(payload: SignedPayload): string {
   const ordered: Record<string, unknown> = {
+    version: payload.version,
+    nonce: payload.nonce,
     app: payload.app,
     chain: payload.chain,
     chain_id: payload.chain_id,
@@ -86,6 +91,7 @@ export function canonicalizePayload(payload: SignedPayload): string {
     issued_at: payload.issued_at,
     expires_at: payload.expires_at,
   }
+  if (payload.revision !== undefined) ordered.revision = payload.revision
   if (payload.title !== undefined) ordered.title = payload.title
   if (payload.body_hash !== undefined) ordered.body_hash = payload.body_hash
   if (payload.proposal_id !== undefined) ordered.proposal_id = payload.proposal_id

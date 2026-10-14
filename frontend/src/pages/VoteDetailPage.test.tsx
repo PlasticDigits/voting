@@ -12,6 +12,10 @@ const identity = {
 }
 
 const base: ProposalDetail = {
+  revision: 1,
+  snapshot_validity: 'valid',
+  body_hash: 'a'.repeat(64),
+  opened_at: null,
   id: '11111111-1111-1111-1111-111111111111',
   chain: 'terra',
   proposer: 'terra1proposerxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
@@ -49,6 +53,7 @@ vi.mock('@/services/operatorVoting', () => ({
   postAnalysis: vi.fn(),
   openProposal: vi.fn(),
   amendProposal: vi.fn(),
+  canonicalizeForSigning: vi.fn(),
 }))
 
 function renderDetail() {
@@ -77,4 +82,20 @@ describe('draft vs open vote CTAs', () => {
     expect(screen.getByTestId('vote-for')).toBeEnabled()
     expect(screen.queryByTestId('open-poll')).toBeNull()
   })
+})
+
+it('sanitizes hostile imported comments and analysis through the actual detail renderer', async () => {
+  const attack = '<div><a href="javascript:alert(1)" onclick="alert(2)">safe text</a><svg onload="alert(3)"></svg></div>'
+  current = { ...base,
+    comments: [{ id: 'comment', chain: 'bsc', wallet_address: '0x1111111111111111111111111111111111111111', body_html: attack, created_at: base.created_at }],
+    analysis: [{ id: 'analysis', chain: 'terra', wallet_address: identity.address, body_html: attack, source: 'committee', revision: 1, created_at: base.created_at,
+      machine_generated: false, sections: { benefits: attack, long_term: attack, risks: attack, short_term: attack, what: attack } }],
+  }
+  const { container } = renderDetail()
+  await screen.findByTestId('analysis-item')
+  expect(container.querySelector('svg,script')).toBeNull()
+  for (const el of container.querySelectorAll('*')) {
+    for (const attr of el.attributes) expect(attr.name).not.toMatch(/^on/)
+    if (el.hasAttribute('href')) expect(el.getAttribute('href')).not.toMatch(/^javascript:/)
+  }
 })

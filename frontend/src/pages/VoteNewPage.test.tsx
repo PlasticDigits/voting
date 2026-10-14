@@ -35,6 +35,8 @@ vi.mock('@/hooks/useVotingSnapshot', () => ({
 
 vi.mock('@/services/operatorVoting', () => ({
   createProposal: vi.fn(),
+  canonicalizeForSigning: vi.fn(),
+  getMetadata: vi.fn().mockResolvedValue({ protocol_version: 2, min_proposal_raw: '1000000000000000000000', decimals: 18, capabilities: [] }),
 }))
 
 const SECTION = 'This draft section has forty visible characters.'
@@ -60,7 +62,7 @@ describe('propose gate', () => {
     fireEvent.change(screen.getByTestId('proposal-title'), { target: { value: 'Title' } })
     fillRequiredSections()
     expect(button).toBeDisabled()
-    expect(screen.getByTestId('propose-balance')).toHaveTextContent('need 1000')
+    await waitFor(() => expect(screen.getByTestId('propose-balance')).toHaveTextContent('need 1000'))
   })
 
   it('enables submit at the 1000 CL8Y boundary once titled and templated', async () => {

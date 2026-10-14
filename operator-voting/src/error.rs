@@ -26,9 +26,12 @@ pub enum VotingError {
     Migrate(String),
 }
 
-#[derive(Serialize)]
-struct ErrorBody {
-    error: String,
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct ErrorBody {
+    pub error: String,
+    pub code: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub request_id: Option<String>,
 }
 
 impl IntoResponse for VotingError {
@@ -43,7 +46,29 @@ impl IntoResponse for VotingError {
                 StatusCode::INTERNAL_SERVER_ERROR
             }
         };
-        (status, Json(ErrorBody { error: self.to_string() })).into_response()
+        let (code, message) = match self {
+            VotingError::BadRequest(_) => ("bad_request", "invalid request"),
+            VotingError::InvalidConfig(_) | VotingError::MissingEnv(_) => {
+                ("configuration_error", "service configuration error")
+            }
+            VotingError::Unauthorized(_) => ("unauthorized", "signature or authentication invalid"),
+            VotingError::Forbidden(_) => ("forbidden", "action not permitted"),
+            VotingError::NotFound(_) => ("not_found", "resource not found"),
+            VotingError::Conflict(_) => ("conflict", "state changed; reload before signing again"),
+            VotingError::Database(_) | VotingError::Migrate(_) => {
+                ("internal_error", "service temporarily unavailable")
+            }
+        };
+        // Never format database/provider/request internals into responses or logs.
+        (
+            status,
+            Json(ErrorBody {
+                error: message.into(),
+                code: code.into(),
+                request_id: None,
+            }),
+        )
+            .into_response()
     }
 }
 
