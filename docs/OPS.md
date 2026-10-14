@@ -113,14 +113,14 @@ Expect some `422` (invalid body), many `429` with `Retry-After`, and `GET /healt
 LocalTerra on this workstation is typically `http://127.0.0.1:1317`. Hardening loop:
 
 1. Mint TCL8Y to a test wallet (DEX LocalTerra fixtures — do not invent a new CW20).
-2. Register via `operator-voting` (ledger takes a **live** LCD `Balance`, L1). Confirm `CL8Y_TOKEN_ADDRESS` is the pinned hpax3 contract (wallet ticker **CL8Y-cb** is that contract unless another is proven).
+2. Register via `operator-voting` with native `TERRA_RPC_URLS` configured. The ledger records an actual same-provider balance/height/hash observation (L1); an LCD header guess is insufficient. Confirm `CL8Y_TOKEN_ADDRESS` is the pinned hpax3 contract (wallet ticker **CL8Y-cb** is that contract unless another is proven).
 3. Transfer TCL8Y; wait for the ledger poller.
-4. Assert `voting_registrations.initial_balance` ≈ live LCD `Balance` ≈ `GET /v1/balances` default `as_of_height` ≥ `registered_at_height` for that registered wallet.
-5. Confirm ledger `GET /health` `terra_height` advances after register (`caught_up: true`).
+4. Compare raw integer balances exactly at matching certified heights/hashes. The initial balance must equal the registration observation; after the transfer, the caught-up API balance must equal the fixture’s expected delta and corresponding live observation. Do not compare a historical initial balance with a later live balance.
+5. Confirm writer `/ready` reports progressing Terra/BSC checkpoints and fresh intent progress; the registered wallet must become `snapshot_eligible` after its verified baseline is indexed under finality policy.
 
 Do not close [#9](https://gitlab.com/PlasticDigits/voting/-/issues/9) / [#7](https://gitlab.com/PlasticDigits/voting/-/issues/7) on a screenshot of “Registered” if `GET /v1/balances` is still `"0"` while LCD is not.
 
-Do not close [#14](https://gitlab.com/PlasticDigits/voting/-/issues/14) on a screenshot of Registering… or of the pending banner. #9 is LCD equality **after registered**; #14 is **never leaving pending**. Writer `/health` must not be 503; intents with a working LCD/`balanceOf` complete without manual DB edits.
+Do not close [#14](https://gitlab.com/PlasticDigits/voting/-/issues/14) on a screenshot of Registering… or of the pending banner. #9 is LCD equality **after registered**; #14 is **never leaving pending**. Registration intents with healthy native Terra RPC/BSC providers must complete without manual DB edits. Writer `/ready` must then pass canonical admission; `/live`200 alone is insufficient.
 
 Integration coverage without LocalTerra: [`../ledger/tests/ledger_integration.rs`](../ledger/tests/ledger_integration.rs) (`register_transfer_balance_at_and_no_backfill`) and [`../operator-voting/tests/api_flow.rs`](../operator-voting/tests/api_flow.rs) (`default_balance_clamps_when_tip_lags_register`). Live LCD equality remains an ops check.
 
