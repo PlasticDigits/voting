@@ -92,6 +92,10 @@ impl BscClient {
         Err(last)
     }
     pub async fn block_number(&self) -> LedgerResult<i64> {
+        self.block_number_at_least(0).await
+    }
+    /// Fail over semantically when a fresh provider is behind committed finality.
+    pub async fn block_number_at_least(&self, minimum: i64) -> LedgerResult<i64> {
         let mut last = LedgerError::Provider("no_bsc_provider");
         for url in &self.urls {
             let observation = async {
@@ -126,6 +130,9 @@ impl BscClient {
                     "invalid_block_time",
                 )?;
                 crate::health::validate_head_time(timestamp)?;
+                if height < minimum {
+                    return Err(LedgerError::Provider("provider_head_regressed"));
+                }
                 Ok(height)
             }
             .await;

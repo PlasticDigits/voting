@@ -32,14 +32,23 @@ pub async fn poll_chain(
                 .as_ref()
                 .ok_or(LedgerError::Provider("no_terra_provider"))?;
             ingest::maybe_rewind_terra(pool, lcd, cursor).await?;
-            lcd.latest_height().await?
+            let canonical_cursor = db::indexed_terra_height(pool).await?;
+            lcd.latest_height_at_least(canonical_cursor).await?
         }
         Chain::Bsc => {
             if !bsc.enabled() {
                 return Err(LedgerError::Provider("no_bsc_provider"));
             }
             ingest::maybe_rewind_bsc(pool, bsc, cursor).await?;
-            bsc.block_number().await?.saturating_sub(BSC_FINALITY_DEPTH)
+            let canonical_cursor = db::indexed_bsc_block(pool).await?;
+            let minimum = if canonical_cursor > 0 {
+                canonical_cursor.saturating_add(BSC_FINALITY_DEPTH)
+            } else {
+                0
+            };
+            bsc.block_number_at_least(minimum)
+                .await?
+                .saturating_sub(BSC_FINALITY_DEPTH)
         }
     };
     let after_rewind = match chain {

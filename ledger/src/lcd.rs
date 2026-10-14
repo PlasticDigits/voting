@@ -42,11 +42,17 @@ impl LcdClient {
     async fn get_json<T: for<'de> Deserialize<'de>>(&self, path: &str) -> LedgerResult<T> {
         let mut last = LedgerError::Provider("no_lcd_provider");
         for base in &self.urls {
-            let response = self
+            let mut request = self
                 .http
-                .get(format!("{}{path}", base.trim_end_matches('/')))
-                .send()
-                .await;
+                .get(format!("{}{path}", base.trim_end_matches('/')));
+            if path == "/cosmos/base/tendermint/v1beta1/blocks/latest"
+                || path.starts_with("/cosmos/tx/v1beta1/txs?")
+            {
+                request = request
+                    .header("Cache-Control", "no-cache, max-age=0")
+                    .header("Pragma", "no-cache");
+            }
+            let response = request.send().await;
             let decoded = async {
                 let response = response.map_err(|_| LedgerError::Provider("lcd_transport"))?;
                 let value: serde_json::Value = crate::transport::decode(response).await?;
@@ -73,10 +79,35 @@ impl LcdClient {
         Err(last)
     }
     pub async fn latest_height(&self) -> LedgerResult<i64> {
-        let resp: BlockResponse = self
-            .get_json("/cosmos/base/tendermint/v1beta1/blocks/latest")
-            .await?;
-        validate_header(&resp, None, true, &self.expected_chain_id)
+        self.latest_height_at_least(0).await
+    }
+    /// A fresh-looking but lower cached head cannot hide a healthy alternative.
+    pub async fn latest_height_at_least(&self, minimum: i64) -> LedgerResult<i64> {
+        let mut last = LedgerError::Provider("no_lcd_provider");
+        for url in &self.urls {
+            let source = Self {
+                http: self.http.clone(),
+                urls: vec![url.clone()],
+                expected_chain_id: self.expected_chain_id.clone(),
+                rpc: self.rpc.clone(),
+            };
+            let observed = async {
+                let response: BlockResponse = source
+                    .get_json("/cosmos/base/tendermint/v1beta1/blocks/latest")
+                    .await?;
+                let height = validate_header(&response, None, true, &self.expected_chain_id)?;
+                if height < minimum {
+                    return Err(LedgerError::Provider("provider_head_regressed"));
+                }
+                Ok(height)
+            }
+            .await;
+            match observed {
+                Ok(height) => return Ok(height),
+                Err(error) => last = error,
+            }
+        }
+        Err(last)
     }
     pub async fn cw20_balance(&self, token: &str, address: &str) -> LedgerResult<BigInt> {
         #[derive(Deserialize)]

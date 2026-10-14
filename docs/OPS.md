@@ -51,6 +51,8 @@ For the current roughly 0.45-second BSC block cadence, set production `POLL_INTE
 
 Test each candidate BSC provider from the deployment network for chain56, fresh head/header, a CL8Y-filtered `eth_getLogs` request at one finalized block, and a bound `eth_call`. A successful balance call alone cannot certify forward indexing: [BNB Chain documents disabled logs on its public dataseed endpoints](https://docs.bnbchain.org/bnb-smart-chain/developers/json_rpc/json-rpc-endpoint/). Record only sanitized capability/latency/lag results; configured credentials stay in OpenBao and provider messages/URLs stay out of worker logs. Static `provider_class` labels distinguish RPC limits/method errors, transport/schema failures and canonicality failures.
 
+Configure independent capable LCD providers for complete-observation failover. The worker refuses a fresh-looking head below the committed cursor after canonical rewind and tries the next provider; all-behind providers leave accounting/checkpoint freshness unchanged. Mutable latest-block and transaction-search requests ask gateways to revalidate cached data. A gateway ignoring these headers must still pass physical transaction-manifest, network, height/time and canonical hash checks. After deployment, sample readiness and safe provider classes across an extended window; a single healthy sample does not establish sustained progress. See [snapshot admission invariants](LEDGER_INVARIANTS.md#l15--snapshot-admission-38) and [HTTP-to-Postgres regressions](../ledger/tests/hardening.rs).
+
 ## 2. Legal ops (sibling repo)
 
 Confirm hostname with ops **before** any admin write. Proposed: `vote.cl8y.com`.

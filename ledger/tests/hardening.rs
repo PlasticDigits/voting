@@ -5496,3 +5496,232 @@ async fn bsc_rpc_error_codes_preserve_safe_classes_without_provider_messages() {
         server.abort();
     }
 }
+
+async fn rpc_server_with_tip(
+    height: i64,
+) -> (
+    String,
+    Arc<std::sync::atomic::AtomicI64>,
+    tokio::task::JoinHandle<()>,
+) {
+    let tip = Arc::new(std::sync::atomic::AtomicI64::new(height));
+    let app = Router::new()
+        .fallback(axum::routing::post(rpc_fixture))
+        .with_state(RpcFixture {
+            tip: tip.clone(),
+            bad: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+        });
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    (url, tip, server)
+}
+#[tokio::test]
+async fn cached_lower_head_fails_over_at_canonical_cursor_and_all_lower_publish_nothing_both_chains(
+) {
+    for chain in [Chain::Terra, Chain::Bsc] {
+        let Some((pool, _lock)) = setup().await else {
+            return;
+        };
+        let (primary, primary_state, primary_server) = terra_fork_server(103).await;
+        let (secondary, secondary_state, secondary_server) = terra_fork_server(106).await;
+        let (rpc_primary, _, rpc_primary_server) = rpc_server_with_tip(118).await;
+        let (rpc_secondary, rpc_secondary_tip, rpc_secondary_server) =
+            rpc_server_with_tip(121).await;
+        seed_terra_fork_electorate(&pool, &secondary_state, false).await;
+        let good_lcd = LcdClient::new(vec![secondary.clone()]);
+        let cfg = config(&secondary);
+        let good_bsc = voting_ledger::bsc::BscClient::new(vec![rpc_secondary.clone()]);
+        for height in 101..=104 {
+            ingest_test_block(&pool, chain, &good_lcd, &good_bsc, &cfg, height)
+                .await
+                .unwrap();
+        }
+        let lcd = LcdClient::new(vec![primary.clone(), secondary.clone()]);
+        let bsc =
+            voting_ledger::bsc::BscClient::new(vec![rpc_primary.clone(), rpc_secondary.clone()]);
+        if chain == Chain::Terra {
+            assert_eq!(
+                lcd.latest_height().await.unwrap(),
+                103,
+                "default API still returns first valid head"
+            );
+            assert_eq!(lcd.latest_height_at_least(104).await.unwrap(), 106);
+        } else {
+            assert_eq!(bsc.block_number().await.unwrap(), 118);
+            assert_eq!(bsc.block_number_at_least(119).await.unwrap(), 121);
+        }
+        voting_ledger::worker::poll_chain(&pool, &Some(lcd.clone()), &bsc, &cfg, chain)
+            .await
+            .unwrap();
+        let cursor = match chain {
+            Chain::Terra => db::indexed_terra_height(&pool).await.unwrap(),
+            Chain::Bsc => db::indexed_bsc_block(&pool).await.unwrap(),
+        };
+        assert_eq!(cursor, 106);
+        let wallet = if chain == Chain::Terra { ALICE } else { EVM };
+        assert_eq!(
+            db::balance_at(&pool, chain, wallet, 106).await.unwrap(),
+            BigInt::from(994)
+        );
+        let before: (i64, String, i64, chrono::DateTime<chrono::Utc>) = sqlx::query_as(
+            "SELECT height,block_hash,epoch,observed_at FROM ledger_checkpoints WHERE chain=$1",
+        )
+        .bind(chain.as_str())
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        secondary_state.tip.store(105, Ordering::Relaxed);
+        rpc_secondary_tip.store(120, Ordering::Relaxed);
+        let error = voting_ledger::worker::poll_chain(&pool, &Some(lcd), &bsc, &cfg, chain)
+            .await
+            .unwrap_err();
+        assert_eq!(error.to_string(), "provider: provider_head_regressed");
+        let after: (i64, String, i64, chrono::DateTime<chrono::Utc>) = sqlx::query_as(
+            "SELECT height,block_hash,epoch,observed_at FROM ledger_checkpoints WHERE chain=$1",
+        )
+        .bind(chain.as_str())
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(after, before);
+        let table = if chain == Chain::Terra {
+            "cl8y_cw20_transfers"
+        } else {
+            "cl8y_bep20_transfers"
+        };
+        let rows: i64 = sqlx::query_scalar(&format!("SELECT COUNT(*) FROM public.{table}"))
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(rows, 6);
+        let hashes: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM ledger_canonical_blocks WHERE chain=$1")
+                .bind(chain.as_str())
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(hashes, 7);
+        assert_eq!(
+            db::balance_at(&pool, chain, wallet, 106).await.unwrap(),
+            BigInt::from(994)
+        );
+        // A real rewind can legitimately lower the admissible cursor; the worker
+        // must use the newly canonical checkpoint, rather than its old106 cursor.
+        if chain == Chain::Terra {
+            primary_state.fork_after.store(104, Ordering::Relaxed);
+            secondary_state.fork_after.store(104, Ordering::Relaxed);
+            secondary_state.tip.store(105, Ordering::Relaxed);
+            let lcd = LcdClient::new(vec![primary, secondary]);
+            voting_ledger::worker::poll_chain(&pool, &Some(lcd), &bsc, &cfg, chain)
+                .await
+                .unwrap();
+            assert_eq!(db::indexed_terra_height(&pool).await.unwrap(), 105);
+            assert_eq!(
+                db::balance_at(&pool, chain, wallet, 105).await.unwrap(),
+                BigInt::from(994)
+            );
+        }
+        primary_server.abort();
+        secondary_server.abort();
+        rpc_primary_server.abort();
+        rpc_secondary_server.abort();
+    }
+}
+
+#[tokio::test]
+async fn mutable_lcd_cache_bypass_avoids_false_refusals_and_incoherent_origin_still_rejects() {
+    use base64::Engine;
+    use sha2::{Digest, Sha256};
+    for cached_latest in [true, false] {
+        let Some((pool, _lock)) = setup().await else {
+            return;
+        };
+        let origin = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let missing_directives = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let immutable_bypassed = Arc::new(AtomicBool::new(false));
+        let mode = origin.clone();
+        let missing = missing_directives.clone();
+        let immutable = immutable_bypassed.clone();
+        let app=Router::new().fallback(get(move|uri:OriginalUri,headers:axum::http::HeaderMap| {
+            let mode=mode.clone();let missing=missing.clone();let immutable=immutable.clone();
+            async move {
+                let path=uri.0.path();
+                let latest=path.ends_with("/blocks/latest");let search=path.contains("/tx/");
+                let bypass=headers.get("cache-control").and_then(|v|v.to_str().ok())==Some("no-cache, max-age=0")
+                    && headers.get("pragma").and_then(|v|v.to_str().ok())==Some("no-cache");
+                if (latest||search)&&!bypass{missing.fetch_add(1,Ordering::Relaxed);}
+                if !latest&&!search&&(headers.contains_key("cache-control")||headers.contains_key("pragma")){immutable.store(true,Ordering::Relaxed);}
+                let state=mode.load(Ordering::Relaxed);
+                let bytes="cached-gateway-transfer:111";
+                if path.contains("/blocks/") {
+                    let height=if latest && (state==1||(cached_latest&&!bypass)){110}else{111};
+                    Json(serde_json::json!({"block_id":{"hash":format!("{height:064X}")},"sdk_block":{
+                        "header":{"height":height.to_string(),"chain_id":"columbus-5","time":chrono::Utc::now().to_rfc3339()},
+                        "data":{"txs":[base64::engine::general_purpose::STANDARD.encode(bytes)]}
+                    }}))
+                } else if state==2 || (!cached_latest&&!bypass) {
+                    Json(serde_json::json!({"pagination":null,"total":"0","tx_responses":[]}))
+                } else {
+                    Json(serde_json::json!({"pagination":null,"total":"1","tx_responses":[{
+                        "height":"111","txhash":hex::encode_upper(Sha256::digest(bytes.as_bytes())),"code":0,"logs":[],
+                        "events":[{"type":"wasm","attributes":[
+                            {"key":"_contract_address","value":DEFAULT_CL8Y_CW20},{"key":"action","value":"transfer"},
+                            {"key":"from","value":ALICE},{"key":"to","value":"terra1bob"},{"key":"amount","value":"1"}
+                        ]}]
+                    }]}))
+                }
+            }
+        }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let seed = TerraForkFixture::new(110);
+        seed_terra_fork_electorate(&pool, &seed, false).await;
+        let mut tx = pool.begin().await.unwrap();
+        db::lock_chain(&mut tx, Chain::Terra).await.unwrap();
+        db::publish_checkpoint(&mut tx, Chain::Terra, 110, &format!("{:064X}", 110), 110)
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+        let lcd = LcdClient::new(vec![url.clone()]);
+        let cfg = config(&url);
+        assert_eq!(
+            ingest::ingest_terra_height(&pool, &lcd, &cfg, 111)
+                .await
+                .unwrap(),
+            1
+        );
+        assert_eq!(missing_directives.load(Ordering::Relaxed), 0);
+        assert!(
+            !immutable_bypassed.load(Ordering::Relaxed),
+            "immutable height/hash reads keep ordinary caching"
+        );
+        let before:(i64,String,i64,chrono::DateTime<chrono::Utc>)=sqlx::query_as("SELECT height,block_hash,epoch,observed_at FROM ledger_checkpoints WHERE chain='terra'").fetch_one(&pool).await.unwrap();
+        for (state, class) in [
+            (1, "future_terra_height"),
+            (2, "incomplete_or_reordered_execution_set"),
+        ] {
+            origin.store(state, Ordering::Relaxed);
+            let error = ingest::ingest_terra_height(&pool, &lcd, &cfg, 111)
+                .await
+                .unwrap_err();
+            assert_eq!(error.to_string(), format!("provider: {class}"));
+            let after:(i64,String,i64,chrono::DateTime<chrono::Utc>)=sqlx::query_as("SELECT height,block_hash,epoch,observed_at FROM ledger_checkpoints WHERE chain='terra'").fetch_one(&pool).await.unwrap();
+            assert_eq!(after, before);
+            assert_eq!(db::indexed_terra_height(&pool).await.unwrap(), 111);
+            assert_eq!(
+                db::balance_at(&pool, Chain::Terra, ALICE, 111)
+                    .await
+                    .unwrap(),
+                BigInt::from(999)
+            );
+            let events: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM cl8y_cw20_transfers")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+            assert_eq!(events, 1);
+        }
+        server.abort();
+    }
+}
