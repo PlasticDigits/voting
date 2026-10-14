@@ -1,0 +1,312 @@
+{
+  "code_commit": "1e04b088664e8dd82769542be30676dea4d43d12",
+  "existing_adapter_observations": [
+    {
+      "canonical_adapter_passed": true,
+      "executions": 4,
+      "height": 30833775,
+      "hostname": "api-lunc-lcd.binodes.com",
+      "observed_tip": 30833775
+    },
+    {
+      "canonical_adapter_passed": true,
+      "executions": 1,
+      "height": 30833774,
+      "hostname": "api-lunc-lcd.binodes.com",
+      "observed_tip": 30833775
+    },
+    {
+      "canonical_adapter_passed": true,
+      "executions": 1,
+      "height": 30833773,
+      "hostname": "api-lunc-lcd.binodes.com",
+      "observed_tip": 30833776
+    }
+  ],
+  "deployment_network_head": {
+    "resource": "ledger",
+    "resource_uuid": "s6j6fx1870zbsmhbu2do1yiz",
+    "configured_commit": "1e04b088664e8dd82769542be30676dea4d43d12",
+    "status": "running:healthy",
+    "observed_at": "2026-10-14T11:55:43.907899+00:00",
+    "task_uuid": "jhmvuczd62jrle2w2bhltee1",
+    "execution_uuid": "qm6qh9dcin4ab4xhbl3mg3wr",
+    "inventory": {
+      "read_only": true,
+      "relations": [],
+      "head": {
+        "hostname": "api-lunc-lcd.binodes.com",
+        "chain_id": "columbus-5",
+        "height": 30833773,
+        "age_seconds": 17.294,
+        "manifest_transactions": 1,
+        "pass": true
+      }
+    },
+    "temporary_task_deleted": true
+  },
+  "same_provider_hash_search_checks": [
+    {
+      "hostname": "api-lunc-lcd.binodes.com",
+      "mode": "default",
+      "latest": {
+        "http_status": 200,
+        "class": null,
+        "elapsed_ms": 2478,
+        "cache": {
+          "age_seconds": 0,
+          "max_age_seconds": null,
+          "s_maxage_seconds": null,
+          "no_cache": false,
+          "no_store": false,
+          "cf_cache_status": null
+        }
+      },
+      "chain": "columbus-5",
+      "height": 30833775,
+      "head_age_seconds": 9.52,
+      "head_fresh": true,
+      "target_height": 30833775,
+      "manifest": {
+        "http_status": 200,
+        "class": null,
+        "elapsed_ms": 748,
+        "cache": {
+          "age_seconds": 0,
+          "max_age_seconds": null,
+          "s_maxage_seconds": null,
+          "no_cache": false,
+          "no_store": false,
+          "cf_cache_status": null
+        }
+      },
+      "explicit_chain_ok": true,
+      "explicit_height_ok": true,
+      "block_hash_valid": true,
+      "manifest_count": 4,
+      "search": {
+        "http_status": 200,
+        "class": null,
+        "elapsed_ms": 2850,
+        "cache": {
+          "age_seconds": 0,
+          "max_age_seconds": null,
+          "s_maxage_seconds": null,
+          "no_cache": false,
+          "no_store": false,
+          "cf_cache_status": null
+        }
+      },
+      "search_count": 4,
+      "search_total": 4,
+      "execution_heights_ok": true,
+      "manifest_matches_search": true,
+      "hash_recheck": {
+        "http_status": 200,
+        "class": null,
+        "elapsed_ms": 370,
+        "cache": {
+          "age_seconds": 3,
+          "max_age_seconds": null,
+          "s_maxage_seconds": null,
+          "no_cache": false,
+          "no_store": false,
+          "cf_cache_status": null
+        }
+      },
+      "same_provider_hash_consistent": true,
+      "latest_after": {
+        "http_status": 200,
+        "class": null,
+        "elapsed_ms": 312,
+        "cache": {
+          "age_seconds": 5,
+          "max_age_seconds": null,
+          "s_maxage_seconds": null,
+          "no_cache": false,
+          "no_store": false,
+          "cf_cache_status": null
+        }
+      },
+      "height_after": 30833775,
+      "head_age_after_seconds": 13.8,
+      "latest_receded": false,
+      "explicit_future_to_latest": false
+    },
+    {
+      "hostname": "api-lunc-lcd.binodes.com",
+      "mode": "default",
+      "latest": {
+        "http_status": 200,
+        "class": null,
+        "elapsed_ms": 2398,
+        "cache": {
+          "age_seconds": 0,
+          "max_age_seconds": null,
+          "s_maxage_seconds": null,
+          "no_cache": false,
+          "no_store": false,
+          "cf_cache_status": null
+        }
+      },
+      "chain": "columbus-5",
+      "height": 30833775,
+      "head_age_seconds": 9.44,
+      "head_fresh": true,
+      "target_height": 30833774,
+      "manifest": {
+        "http_status": 200,
+        "class": null,
+        "elapsed_ms": 726,
+        "cache": {
+          "age_seconds": 0,
+          "max_age_seconds": null,
+          "s_maxage_seconds": null,
+          "no_cache": false,
+          "no_store": false,
+          "cf_cache_status": null
+        }
+      },
+      "explicit_chain_ok": true,
+      "explicit_height_ok": true,
+      "block_hash_valid": true,
+      "manifest_count": 1,
+      "search": {
+        "http_status": 200,
+        "class": null,
+        "elapsed_ms": 538,
+        "cache": {
+          "age_seconds": 0,
+          "max_age_seconds": null,
+          "s_maxage_seconds": null,
+          "no_cache": false,
+          "no_store": false,
+          "cf_cache_status": null
+        }
+      },
+      "search_count": 1,
+      "search_total": 1,
+      "execution_heights_ok": true,
+      "manifest_matches_search": true,
+      "hash_recheck": {
+        "http_status": 200,
+        "class": null,
+        "elapsed_ms": 358,
+        "cache": {
+          "age_seconds": 1,
+          "max_age_seconds": null,
+          "s_maxage_seconds": null,
+          "no_cache": false,
+          "no_store": false,
+          "cf_cache_status": null
+        }
+      },
+      "same_provider_hash_consistent": true,
+      "latest_after": {
+        "http_status": 200,
+        "class": null,
+        "elapsed_ms": 303,
+        "cache": {
+          "age_seconds": 2,
+          "max_age_seconds": null,
+          "s_maxage_seconds": null,
+          "no_cache": false,
+          "no_store": false,
+          "cf_cache_status": null
+        }
+      },
+      "height_after": 30833775,
+      "head_age_after_seconds": 11.37,
+      "latest_receded": false,
+      "explicit_future_to_latest": false
+    },
+    {
+      "hostname": "api-lunc-lcd.binodes.com",
+      "mode": "default",
+      "latest": {
+        "http_status": 200,
+        "class": null,
+        "elapsed_ms": 2388,
+        "cache": {
+          "age_seconds": 0,
+          "max_age_seconds": null,
+          "s_maxage_seconds": null,
+          "no_cache": false,
+          "no_store": false,
+          "cf_cache_status": null
+        }
+      },
+      "chain": "columbus-5",
+      "height": 30833775,
+      "head_age_seconds": 9.43,
+      "head_fresh": true,
+      "target_height": 30833773,
+      "manifest": {
+        "http_status": 200,
+        "class": null,
+        "elapsed_ms": 522,
+        "cache": {
+          "age_seconds": 0,
+          "max_age_seconds": null,
+          "s_maxage_seconds": null,
+          "no_cache": false,
+          "no_store": false,
+          "cf_cache_status": null
+        }
+      },
+      "explicit_chain_ok": true,
+      "explicit_height_ok": true,
+      "block_hash_valid": true,
+      "manifest_count": 1,
+      "search": {
+        "http_status": 200,
+        "class": null,
+        "elapsed_ms": 542,
+        "cache": {
+          "age_seconds": 0,
+          "max_age_seconds": null,
+          "s_maxage_seconds": null,
+          "no_cache": false,
+          "no_store": false,
+          "cf_cache_status": null
+        }
+      },
+      "search_count": 1,
+      "search_total": 1,
+      "execution_heights_ok": true,
+      "manifest_matches_search": true,
+      "hash_recheck": {
+        "http_status": 200,
+        "class": null,
+        "elapsed_ms": 291,
+        "cache": {
+          "age_seconds": 1,
+          "max_age_seconds": null,
+          "s_maxage_seconds": null,
+          "no_cache": false,
+          "no_store": false,
+          "cf_cache_status": null
+        }
+      },
+      "same_provider_hash_consistent": true,
+      "latest_after": {
+        "http_status": 200,
+        "class": null,
+        "elapsed_ms": 333,
+        "cache": {
+          "age_seconds": 2,
+          "max_age_seconds": null,
+          "s_maxage_seconds": null,
+          "no_cache": false,
+          "no_store": false,
+          "cf_cache_status": null
+        }
+      },
+      "height_after": 30833775,
+      "head_age_after_seconds": 11.12,
+      "latest_receded": false,
+      "explicit_future_to_latest": false
+    }
+  ],
+  "all_checks_passed": true
+}

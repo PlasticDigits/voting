@@ -1,0 +1,230 @@
+{
+  "checks": [
+    {
+      "observed_at": "2026-10-14T11:47:38.014390+00:00",
+      "status": 200,
+      "ready": true
+    },
+    {
+      "observed_at": "2026-10-14T11:47:40.890688+00:00",
+      "status": 200,
+      "ready": true
+    },
+    {
+      "observed_at": "2026-10-14T11:47:43.799012+00:00",
+      "status": 200,
+      "ready": true
+    },
+    {
+      "observed_at": "2026-10-14T11:47:46.674758+00:00",
+      "status": 200,
+      "ready": true
+    },
+    {
+      "observed_at": "2026-10-14T11:47:49.530503+00:00",
+      "status": 200,
+      "ready": true
+    },
+    {
+      "observed_at": "2026-10-14T11:47:52.392999+00:00",
+      "status": 200,
+      "ready": true
+    },
+    {
+      "observed_at": "2026-10-14T11:47:55.262777+00:00",
+      "status": 200,
+      "ready": true
+    },
+    {
+      "observed_at": "2026-10-14T11:47:58.164928+00:00",
+      "status": 200,
+      "ready": true
+    },
+    {
+      "observed_at": "2026-10-14T11:48:01.021525+00:00",
+      "status": 200,
+      "ready": true
+    },
+    {
+      "observed_at": "2026-10-14T11:48:03.922215+00:00",
+      "status": 200,
+      "ready": true
+    },
+    {
+      "observed_at": "2026-10-14T11:48:06.793082+00:00",
+      "status": 200,
+      "ready": true
+    },
+    {
+      "observed_at": "2026-10-14T11:48:09.655497+00:00",
+      "status": 200,
+      "ready": true
+    },
+    {
+      "observed_at": "2026-10-14T11:48:12.553763+00:00",
+      "status": 200,
+      "ready": true
+    },
+    {
+      "observed_at": "2026-10-14T11:48:15.414732+00:00",
+      "status": 200,
+      "ready": true
+    },
+    {
+      "observed_at": "2026-10-14T11:48:18.275451+00:00",
+      "status": 200,
+      "ready": true
+    },
+    {
+      "observed_at": "2026-10-14T11:48:21.142344+00:00",
+      "status": 200,
+      "ready": true
+    },
+    {
+      "observed_at": "2026-10-14T11:48:24.007209+00:00",
+      "status": 200,
+      "ready": true
+    },
+    {
+      "observed_at": "2026-10-14T11:48:26.881792+00:00",
+      "status": 200,
+      "ready": true
+    },
+    {
+      "observed_at": "2026-10-14T11:48:29.739166+00:00",
+      "status": 200,
+      "ready": true
+    },
+    {
+      "observed_at": "2026-10-14T11:48:32.616696+00:00",
+      "status": 200,
+      "ready": true
+    },
+    {
+      "observed_at": "2026-10-14T11:48:35.478510+00:00",
+      "status": 200,
+      "ready": true
+    },
+    {
+      "observed_at": "2026-10-14T11:48:38.343381+00:00",
+      "status": 200,
+      "ready": true
+    },
+    {
+      "observed_at": "2026-10-14T11:48:41.204357+00:00",
+      "status": 200,
+      "ready": true
+    },
+    {
+      "observed_at": "2026-10-14T11:48:44.063906+00:00",
+      "status": 200,
+      "ready": true
+    },
+    {
+      "observed_at": "2026-10-14T11:48:46.923957+00:00",
+      "status": 200,
+      "ready": true
+    },
+    {
+      "observed_at": "2026-10-14T11:48:49.789319+00:00",
+      "status": 200,
+      "ready": true
+    },
+    {
+      "observed_at": "2026-10-14T11:48:52.654364+00:00",
+      "status": 200,
+      "ready": true
+    },
+    {
+      "observed_at": "2026-10-14T11:48:55.517014+00:00",
+      "status": 200,
+      "ready": true
+    },
+    {
+      "observed_at": "2026-10-14T11:48:58.377235+00:00",
+      "status": 200,
+      "ready": true
+    },
+    {
+      "observed_at": "2026-10-14T11:49:01.241016+00:00",
+      "status": 200,
+      "ready": true
+    },
+    {
+      "observed_at": "2026-10-14T11:49:04.106298+00:00",
+      "status": 200,
+      "ready": true
+    },
+    {
+      "observed_at": "2026-10-14T11:49:06.978298+00:00",
+      "status": 200,
+      "ready": true
+    },
+    {
+      "observed_at": "2026-10-14T11:49:09.844186+00:00",
+      "status": 503,
+      "ready": false
+    },
+    {
+      "observed_at": "2026-10-14T11:49:12.715583+00:00",
+      "status": 200,
+      "ready": true
+    },
+    {
+      "observed_at": "2026-10-14T11:49:15.579354+00:00",
+      "status": 200,
+      "ready": true
+    },
+    {
+      "observed_at": "2026-10-14T11:49:18.449325+00:00",
+      "status": 200,
+      "ready": true
+    },
+    {
+      "observed_at": "2026-10-14T11:49:21.314378+00:00",
+      "status": 200,
+      "ready": true
+    },
+    {
+      "observed_at": "2026-10-14T11:49:24.177963+00:00",
+      "status": 503,
+      "ready": false
+    },
+    {
+      "observed_at": "2026-10-14T11:49:27.044310+00:00",
+      "status": 200,
+      "ready": true
+    },
+    {
+      "observed_at": "2026-10-14T11:49:29.906304+00:00",
+      "status": 200,
+      "ready": true
+    },
+    {
+      "observed_at": "2026-10-14T11:49:32.775663+00:00",
+      "status": 200,
+      "ready": true
+    },
+    {
+      "observed_at": "2026-10-14T11:49:35.638972+00:00",
+      "status": 503,
+      "ready": false
+    },
+    {
+      "observed_at": "2026-10-14T11:49:38.503917+00:00",
+      "status": 200,
+      "ready": true
+    },
+    {
+      "observed_at": "2026-10-14T11:49:41.367591+00:00",
+      "status": 200,
+      "ready": true
+    },
+    {
+      "observed_at": "2026-10-14T11:49:44.267053+00:00",
+      "status": 200,
+      "ready": true
+    }
+  ],
+  "passed": false
+}
