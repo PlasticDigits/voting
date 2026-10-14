@@ -254,3 +254,12 @@ the peer and header replacement after proxy/network changes; never broaden this
 trust to an entire private subnet. Database
 identity additionally requires comment `cl8y-voting-ephemeral-test` before destructive
 DDL. The marker must be installed only by initialization of a dedicated test database.
+
+Production LCD selection is `TERRA_LCD_URL=https://api-lunc-lcd.binodes.com,https://terra-classic-lcd.publicnode.com`.
+Set this existing variable: it takes precedence over `LCD_URLS`. The primary
+passed the existing Rust adapter and deployment-network checks recorded in
+[provider evidence](verification/2026-10-14-terra-provider-capabilities.json).
+Keep native `TERRA_RPC_URLS` for bound balance observations. PublicNode's sole-LCD
+configuration showed periodic head/search inconsistencies; longer live readiness
+sampling is mandatory after provider/transport changes. Preserve all origin
+completeness, hash, freshness and finality refusals while correcting selection.
