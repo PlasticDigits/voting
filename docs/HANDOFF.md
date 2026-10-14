@@ -80,7 +80,7 @@ cd frontend && npm test
 
 # postgres integration (docker compose -f docker-compose.test.yml up -d)
 # Compose uses host-network PGPORT 5433 so sqlx is not stuck behind docker-proxy.
-LEDGER_TEST_DATABASE_URL=postgres://voting:voting@127.0.0.1:5433/voting cargo test --workspace --tests --jobs 1 -- --test-threads=1
+LEDGER_TEST_ALLOW_DESTRUCTIVE=1 LEDGER_TEST_DATABASE_URL=postgres://voting:voting@127.0.0.1:5433/voting_test_local cargo test --workspace --tests --jobs 1 -- --test-threads=1
 
 # Playwright (Legal hatch on webServer only)
 cd frontend && npm run test:e2e

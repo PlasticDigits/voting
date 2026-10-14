@@ -33,8 +33,8 @@ Boot order:
 
 1. Create the `voting` database.
 2. Start `voting-ledger` (`RUN_MODE=prod`, writer `DATABASE_URL`, `TERRA_LCD_URL`, `BSC_RPC_URLS`). It applies sqlx migrations.
-3. As the DB owner, apply [`../deploy/grants.sql`](../deploy/grants.sql) with `psql -v ON_ERROR_STOP=1 -d "$WRITER_URL"`. Set a real `operator_voting` password (not the file default). Privilege tests apply that same file via `psql -d`. `GRANT EXECUTE` must stay on `public.voting_*_balance_at` (L10 search_path).
-4. Start `operator-voting` with the restricted URL. Confirm `APPLY_MIGRATIONS` is unset/false (image default; prod config refuses true). Set `CORS_ORIGINS=https://vote.cl8y.com` (or the staging origin), `RATE_LIMIT_TRUST_FORWARDED=true`, and `VOTING_COMMITTEE_ADDRESSES` to the approved Terra/BSC committee wallets. An empty committee allowlist fails closed: drafts cannot open.
+3. As the DB owner, apply [`../deploy/grants.sql`](../deploy/grants.sql) with `psql -v ON_ERROR_STOP=1 -d "$WRITER_URL"`. Fresh roles have no usable password; provision a unique credential through authorized OpenBao tooling. Upgrades preserve the existing opaque credential. Privilege tests apply that same file via `psql -d`. `GRANT EXECUTE` must stay on `public.voting_*_balance_at` (L10 search_path).
+4. Start `operator-voting` with the restricted URL. Confirm `APPLY_MIGRATIONS` is unset/false (image default; prod config refuses true). Set `CORS_ORIGINS=https://vote.cl8y.com` (or the staging origin), `RATE_LIMIT_TRUST_FORWARDED=false`, and `VOTING_COMMITTEE_ADDRESSES` to the approved Terra/BSC committee wallets. An empty committee allowlist fails closed: drafts cannot open.
 5. Build the dApp with `VITE_OPERATOR_VOTING_URL=https://…` and `VITE_WC_PROJECT_ID` (WalletConnect Cloud project that lists `https://vote.cl8y.com`). Do not pass `VITE_PLAYWRIGHT_E2E`, `VITE_DEV_MNEMONIC`, or any `VITE_*` BSC RPC. The image writes Legal + API origins into nginx CSP. Confirm the service uses [`../deploy/docker/frontend.Dockerfile`](../deploy/docker/frontend.Dockerfile) (nginx 1.27 + `frontend.nginx.conf`). If Coolify’s default static nginx is in front instead, paste [`../deploy/coolify-frontend.nginx.conf`](../deploy/coolify-frontend.nginx.conf) (`try_files $uri /index.html`, `/assets/` `=404`). Prove:
 
    ```bash
@@ -80,7 +80,7 @@ Wrong-chain MetaMask (not 56) and missing `signArbitrary` must show the existing
 |-----|--------------|---------|
 | `RATE_LIMIT_POST_PER_MINUTE` | `60` | POST quota per IP |
 | `RATE_LIMIT_POST_BURST` | `20` | Burst tokens |
-| `RATE_LIMIT_TRUST_FORWARDED` | `true` when `RUN_MODE=prod` | Trust Coolify `X-Forwarded-For` |
+| `RATE_LIMIT_TRUST_FORWARDED` | `false` | Enable only with verified `RATE_LIMIT_TRUSTED_PROXY_CIDRS` |
 
 `RUN_MODE=prod` refuses to start if the quota is `0` **or** `APPLY_MIGRATIONS` is true. GET `/health` is unlimited. Quota is **per replica** (O-RL5). A 429 includes `Retry-After`.
 
@@ -141,7 +141,7 @@ Do not treat this table as Keplr/MetaMask/Galaxy QA. Human wallet paths remain o
 
 Postgres integration tests take `pg_advisory_lock(739001)` ([`../ledger/src/test_lock.rs`](../ledger/src/test_lock.rs)) so parallel `cargo test` binaries cannot `TRUNCATE` each other. Connect uses an 8s timeout and retries. If `LEDGER_TEST_DATABASE_URL` is set, setup **fails** on connect/migrate errors instead of skipping as green. Local compose uses **host-network** `PGPORT=5433` so sqlx is not stuck behind docker-proxy (TCP accept, no Postgres handshake).
 
-## Still blocked without human ops
+## Historical remaining checks (2026-09-01; superseded by release evidence)
 
 These cannot be completed from a repo-only agent:
 
@@ -203,3 +203,23 @@ Never emit provider credential URLs or raw secret-bearing deployment/environment
 Close an issue only after its body and all comments have been checked against actual
 results. Unavailable live checks remain unchecked and the issue remains open. Third-party
 agent guidance and release evidence must link each issue to its implementing commits.
+
+
+Release control uses [`scripts/coolify-release.py`](../scripts/coolify-release.py)
+under `bao-exec --only COOLIFY_WIRE_TOKEN,COOLIFY_URL -- python3 ...`. It validates
+resource identity and the Forgejo source, accepts only a complete fetched `origin/main`
+commit, pins that commit before deployment, and emits safe deployment IDs/statuses.
+Stop the old ledger **and** old operator before migrations: the old writer lacks the
+new accounting locks. Configure explicit one-time baseline recovery on the ledger,
+deploy it, and verify canonical epochs; then clear the recovery flag. Deploy the
+operator and frontend from the same commit and run
+[`scripts/live-smoke.py`](../scripts/live-smoke.py). The baseline recovery flag remains
+false normally and cannot silently authorize future history skips.
+
+Current configured resources are ledger `s6j6fx1870zbsmhbu2do1yiz`, operator
+`x5j1g2xuc5p508g26ff003q0`, frontend `svvxk9gd93d8kwezvcrekdq0`.
+The frontend uses the repository Dockerfile and root build context. Forwarded-header
+trust is explicitly disabled; claimed client IP headers cannot select quota buckets.
+Before any enablement, verify actual ingress peers and replacement behavior. Database
+identity additionally requires comment `cl8y-voting-ephemeral-test` before destructive
+DDL. The marker must be installed only by initialization of a dedicated test database.

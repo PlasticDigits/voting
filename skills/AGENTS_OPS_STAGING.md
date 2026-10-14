@@ -69,7 +69,7 @@ This skill is for **3rd-party agents** continuing Coolify, Legal admin, or live 
 
 ```bash
 cargo test --workspace --lib
-LEDGER_TEST_DATABASE_URL=postgres://voting:voting@127.0.0.1:5433/voting cargo test --workspace --tests --jobs 1 -- --test-threads=1
+LEDGER_TEST_ALLOW_DESTRUCTIVE=1 LEDGER_TEST_DATABASE_URL=postgres://voting:voting@127.0.0.1:5433/voting_test_local cargo test --workspace --tests --jobs 1 -- --test-threads=1
 cd frontend && npm test
 sh deploy/docker/test-frontend-spa-fallback.sh
 ```

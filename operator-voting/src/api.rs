@@ -65,8 +65,7 @@ async fn health() -> Json<Health> {
 }
 
 async fn openapi() -> Json<serde_json::Value> {
-    use utoipa::OpenApi;
-    Json(serde_json::to_value(ApiDoc::openapi()).expect("OpenAPI serialization"))
+    Json(crate::contracts::openapi())
 }
 
 #[derive(utoipa::OpenApi)]
