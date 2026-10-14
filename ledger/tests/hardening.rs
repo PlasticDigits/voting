@@ -380,7 +380,18 @@ async fn rpc_fixture(
                         log.as_object_mut().unwrap().remove("blockNumber");
                     }
                     17 => log["topics"][1] = serde_json::json!(format!("0x{}", "f".repeat(64))),
+                    26 => log["data"] = serde_json::json!(format!("0x{}", "f".repeat(64))),
                     _ => {}
+                }
+                if mode == 27 {
+                    log["data"] = serde_json::json!(format!("0x{:064x}", 10));
+                    log["logIndex"] = serde_json::json!("0x1");
+                    let mut credit = log.clone();
+                    credit["topics"][1] = serde_json::json!(format!("0x{}", "0".repeat(64)));
+                    credit["topics"][2] =
+                        serde_json::json!(format!("0x{:0>64}", EVM.trim_start_matches("0x")));
+                    credit["logIndex"] = serde_json::json!("0x0");
+                    logs.push(credit);
                 }
                 if mode == 14 {
                     logs.push(log.clone());
@@ -5007,4 +5018,202 @@ async fn process_sigterm_during_pending_terra_lcd_keeps_bsc_progress_and_retries
     terminate_child(&mut restarted).await;
     terra_server.abort();
     bsc_server.abort();
+}
+
+#[tokio::test]
+async fn maximum_uint256_bsc_http_event_persists_exact_debit_credit_and_replay() {
+    let Some((pool, _lock)) = setup().await else {
+        return;
+    };
+    let (url, mode, server) = rpc_server().await;
+    mode.store(26, Ordering::Relaxed);
+    let client = voting_ledger::bsc::BscClient::new(vec![url.clone()]);
+    let cfg = config(&url);
+    let maximum = (BigInt::from(1) << 256) - BigInt::from(1);
+    let recipient = "0x2222222222222222222222222222222222222222";
+    seed_registration(&pool, Chain::Bsc, EVM, 100, &maximum, None)
+        .await
+        .unwrap();
+    seed_registration(&pool, Chain::Bsc, recipient, 100, &BigInt::from(0), None)
+        .await
+        .unwrap();
+    let mut tx = pool.begin().await.unwrap();
+    db::lock_chain(&mut tx, Chain::Bsc).await.unwrap();
+    db::publish_checkpoint(&mut tx, Chain::Bsc, 100, &block_hash(100), 115)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    for _ in 0..2 {
+        assert_eq!(
+            ingest::ingest_bsc_range(&pool, &client, &cfg, 101, 101)
+                .await
+                .unwrap(),
+            1
+        );
+    }
+    let amount: String = sqlx::query_scalar("SELECT amount::text FROM cl8y_bep20_transfers")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(amount, maximum.to_string());
+    assert_eq!(
+        db::balance_at(&pool, Chain::Bsc, EVM, 101).await.unwrap(),
+        BigInt::from(0)
+    );
+    assert_eq!(
+        db::balance_at(&pool, Chain::Bsc, recipient, 101)
+            .await
+            .unwrap(),
+        maximum
+    );
+    assert_eq!(
+        db::balance_at(&pool, Chain::Bsc, EVM, 100).await.unwrap(),
+        maximum
+    );
+    let rows: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM cl8y_bep20_transfers")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(rows, 1);
+    assert_eq!(db::indexed_bsc_block(&pool).await.unwrap(), 101);
+    server.abort();
+}
+
+#[tokio::test]
+async fn multiple_distinct_bsc_logs_in_one_block_sort_credit_before_debit_and_replay_once() {
+    let Some((pool, _lock)) = setup().await else {
+        return;
+    };
+    let (url, mode, server) = rpc_server().await;
+    mode.store(27, Ordering::Relaxed);
+    let client = voting_ledger::bsc::BscClient::new(vec![url.clone()]);
+    let cfg = config(&url);
+    let recipient = "0x2222222222222222222222222222222222222222";
+    for wallet in [EVM, recipient] {
+        seed_registration(&pool, Chain::Bsc, wallet, 100, &BigInt::from(0), None)
+            .await
+            .unwrap();
+    }
+    let mut tx = pool.begin().await.unwrap();
+    db::lock_chain(&mut tx, Chain::Bsc).await.unwrap();
+    db::publish_checkpoint(&mut tx, Chain::Bsc, 100, &block_hash(100), 115)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    for _ in 0..2 {
+        assert_eq!(
+            ingest::ingest_bsc_range(&pool, &client, &cfg, 101, 101)
+                .await
+                .unwrap(),
+            2
+        );
+    }
+    let rows: Vec<(String, i32, String)> = sqlx::query_as(
+        "SELECT tx_hash,log_index,amount::text FROM cl8y_bep20_transfers ORDER BY log_index",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        rows,
+        vec![
+            (block_hash(101 + 10000), 0, "10".into()),
+            (block_hash(101 + 10000), 1, "10".into())
+        ]
+    );
+    assert_eq!(
+        db::balance_at(&pool, Chain::Bsc, EVM, 101).await.unwrap(),
+        BigInt::from(0)
+    );
+    assert_eq!(
+        db::balance_at(&pool, Chain::Bsc, recipient, 101)
+            .await
+            .unwrap(),
+        BigInt::from(10)
+    );
+    assert_eq!(db::indexed_bsc_block(&pool).await.unwrap(), 101);
+    server.abort();
+}
+
+#[tokio::test]
+async fn failed_terra_execution_and_base64_wasm_attributes_ingest_atomically_through_http() {
+    use base64::Engine;
+    use sha2::{Digest, Sha256};
+    let Some((pool, _lock)) = setup().await else {
+        return;
+    };
+    let failed = "synthetic-terra-failed-execution:101";
+    let successful = "synthetic-terra-successful-execution:101";
+    let failed_hash = hex::encode_upper(Sha256::digest(failed.as_bytes()));
+    let success_hash = hex::encode_upper(Sha256::digest(successful.as_bytes()));
+    let expected_hash = success_hash.clone();
+    let encode = |text: &str| base64::engine::general_purpose::STANDARD.encode(text);
+    let events = serde_json::json!([{"type":"wasm","attributes":[
+        {"key":encode("_contract_address"),"value":encode(DEFAULT_CL8Y_CW20)},
+        {"key":encode("action"),"value":encode("transfer")},
+        {"key":encode("from"),"value":encode(ALICE)},
+        {"key":encode("to"),"value":encode("terra1bob")},
+        {"key":encode("amount"),"value":encode("10")}
+    ]}]);
+    let response = serde_json::json!({"pagination":null,"total":"2","txs":[{"body":{}}],"tx_responses":[
+        {"txhash":failed_hash,"height":"101","code":5,"logs":[],"events":[{"type":"wasm","attributes":[
+            {"key":"_contract_address","value":DEFAULT_CL8Y_CW20},{"key":"action","value":"transfer"},
+            {"key":"from","value":ALICE},{"key":"to","value":"terra1bob"},{"key":"amount","value":"999999"}
+        ]}]},
+        {"txhash":success_hash,"height":"101","code":0,"logs":[],"events":events}
+    ]});
+    let app=Router::new().fallback(get(move|uri:OriginalUri|{let response=response.clone();async move{
+        if uri.0.path().contains("/blocks/") {
+            Json(serde_json::json!({"block_id":{"hash":format!("{:064X}",101)},"sdk_block":{
+                "header":{"height":"101","chain_id":"columbus-5","time":chrono::Utc::now().to_rfc3339()},
+                "data":{"txs":[base64::engine::general_purpose::STANDARD.encode(failed),base64::engine::general_purpose::STANDARD.encode(successful)]}
+            }}))
+        } else {Json(response)}
+    }}));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let state = TerraForkFixture::new(101);
+    seed_terra_fork_electorate(&pool, &state, true).await;
+    let lcd = LcdClient::new(vec![url.clone()]);
+    let cfg = config(&url);
+    for _ in 0..2 {
+        assert_eq!(
+            ingest::ingest_terra_height(&pool, &lcd, &cfg, 101)
+                .await
+                .unwrap(),
+            1
+        );
+    }
+    let event: (String, i32, String) =
+        sqlx::query_as("SELECT tx_hash,msg_index,amount::text FROM cl8y_cw20_transfers")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(event, (expected_hash, 0, "10".into()));
+    let rows: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM cl8y_cw20_transfers")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(rows, 1);
+    assert_eq!(
+        db::balance_at(&pool, Chain::Terra, ALICE, 101)
+            .await
+            .unwrap(),
+        BigInt::from(990)
+    );
+    assert_eq!(
+        db::balance_at(&pool, Chain::Terra, "terra1bob", 101)
+            .await
+            .unwrap(),
+        BigInt::from(10)
+    );
+    let checkpoint: (i64, String, bool, bool) = sqlx::query_as(
+        "SELECT height,block_hash,complete,canonical FROM ledger_checkpoints WHERE chain='terra'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(checkpoint, (101, state.hash(101), true, true));
+    server.abort();
 }
