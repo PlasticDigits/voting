@@ -105,10 +105,7 @@ pub fn verify_terra(
     signature_b64: &str,
     pubkey_b64: &str,
 ) -> VotingResult<()> {
-    match verify_adr36(expected_address, message, signature_b64, pubkey_b64) {
-        Ok(()) => Ok(()),
-        Err(_) => verify_terra_raw_fallback(expected_address, message, signature_b64, pubkey_b64),
-    }
+    verify_adr36(expected_address, message, signature_b64, pubkey_b64)
 }
 
 #[cfg(test)]
@@ -147,7 +144,8 @@ mod tests {
         let message = "CL8Y Terra test";
         let sig: Signature = sk.sign(message.as_bytes());
         let sig_b64 = base64::engine::general_purpose::STANDARD.encode(sig.to_bytes());
-        verify_terra(&address, message, &sig_b64, &pubkey_b64).unwrap();
+        verify_terra_raw_fallback(&address, message, &sig_b64, &pubkey_b64).unwrap();
+        assert!(verify_terra(&address, message, &sig_b64, &pubkey_b64).is_err());
     }
 
     #[test]

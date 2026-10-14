@@ -2,10 +2,7 @@
 //! can read balance functions + write `voting.*` but cannot write ledger ingest.
 
 fn test_db_url() -> Option<String> {
-    std::env::var("LEDGER_TEST_DATABASE_URL")
-        .or_else(|_| std::env::var("DATABASE_URL"))
-        .ok()
-        .filter(|s| !s.is_empty())
+    voting_ledger::test_lock::test_database_url()
 }
 
 const GRANTS_SQL: &str = include_str!("../../deploy/grants.sql");
@@ -61,10 +58,25 @@ async fn restricted_role_from_grants_sql_cannot_write_ledger() {
     // sqlx pool execute / raw_sql is not that path and can stop after the first statement.
     apply_grants_sql(&url);
 
-    let restricted_url = rewrite_user(&url, "operator_voting", "change-me-in-prod");
-    let restricted = voting_ledger::test_lock::test_pool(&restricted_url)
+    // Reuse the guarded ephemeral admin URL; SET ROLE avoids any test login password.
+    let restricted = sqlx::postgres::PgPoolOptions::new()
+        .after_connect(|conn, _| {
+            Box::pin(async move {
+                sqlx::query("SET ROLE operator_voting")
+                    .execute(conn)
+                    .await?;
+                Ok(())
+            })
+        })
+        .connect(&url)
         .await
-        .expect("operator_voting login from deploy/grants.sql");
+        .expect("isolated restricted role pool");
+    operator_voting::db::validate_production_privileges(&restricted)
+        .await
+        .expect("effective permission matrix");
+    assert!(operator_voting::db::validate_production_privileges(&admin)
+        .await
+        .is_err());
 
     let read = sqlx::query_scalar::<_, String>(
         "SELECT public.voting_cl8y_balance_at('terra1missing', 1)::text",
@@ -130,8 +142,8 @@ async fn restricted_role_from_grants_sql_cannot_write_ledger() {
 
     let draft_ok = sqlx::query(
         r#"
-        INSERT INTO voting.proposals (id, chain, proposer, title, body_html, body_canonical, status)
-        VALUES (gen_random_uuid(), 'terra', 'terra1test', 't', '<p>b</p>', '{}', 'draft')
+        INSERT INTO voting.proposals (id, chain, proposer, title, body_html, body_canonical)
+        VALUES (gen_random_uuid(), 'terra', 'terra1test', 't', '<p>b</p>', '{}')
         "#,
     )
     .execute(&restricted)
@@ -171,10 +183,10 @@ async fn restricted_role_from_grants_sql_cannot_write_ledger() {
             SELECT id FROM voting.proposals WHERE proposer = 'terra1test' LIMIT 1
         )
         INSERT INTO voting.proposal_analysis
-            (id, proposal_id, chain, wallet_address, sections, body_html, source, signature_id)
+            (id, proposal_id, chain, wallet_address, sections, body_html, source, signature_id,revision)
         SELECT gen_random_uuid(), p.id, 'terra', 'terra1committee',
                '{"what":"ok","benefits":"ok","risks":"ok","short_term":"ok","long_term":"ok"}'::jsonb,
-               '<p>ok</p>', 'committee', s.id
+               '<p>ok</p>', 'committee', s.id,1
         FROM s, p
         "#,
     )
@@ -185,6 +197,96 @@ async fn restricted_role_from_grants_sql_cannot_write_ledger() {
         "restricted role must write voting.proposal_analysis: {analysis_ok:?}"
     );
 
+    for table in [
+        "voting.signatures",
+        "voting.votes",
+        "voting.proposal_snapshots",
+        "voting.action_receipts",
+        "voting.proposal_revisions",
+        "voting.proposal_comments",
+        "voting.proposal_analysis",
+    ] {
+        for privilege in ["UPDATE", "DELETE", "TRUNCATE"] {
+            let allowed: bool =
+                sqlx::query_scalar("SELECT has_table_privilege(current_user,$1,$2)")
+                    .bind(table)
+                    .bind(privilege)
+                    .fetch_one(&restricted)
+                    .await
+                    .unwrap();
+            assert!(!allowed, "unexpected {table} {privilege}");
+        }
+    }
+    assert!(sqlx::query(
+        "INSERT INTO voting.proposal_snapshots VALUES(gen_random_uuid(),'terra','forged',999)"
+    )
+    .execute(&restricted)
+    .await
+    .is_err());
+    // Original 999 attack, from a connection with pre-existing hostile temp objects.
+    let mut hostile = admin.acquire().await.unwrap();
+    sqlx::query("CREATE TEMP TABLE voting_registrations AS SELECT * FROM public.voting_registrations WITH NO DATA").execute(&mut *hostile).await.unwrap();
+    sqlx::query("INSERT INTO pg_temp.voting_registrations(chain,wallet_address,registered_at_height,initial_balance) VALUES('terra','terra1shadow',1,999)").execute(&mut *hostile).await.unwrap();
+    sqlx::query(
+        "CREATE TEMP TABLE cl8y_balances AS SELECT * FROM public.cl8y_balances WITH NO DATA",
+    )
+    .execute(&mut *hostile)
+    .await
+    .unwrap();
+    sqlx::query("SET ROLE operator_voting")
+        .execute(&mut *hostile)
+        .await
+        .unwrap();
+    sqlx::query("SET search_path=pg_temp,voting,public")
+        .execute(&mut *hostile)
+        .await
+        .unwrap();
+    let actual: String =
+        sqlx::query_scalar("SELECT public.voting_cl8y_balance_at('terra1shadow',1)::text")
+            .fetch_one(&mut *hostile)
+            .await
+            .unwrap();
+    assert_eq!(actual, "0", "hostile temp tables returned forged 999");
+    sqlx::query("RESET ROLE")
+        .execute(&mut *hostile)
+        .await
+        .unwrap();
+    sqlx::query("RESET search_path")
+        .execute(&mut *hostile)
+        .await
+        .unwrap();
+    sqlx::query("DROP TABLE pg_temp.voting_registrations,pg_temp.cl8y_balances")
+        .execute(&mut *hostile)
+        .await
+        .unwrap();
+    sqlx::query("CREATE TABLE voting.future_table(id int)")
+        .execute(&admin)
+        .await
+        .unwrap();
+    let future: bool = sqlx::query_scalar("SELECT has_table_privilege(current_user,'voting.future_table','SELECT,INSERT,UPDATE,DELETE,TRUNCATE')").fetch_one(&restricted).await.unwrap();
+    assert!(!future, "future-table blanket privilege creep");
+    sqlx::query("DROP TABLE voting.future_table")
+        .execute(&admin)
+        .await
+        .unwrap();
+    let password: Option<String> =
+        sqlx::query_scalar("SELECT rolpassword FROM pg_authid WHERE rolname='operator_voting'")
+            .fetch_one(&admin)
+            .await
+            .unwrap();
+    assert!(
+        password.is_none(),
+        "fresh role must have no default usable password"
+    );
+
+    assert!(sqlx::query("INSERT INTO voting.proposals(id,chain,proposer,title,body_html,body_canonical,status,terra_height,bsc_block,opened_at) VALUES(gen_random_uuid(),'terra','forged','t','b','{}','open',1,1,now())").execute(&restricted).await.is_err(),"direct forged opening must be denied");
+    assert!(
+        sqlx::query("SELECT * FROM voting.freeze_proposal(gen_random_uuid(),gen_random_uuid())")
+            .execute(&restricted)
+            .await
+            .is_err(),
+        "freeze without signed complete revision must be denied"
+    );
     let create = sqlx::query("CREATE TABLE voting.should_not_exist (id int)")
         .execute(&restricted)
         .await;
@@ -220,15 +322,112 @@ fn apply_grants_sql(url: &str) {
     );
 }
 
-fn rewrite_user(url: &str, user: &str, pass: &str) -> String {
-    if let Some(rest) = url
-        .strip_prefix("postgres://")
-        .or_else(|| url.strip_prefix("postgresql://"))
-    {
-        if let Some(at) = rest.find('@') {
-            let after_at = &rest[at..];
-            return format!("postgresql://{user}:{pass}{after_at}");
-        }
+#[tokio::test]
+async fn populated_upgrade_preserves_legacy_and_revokes_blanket_grants() {
+    let Some(url) = test_db_url() else {
+        return;
+    };
+    let _lock = voting_ledger::test_lock::hold_integration_db(&url)
+        .await
+        .unwrap();
+    let admin = voting_ledger::test_lock::test_pool(&url).await.unwrap();
+    let database = format!("voting_test_upgrade_{}", uuid::Uuid::new_v4().simple());
+    sqlx::query(&format!("CREATE DATABASE {database}"))
+        .execute(&admin)
+        .await
+        .unwrap();
+    let upgrade_url = format!("{}/{}", url.rsplit_once('/').unwrap().0, database);
+    assert!(
+        voting_ledger::test_lock::test_pool(&upgrade_url)
+            .await
+            .is_err(),
+        "unmarked database must refuse before migrations"
+    );
+    sqlx::query(&format!(
+        "COMMENT ON DATABASE {database} IS 'cl8y-voting-ephemeral-test'"
+    ))
+    .execute(&admin)
+    .await
+    .unwrap();
+    let upgrade = voting_ledger::test_lock::test_pool(&upgrade_url)
+        .await
+        .unwrap();
+    let mut conn = upgrade.acquire().await.unwrap();
+    sqlx::query("SET search_path TO public,pg_temp")
+        .execute(&mut *conn)
+        .await
+        .unwrap();
+    for sql in [
+        include_str!("../../ledger/migrations/20260825000001_ledger.sql"),
+        include_str!("../../ledger/migrations/20260825000002_voting.sql"),
+        include_str!("../../ledger/migrations/20260825000003_qualify_balance_fns.sql"),
+        include_str!("../../ledger/migrations/20260830000001_proposal_sections.sql"),
+        include_str!("../../ledger/migrations/20260830000002_draft_lifecycle.sql"),
+    ] {
+        sqlx::raw_sql(sql).execute(&mut *conn).await.unwrap();
     }
-    url.to_string()
+    let id = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO voting.proposals(id,chain,proposer,title,body_html,body_canonical,status,terra_height,bsc_block,opened_at) VALUES($1,'terra','legacy','old title','<p>legacy</p>','legacy','open',20,20,now())").bind(id).execute(&mut *conn).await.unwrap();
+    sqlx::query("INSERT INTO voting.proposal_snapshots VALUES($1,'terra','legacy',99)")
+        .bind(id)
+        .execute(&mut *conn)
+        .await
+        .unwrap();
+    sqlx::raw_sql("DO $$ BEGIN IF NOT EXISTS(SELECT FROM pg_roles WHERE rolname='operator_voting') THEN CREATE ROLE operator_voting LOGIN; END IF; END $$; GRANT ALL ON ALL TABLES IN SCHEMA voting TO operator_voting; ALTER DEFAULT PRIVILEGES IN SCHEMA voting GRANT ALL ON TABLES TO operator_voting;").execute(&mut *conn).await.unwrap();
+    for sql in [
+        include_str!("../../ledger/migrations/20261014000001_ledger_hardening.sql"),
+        include_str!("../../ledger/migrations/20261014000100_transactional_actions.sql"),
+        include_str!("../../ledger/migrations/20261014000101_restrict_existing_api_role.sql"),
+    ] {
+        sqlx::raw_sql(sql).execute(&mut *conn).await.unwrap();
+    }
+    let (validity,title,weight):(String,String,String)=sqlx::query_as("SELECT p.snapshot_validity,p.title,s.weight::text FROM voting.proposals p JOIN voting.proposal_snapshots s ON s.proposal_id=p.id WHERE p.id=$1").bind(id).fetch_one(&mut *conn).await.unwrap();
+    assert_eq!(
+        (validity.as_str(), title.as_str(), weight.as_str()),
+        ("legacy_unverified", "old title", "99")
+    );
+    let revisions: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM voting.proposal_revisions WHERE proposal_id=$1")
+            .bind(id)
+            .fetch_one(&mut *conn)
+            .await
+            .unwrap();
+    assert_eq!(revisions, 1);
+    let restricted = sqlx::postgres::PgPoolOptions::new()
+        .after_connect(|conn, _| {
+            Box::pin(async move {
+                sqlx::query("SET ROLE operator_voting")
+                    .execute(conn)
+                    .await?;
+                Ok(())
+            })
+        })
+        .connect(&upgrade_url)
+        .await
+        .unwrap();
+    operator_voting::db::validate_production_privileges(&restricted)
+        .await
+        .unwrap();
+    apply_grants_sql(&upgrade_url);
+    apply_grants_sql(&upgrade_url);
+    operator_voting::db::validate_production_privileges(&restricted)
+        .await
+        .unwrap();
+    assert!(
+        sqlx::query("UPDATE voting.proposal_snapshots SET weight=999")
+            .execute(&restricted)
+            .await
+            .is_err()
+    );
+    assert!(sqlx::query("DELETE FROM voting.proposal_revisions")
+        .execute(&restricted)
+        .await
+        .is_err());
+    restricted.close().await;
+    drop(conn);
+    upgrade.close().await;
+    sqlx::query(&format!("DROP DATABASE {database}"))
+        .execute(&admin)
+        .await
+        .unwrap();
 }

@@ -3,7 +3,6 @@ use axum::http::StatusCode;
 use axum::routing::{get, post, put};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use crate::balance_query::{resolve_balance_height, resolve_chain};
@@ -13,12 +12,11 @@ use crate::crypto::{verify_eip191, verify_terra};
 use crate::db;
 use crate::error::{VotingError, VotingResult};
 use crate::html::sanitize_proposal_html;
-use crate::payload::{body_hash, parse_and_validate};
+use crate::payload::{body_hash, SignedPayload};
 use crate::proposal_sections::{
     prepare_analysis, prepare_sections, render_analysis_html, summary_html, visible_len,
     AnalysisSections,
 };
-use crate::rate_limit::{enforce_post_rate_limit, RateLimitState};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -27,10 +25,11 @@ pub struct AppState {
 }
 
 pub fn router(state: AppState) -> Router {
-    let limits = RateLimitState::from_config(&state.cfg);
     Router::new()
         .route("/health", get(health))
+        .route("/ready", get(readiness))
         .route("/openapi.json", get(openapi))
+        .route("/v1/receipts/{id}", get(get_receipt))
         .route("/v1/register", post(register))
         .route("/v1/registration/{addr}", get(registration))
         .route("/v1/proposals", get(list_proposals).post(create_draft))
@@ -49,18 +48,15 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/proposals/{id}/votes/{addr}", get(get_vote))
         .route("/v1/balances/{addr}", get(get_balance))
         .with_state(state)
-        .layer(axum::middleware::from_fn_with_state(
-            limits,
-            enforce_post_rate_limit,
-        ))
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 struct Health {
     ok: bool,
     service: &'static str,
 }
 
+#[utoipa::path(get,path="/health",responses((status=200,description="Process liveness",body=Health)))]
 async fn health() -> Json<Health> {
     Json(Health {
         ok: true,
@@ -69,23 +65,47 @@ async fn health() -> Json<Health> {
 }
 
 async fn openapi() -> Json<serde_json::Value> {
-    Json(serde_json::json!({
-        "openapi": "3.0.3",
-        "info": { "title": "operator-voting", "version": "0.1.0" },
-        "paths": {
-            "/v1/register": { "post": { "summary": "Register a wallet" } },
-            "/v1/proposals": { "get": { "summary": "List drafts and open polls" }, "post": { "summary": "Create a draft (purpose=draft)" } },
-            "/v1/proposals/{id}/sections": { "put": { "summary": "Proposer amends draft sections" } },
-            "/v1/proposals/{id}/comments": { "post": { "summary": "Signed review comment" } },
-            "/v1/proposals/{id}/analysis": { "post": { "summary": "Committee independent analysis" } },
-            "/v1/proposals/{id}/open": { "post": { "summary": "Committee opens voting and freezes the snapshot" } },
-            "/v1/proposals/{id}/votes": { "post": { "summary": "Cast vote (status=open only)" } }
-        }
-    }))
+    use utoipa::OpenApi;
+    Json(serde_json::to_value(ApiDoc::openapi()).expect("OpenAPI serialization"))
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(utoipa::OpenApi)]
+#[openapi(
+    paths(
+        health,
+        readiness,
+        register,
+        registration,
+        list_proposals,
+        create_draft,
+        get_proposal,
+        amend_sections,
+        add_comment,
+        list_comments,
+        attach_analysis,
+        list_analysis,
+        open_vote,
+        cast_vote,
+        get_vote,
+        get_balance,
+        get_receipt
+    ),
+    components(schemas(
+        SignedPayload,
+        SignedRequest,
+        CreateDraftRequest,
+        AmendRequest,
+        CommentRequest,
+        AnalysisRequest,
+        OpenRequest,
+        CastVoteRequest
+    ))
+)]
+pub struct ApiDoc;
+
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct SignedRequest {
+    #[schema(value_type=crate::dto::VotingChain)]
     pub chain: String,
     pub address: String,
     pub payload: String,
@@ -93,41 +113,43 @@ pub struct SignedRequest {
     pub pubkey: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct CreateDraftRequest {
     #[serde(flatten)]
     pub signed: SignedRequest,
     pub title: String,
     #[serde(alias = "sections")]
+    #[schema(value_type=Option<crate::proposal_sections::ProposalSections>)]
     pub body_sections: Option<serde_json::Value>,
     #[serde(default)]
     pub body_html: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct AmendRequest {
     #[serde(flatten)]
     pub signed: SignedRequest,
     pub title: String,
     #[serde(alias = "sections")]
+    #[schema(value_type=crate::proposal_sections::ProposalSections)]
     pub body_sections: serde_json::Value,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct CommentRequest {
     #[serde(flatten)]
     pub signed: SignedRequest,
     pub body_html: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct AnalysisRequest {
     #[serde(flatten)]
     pub signed: SignedRequest,
     pub sections: AnalysisSections,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct OpenRequest {
     #[serde(flatten)]
     pub signed: SignedRequest,
@@ -136,10 +158,11 @@ pub struct OpenRequest {
     pub bsc_block: Option<i64>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct CastVoteRequest {
     #[serde(flatten)]
     pub signed: SignedRequest,
+    #[schema(value_type=crate::dto::VoteChoice)]
     pub choice: String,
 }
 
@@ -189,23 +212,119 @@ fn require_committee(cfg: &VotingConfig, address: &str) -> VotingResult<()> {
     Ok(())
 }
 
-async fn insert_purpose_signature(
-    pool: &sqlx::PgPool,
-    chain: &str,
+/// A nonce lock serializes retries; proposal row locks serialize lifecycle changes.
+/// Signature, mutation, revision history and receipt commit or roll back together.
+async fn begin_action<'a>(
+    state: &'a AppState,
     req: &SignedRequest,
     purpose: &str,
-) -> VotingResult<Uuid> {
-    let hash = hex::encode(Sha256::digest(req.payload.as_bytes()));
-    db::insert_signature(
-        pool,
-        chain,
-        &req.address,
-        req.pubkey.as_deref(),
-        &req.signature,
-        &hash,
+    proposal_id: Option<Uuid>,
+) -> VotingResult<(
+    sqlx::Transaction<'a, sqlx::Postgres>,
+    Uuid,
+    Option<serde_json::Value>,
+    SignedPayload,
+)> {
+    let payload = crate::payload::parse_domain(
+        &req.payload,
         purpose,
-    )
-    .await
+        &req.address,
+        &state.cfg.terra_chain_id,
+        &state.cfg.evm_chain_id,
+    )?;
+    if let Some(target) = proposal_id {
+        if payload.proposal_id.as_deref() != Some(target.to_string().as_str()) {
+            return Err(VotingError::Unauthorized(
+                "signed action targets a different proposal".into(),
+            ));
+        }
+    }
+    deny_cross_scheme(&req.chain, &payload.chain)?;
+    verify_signed(req, &req.payload)?;
+    deny_blacklisted(&state.cfg, &req.address)?;
+    if matches!(purpose, "analyze" | "open_vote") {
+        require_committee(&state.cfg, &req.address)?;
+    }
+    if payload.version != 2 {
+        return Err(VotingError::BadRequest(
+            "payload version 2 required; reload and re-sign".into(),
+        ));
+    }
+    let nonce = payload
+        .nonce
+        .as_deref()
+        .filter(|n| !n.is_empty() && n.len() <= 128)
+        .ok_or_else(|| VotingError::BadRequest("bounded unique nonce required".into()))?;
+    let hash = body_hash(&req.payload);
+    let mut tx = state.pool.begin().await?;
+    if matches!(purpose, "open_vote" | "vote") {
+        sqlx::query("SELECT pg_advisory_xact_lock(8136,1),pg_advisory_xact_lock(8136,2)")
+            .execute(&mut *tx)
+            .await?;
+    }
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
+        .bind(format!(
+            "{}:{}:{}",
+            req.chain,
+            normalize_address(&req.address),
+            nonce
+        ))
+        .execute(&mut *tx)
+        .await?;
+    let prior: Option<(Uuid,String,serde_json::Value)> = sqlx::query_as("SELECT s.id,s.payload_hash,r.response FROM voting.signatures s JOIN voting.action_receipts r ON r.signature_id=s.id WHERE s.chain=$1 AND s.wallet_address=$2 AND s.nonce=$3")
+        .bind(&req.chain).bind(normalize_address(&req.address)).bind(nonce).fetch_optional(&mut *tx).await?;
+    if let Some((id, old_hash, response)) = prior {
+        if old_hash != hash {
+            return Err(VotingError::Conflict(
+                "nonce already consumed by different signed bytes".into(),
+            ));
+        }
+        return Ok((tx, id, Some(response), payload));
+    }
+    if let Some(id) = proposal_id {
+        db::get_proposal(&mut tx, id)
+            .await?
+            .ok_or_else(|| VotingError::NotFound("proposal".into()))?;
+    }
+    crate::payload::validate_time(&payload, chrono::Utc::now().timestamp())?;
+    let sig_id = Uuid::new_v4();
+    sqlx::query("INSERT INTO voting.signatures(id,chain,wallet_address,pubkey,signature,payload_hash,purpose,signed_payload,scheme,domain,nonce,proposal_id,revision) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)")
+        .bind(sig_id).bind(&req.chain).bind(normalize_address(&req.address)).bind(&req.pubkey).bind(&req.signature).bind(hash).bind(purpose)
+        .bind(&req.payload).bind(if req.chain == "terra" { "ADR-36" } else { "EIP-191" }).bind(format!("{}:{}",payload.app,payload.chain_id)).bind(nonce).bind(proposal_id).bind(payload.revision).execute(&mut *tx).await?;
+    Ok((tx, sig_id, None, payload))
+}
+
+async fn finish_action(
+    mut tx: sqlx::Transaction<'_, sqlx::Postgres>,
+    signature_id: Uuid,
+    proposal_id: Option<Uuid>,
+    mut response: serde_json::Value,
+) -> VotingResult<serde_json::Value> {
+    let revision: Option<i64> = if let Some(id) = proposal_id {
+        sqlx::query_scalar("SELECT revision FROM voting.proposals WHERE id=$1")
+            .bind(id)
+            .fetch_optional(&mut *tx)
+            .await?
+    } else {
+        None
+    };
+    let content = response
+        .as_object_mut()
+        .and_then(|o| o.remove("receipt_content"));
+    response["receipt_id"] = serde_json::json!(signature_id);
+    sqlx::query("INSERT INTO voting.action_receipts(signature_id,proposal_id,revision,response,content) VALUES($1,$2,$3,$4,$5)")
+        .bind(signature_id).bind(proposal_id).bind(revision).bind(&response).bind(content).execute(&mut *tx).await?;
+    tx.commit().await?;
+    Ok(response)
+}
+
+fn require_revision(payload: &SignedPayload, proposal: &db::ProposalRow) -> VotingResult<()> {
+    if payload.revision != Some(proposal.revision) {
+        return Err(VotingError::Conflict(
+            "stale or missing revision; reload and re-sign".into(),
+        ));
+    }
+    Ok(())
 }
 
 fn proposal_summary(p: &db::ProposalRow) -> Option<String> {
@@ -221,6 +340,8 @@ fn proposal_list_json(p: &db::ProposalRow, tallies: Vec<db::TallyRow>) -> serde_
         "chain": p.chain,
         "proposer": p.proposer,
         "title": p.title,
+        "revision": p.revision,
+        "snapshot_validity": p.snapshot_validity,
         "summary": proposal_summary(p),
         "terra_height": p.terra_height,
         "bsc_block": p.bsc_block,
@@ -231,44 +352,53 @@ fn proposal_list_json(p: &db::ProposalRow, tallies: Vec<db::TallyRow>) -> serde_
     })
 }
 
+#[utoipa::path(post, path = "/v1/register", request_body = SignedRequest, responses((status = 200, description = "Accepted response, mutation responses include immutable receipt_id", body = crate::dto::RegistrationResponse),(status = 400, description = "Invalid input", body = crate::error::ErrorBody),(status = 401, description = "Invalid signature/domain/time", body = crate::error::ErrorBody),(status = 403, description = "Actor, state, eligibility or quota forbidden", body = crate::error::ErrorBody),(status = 404, description = "Not found", body = crate::error::ErrorBody),(status = 409, description = "Revision, state or nonce conflict", body = crate::error::ErrorBody),(status = 429, description = "Rate limited", body = crate::error::ErrorBody)))]
 async fn register(
     State(state): State<AppState>,
     Json(req): Json<SignedRequest>,
 ) -> VotingResult<Json<serde_json::Value>> {
-    let payload = parse_and_validate(
-        &req.payload,
-        "register",
-        &req.address,
-        &state.cfg.terra_chain_id,
-        &state.cfg.evm_chain_id,
-    )?;
+    let (mut conn, sig_id, prior, payload) = begin_action(&state, &req, "register", None).await?;
+    if let Some(prior) = prior {
+        return Ok(Json(prior));
+    }
+
     deny_cross_scheme(&req.chain, &payload.chain)?;
-    verify_signed(&req, &req.payload)?;
     deny_blacklisted(&state.cfg, &req.address)?;
-    let sig_id = insert_purpose_signature(&state.pool, &payload.chain, &req, "register").await?;
-    db::insert_registration_intent(&state.pool, &payload.chain, &req.address, sig_id).await?;
-    let existing = db::ledger_registration(&state.pool, &payload.chain, &req.address).await?;
-    Ok(Json(serde_json::json!({
-        "ok": true,
-        "signature_id": sig_id,
-        "pending": existing.is_none(),
-        "registration": existing.map(|r| serde_json::json!({
-            "chain": r.chain,
-            "address": r.wallet_address,
-            "registered_at_height": r.registered_at_height,
-            "status": r.status,
-        })),
-    })))
+
+    db::insert_registration_intent(&mut conn, &payload.chain, &req.address, sig_id).await?;
+    let existing = db::ledger_registration(&mut conn, &payload.chain, &req.address).await?;
+    Ok(Json(
+        finish_action(
+            conn,
+            sig_id,
+            None,
+            serde_json::json!({
+                "ok": true,
+                "signature_id": sig_id,
+                "pending": existing.is_none(),
+                "registration": existing.map(|r| serde_json::json!({
+                    "chain": r.chain,
+                    "address": r.wallet_address,
+                    "registered_at_height": r.registered_at_height,
+                    "status": r.status,
+                })),
+            }),
+        )
+        .await?,
+    ))
 }
 
+#[utoipa::path(get, path = "/v1/registration/{addr}", params(("addr" = String, Path, description = "Terra or EVM address")), responses((status = 200, description = "Accepted response, mutation responses include immutable receipt_id", body = crate::dto::RegistrationLookup),(status = 400, description = "Invalid input", body = crate::error::ErrorBody),(status = 401, description = "Invalid signature/domain/time", body = crate::error::ErrorBody),(status = 403, description = "Actor, state, eligibility or quota forbidden", body = crate::error::ErrorBody),(status = 404, description = "Not found", body = crate::error::ErrorBody),(status = 409, description = "Revision, state or nonce conflict", body = crate::error::ErrorBody),(status = 429, description = "Rate limited", body = crate::error::ErrorBody)))]
 async fn registration(
     State(state): State<AppState>,
     Path(addr): Path<String>,
 ) -> VotingResult<Json<serde_json::Value>> {
-    let terra = db::ledger_registration(&state.pool, "terra", &addr).await?;
-    let bsc = db::ledger_registration(&state.pool, "bsc", &addr).await?;
-    let pending_terra = db::pending_intent(&state.pool, "terra", &addr).await?;
-    let pending_bsc = db::pending_intent(&state.pool, "bsc", &addr).await?;
+    let mut conn = state.pool.acquire().await?;
+
+    let terra = db::ledger_registration(&mut conn, "terra", &addr).await?;
+    let bsc = db::ledger_registration(&mut conn, "bsc", &addr).await?;
+    let pending_terra = db::pending_intent(&mut conn, "terra", &addr).await?;
+    let pending_bsc = db::pending_intent(&mut conn, "bsc", &addr).await?;
     if terra.is_none() && bsc.is_none() && !pending_terra && !pending_bsc {
         return Err(VotingError::NotFound("not registered".into()));
     }
@@ -279,15 +409,18 @@ async fn registration(
     })))
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 struct ListQuery {
     status: Option<String>,
 }
 
+#[utoipa::path(get, path = "/v1/proposals", params(("status" = Option<String>, Query, description = "draft or open")), responses((status = 200, description = "Accepted response, mutation responses include immutable receipt_id", body = Vec<crate::dto::ProposalListItem>),(status = 400, description = "Invalid input", body = crate::error::ErrorBody),(status = 401, description = "Invalid signature/domain/time", body = crate::error::ErrorBody),(status = 403, description = "Actor, state, eligibility or quota forbidden", body = crate::error::ErrorBody),(status = 404, description = "Not found", body = crate::error::ErrorBody),(status = 409, description = "Revision, state or nonce conflict", body = crate::error::ErrorBody),(status = 429, description = "Rate limited", body = crate::error::ErrorBody)))]
 async fn list_proposals(
     State(state): State<AppState>,
     Query(q): Query<ListQuery>,
 ) -> VotingResult<Json<Vec<serde_json::Value>>> {
+    let mut conn = state.pool.acquire().await?;
+
     if let Some(status) = q.status.as_deref() {
         if status != "draft" && status != "open" {
             return Err(VotingError::BadRequest(
@@ -295,19 +428,26 @@ async fn list_proposals(
             ));
         }
     }
-    let rows = db::list_proposals(&state.pool, q.status.as_deref()).await?;
+    let rows = db::list_proposals(&mut conn, q.status.as_deref()).await?;
     let mut out = Vec::new();
     for p in rows {
-        let tallies = db::tally(&state.pool, p.id).await?;
+        let tallies = db::tally(&mut conn, p.id).await?;
         out.push(proposal_list_json(&p, tallies));
     }
     Ok(Json(out))
 }
 
+#[utoipa::path(post, path = "/v1/proposals", request_body = CreateDraftRequest, responses((status = 201, description = "Accepted response, mutation responses include immutable receipt_id", body = crate::dto::DraftResponse),(status = 400, description = "Invalid input", body = crate::error::ErrorBody),(status = 401, description = "Invalid signature/domain/time", body = crate::error::ErrorBody),(status = 403, description = "Actor, state, eligibility or quota forbidden", body = crate::error::ErrorBody),(status = 404, description = "Not found", body = crate::error::ErrorBody),(status = 409, description = "Revision, state or nonce conflict", body = crate::error::ErrorBody),(status = 429, description = "Rate limited", body = crate::error::ErrorBody)))]
 async fn create_draft(
     State(state): State<AppState>,
     Json(req): Json<CreateDraftRequest>,
 ) -> VotingResult<(StatusCode, Json<serde_json::Value>)> {
+    let (mut conn, sig_id, prior, payload) =
+        begin_action(&state, &req.signed, "draft", None).await?;
+    if let Some(prior) = prior {
+        return Ok((StatusCode::CREATED, Json(prior)));
+    }
+
     if req.title.len() > 200 {
         return Err(VotingError::BadRequest("proposal too large".into()));
     }
@@ -322,13 +462,6 @@ async fn create_draft(
         .as_ref()
         .ok_or_else(|| VotingError::BadRequest("body_sections is required".into()))?;
     let prepared = prepare_sections(sections)?;
-    let payload = parse_and_validate(
-        &req.signed.payload,
-        "draft",
-        &req.signed.address,
-        &state.cfg.terra_chain_id,
-        &state.cfg.evm_chain_id,
-    )?;
     deny_cross_scheme(&req.signed.chain, &payload.chain)?;
     if payload.title.as_deref() != Some(req.title.as_str()) {
         return Err(VotingError::Unauthorized("signed title mismatch".into()));
@@ -338,29 +471,27 @@ async fn create_draft(
             "signed body hash mismatch".into(),
         ));
     }
-    verify_signed(&req.signed, &req.signed.payload)?;
 
-    let reg = db::ledger_registration(&state.pool, &payload.chain, &req.signed.address)
+    let reg = db::ledger_registration(&mut conn, &payload.chain, &req.signed.address)
         .await?
         .ok_or_else(|| VotingError::Forbidden("register before drafting".into()))?;
-    let (terra_h, bsc_b) = db::tip_heights(&state.pool).await?;
+    let (terra_h, bsc_b) = db::tip_heights(&mut conn).await?;
     let tip = if payload.chain == "terra" {
         terra_h
     } else {
         bsc_b
     };
     let height = resolve_balance_height(None, tip, Some(reg.registered_at_height));
-    let bal = db::balance_at(&state.pool, &payload.chain, &req.signed.address, height).await?;
+    let bal = db::balance_at(&mut conn, &payload.chain, &req.signed.address, height).await?;
     if bal < state.cfg.min_proposal_raw {
         return Err(VotingError::Forbidden(
             "need at least 1000 CL8Y on this address's chain to start a draft".into(),
         ));
     }
 
-    insert_purpose_signature(&state.pool, &payload.chain, &req.signed, "draft").await?;
     let sections = serde_json::Value::Object(prepared.sanitized);
     let id = db::insert_draft(
-        &state.pool,
+        &mut conn,
         &payload.chain,
         &req.signed.address,
         &req.title,
@@ -369,34 +500,50 @@ async fn create_draft(
         &sections,
     )
     .await?;
+    db::record_revision(&mut conn, id, sig_id).await?;
     Ok((
         StatusCode::CREATED,
-        Json(serde_json::json!({
-            "id": id,
-            "status": "draft",
-            "terra_height": serde_json::Value::Null,
-            "bsc_block": serde_json::Value::Null,
-        })),
+        Json(
+            finish_action(
+                conn,
+                sig_id,
+                Some(id),
+                serde_json::json!({
+                    "id": id,
+                    "status": "draft",
+                    "revision": 1,
+                    "terra_height": serde_json::Value::Null,
+                    "bsc_block": serde_json::Value::Null,
+                }),
+            )
+            .await?,
+        ),
     ))
 }
 
+#[utoipa::path(get, path = "/v1/proposals/{id}", params(("id" = String, Path, description = "UUID")), responses((status = 200, description = "Accepted response, mutation responses include immutable receipt_id", body = crate::dto::ProposalDetail),(status = 400, description = "Invalid input", body = crate::error::ErrorBody),(status = 401, description = "Invalid signature/domain/time", body = crate::error::ErrorBody),(status = 403, description = "Actor, state, eligibility or quota forbidden", body = crate::error::ErrorBody),(status = 404, description = "Not found", body = crate::error::ErrorBody),(status = 409, description = "Revision, state or nonce conflict", body = crate::error::ErrorBody),(status = 429, description = "Rate limited", body = crate::error::ErrorBody)))]
 async fn get_proposal(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> VotingResult<Json<serde_json::Value>> {
-    let p = db::get_proposal(&state.pool, id)
+    let mut conn = state.pool.acquire().await?;
+
+    let p = db::get_proposal(&mut conn, id)
         .await?
         .ok_or_else(|| VotingError::NotFound("proposal".into()))?;
-    let tallies = db::tally(&state.pool, id).await?;
-    let comments = db::list_comments(&state.pool, id).await?;
-    let analysis = db::list_analysis(&state.pool, id).await?;
+    let tallies = db::tally(&mut conn, id).await?;
+    let comments = db::list_comments(&mut conn, id).await?;
+    let analysis = db::list_analysis(&mut conn, id).await?;
     Ok(Json(serde_json::json!({
         "id": p.id,
         "chain": p.chain,
         "proposer": p.proposer,
         "title": p.title,
+        "revision": p.revision,
+        "snapshot_validity": p.snapshot_validity,
         "body_html": p.body_html,
         "body_sections": p.body_sections.as_ref().map(|s| &s.0),
+        "body_hash": p.body_sections.as_ref().and_then(|s| prepare_sections(&s.0).ok()).map(|s| s.body_hash),
         "summary": proposal_summary(&p),
         "terra_height": p.terra_height,
         "bsc_block": p.bsc_block,
@@ -411,6 +558,7 @@ async fn get_proposal(
             "wallet_address": a.wallet_address,
             "body_html": a.body_html,
             "source": a.source,
+            "revision": a.revision,
             "created_at": a.created_at,
             "sections": a.sections.0,
             "machine_generated": a.source == "ai",
@@ -419,16 +567,23 @@ async fn get_proposal(
     })))
 }
 
+#[utoipa::path(put, path = "/v1/proposals/{id}/sections", request_body = AmendRequest, params(("id" = String, Path, description = "UUID")), responses((status = 200, description = "Accepted response, mutation responses include immutable receipt_id", body = crate::dto::AmendResponse),(status = 400, description = "Invalid input", body = crate::error::ErrorBody),(status = 401, description = "Invalid signature/domain/time", body = crate::error::ErrorBody),(status = 403, description = "Actor, state, eligibility or quota forbidden", body = crate::error::ErrorBody),(status = 404, description = "Not found", body = crate::error::ErrorBody),(status = 409, description = "Revision, state or nonce conflict", body = crate::error::ErrorBody),(status = 429, description = "Rate limited", body = crate::error::ErrorBody)))]
 async fn amend_sections(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
     Json(req): Json<AmendRequest>,
 ) -> VotingResult<Json<serde_json::Value>> {
+    let (mut conn, sig_id, prior, payload) =
+        begin_action(&state, &req.signed, "amend", Some(id)).await?;
+    if let Some(prior) = prior {
+        return Ok(Json(prior));
+    }
+
     if req.title.len() > 200 {
         return Err(VotingError::BadRequest("proposal too large".into()));
     }
     deny_blacklisted(&state.cfg, &req.signed.address)?;
-    let proposal = db::get_proposal(&state.pool, id)
+    let proposal = db::get_proposal(&mut conn, id)
         .await?
         .ok_or_else(|| VotingError::NotFound("proposal".into()))?;
     if proposal.status != "draft" {
@@ -447,13 +602,6 @@ async fn amend_sections(
     };
     let prepared = prepare_sections(&req.body_sections)?;
     let new_hash = prepared.body_hash.clone();
-    let payload = parse_and_validate(
-        &req.signed.payload,
-        "amend",
-        &req.signed.address,
-        &state.cfg.terra_chain_id,
-        &state.cfg.evm_chain_id,
-    )?;
     deny_cross_scheme(&req.signed.chain, &payload.chain)?;
     if payload.proposal_id.as_deref() != Some(&id.to_string()) {
         return Err(VotingError::Unauthorized(
@@ -473,11 +621,11 @@ async fn amend_sections(
             "stale prev_body_hash; reload and re-sign".into(),
         ));
     }
-    verify_signed(&req.signed, &req.signed.payload)?;
-    insert_purpose_signature(&state.pool, &payload.chain, &req.signed, "amend").await?;
+    require_revision(&payload, &proposal)?;
+
     let sections = serde_json::Value::Object(prepared.sanitized);
     db::update_draft_sections(
-        &state.pool,
+        &mut conn,
         id,
         &req.title,
         &prepared.body_html,
@@ -485,21 +633,29 @@ async fn amend_sections(
         &sections,
     )
     .await?;
+    db::record_revision(&mut conn, id, sig_id).await?;
     Ok(Json(
-        serde_json::json!({ "ok": true, "body_hash": new_hash }),
+        finish_action(conn, sig_id, Some(id), serde_json::json!({ "ok": true, "body_hash": new_hash, "revision": proposal.revision + 1 })).await?,
     ))
 }
 
+#[utoipa::path(post, path = "/v1/proposals/{id}/comments", request_body = CommentRequest, params(("id" = String, Path, description = "UUID")), responses((status = 201, description = "Accepted response, mutation responses include immutable receipt_id", body = crate::dto::CommentResponse),(status = 400, description = "Invalid input", body = crate::error::ErrorBody),(status = 401, description = "Invalid signature/domain/time", body = crate::error::ErrorBody),(status = 403, description = "Actor, state, eligibility or quota forbidden", body = crate::error::ErrorBody),(status = 404, description = "Not found", body = crate::error::ErrorBody),(status = 409, description = "Revision, state or nonce conflict", body = crate::error::ErrorBody),(status = 429, description = "Rate limited", body = crate::error::ErrorBody)))]
 async fn add_comment(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
     Json(req): Json<CommentRequest>,
 ) -> VotingResult<(StatusCode, Json<serde_json::Value>)> {
+    let (mut conn, sig_id, prior, payload) =
+        begin_action(&state, &req.signed, "comment", Some(id)).await?;
+    if let Some(prior) = prior {
+        return Ok((StatusCode::CREATED, Json(prior)));
+    }
+
     if req.body_html.len() > MAX_COMMENT_BYTES {
         return Err(VotingError::BadRequest("comment too large".into()));
     }
     deny_blacklisted(&state.cfg, &req.signed.address)?;
-    let proposal = db::get_proposal(&state.pool, id)
+    let proposal = db::get_proposal(&mut conn, id)
         .await?
         .ok_or_else(|| VotingError::NotFound("proposal".into()))?;
     if proposal.status != "draft" && proposal.status != "open" {
@@ -510,13 +666,6 @@ async fn add_comment(
         return Err(VotingError::BadRequest("comment is empty".into()));
     }
     let expected_hash = body_hash(&req.body_html);
-    let payload = parse_and_validate(
-        &req.signed.payload,
-        "comment",
-        &req.signed.address,
-        &state.cfg.terra_chain_id,
-        &state.cfg.evm_chain_id,
-    )?;
     deny_cross_scheme(&req.signed.chain, &payload.chain)?;
     if payload.proposal_id.as_deref() != Some(&id.to_string()) {
         return Err(VotingError::Unauthorized(
@@ -528,14 +677,12 @@ async fn add_comment(
             "signed body hash mismatch".into(),
         ));
     }
-    verify_signed(&req.signed, &req.signed.payload)?;
-    db::ledger_registration(&state.pool, &payload.chain, &req.signed.address)
+    db::ledger_registration(&mut conn, &payload.chain, &req.signed.address)
         .await?
         .ok_or_else(|| VotingError::Forbidden("register before commenting".into()))?;
-    let sig_id =
-        insert_purpose_signature(&state.pool, &payload.chain, &req.signed, "comment").await?;
+
     let comment_id = db::insert_comment(
-        &state.pool,
+        &mut conn,
         id,
         &payload.chain,
         &req.signed.address,
@@ -545,31 +692,50 @@ async fn add_comment(
     .await?;
     Ok((
         StatusCode::CREATED,
-        Json(serde_json::json!({
-            "id": comment_id,
-            "max_per_wallet": MAX_COMMENTS_PER_WALLET_PER_PROPOSAL,
-        })),
+        Json(
+            finish_action(
+                conn,
+                sig_id,
+                Some(id),
+                serde_json::json!({
+                        "id": comment_id,
+                        "max_per_wallet": MAX_COMMENTS_PER_WALLET_PER_PROPOSAL,
+                "receipt_content": { "id":comment_id, "signed_body_html": req.body_html, "body_html": sanitized },
+                    }),
+            )
+            .await?,
+        ),
     ))
 }
 
+#[utoipa::path(get, path = "/v1/proposals/{id}/comments", params(("id" = String, Path, description = "UUID")), responses((status = 200, description = "Accepted response, mutation responses include immutable receipt_id", body = Vec<crate::dto::Comment>),(status = 400, description = "Invalid input", body = crate::error::ErrorBody),(status = 401, description = "Invalid signature/domain/time", body = crate::error::ErrorBody),(status = 403, description = "Actor, state, eligibility or quota forbidden", body = crate::error::ErrorBody),(status = 404, description = "Not found", body = crate::error::ErrorBody),(status = 409, description = "Revision, state or nonce conflict", body = crate::error::ErrorBody),(status = 429, description = "Rate limited", body = crate::error::ErrorBody)))]
 async fn list_comments(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> VotingResult<Json<Vec<db::CommentRow>>> {
-    db::get_proposal(&state.pool, id)
+    let mut conn = state.pool.acquire().await?;
+
+    db::get_proposal(&mut conn, id)
         .await?
         .ok_or_else(|| VotingError::NotFound("proposal".into()))?;
-    Ok(Json(db::list_comments(&state.pool, id).await?))
+    Ok(Json(db::list_comments(&mut conn, id).await?))
 }
 
+#[utoipa::path(post, path = "/v1/proposals/{id}/analysis", request_body = AnalysisRequest, params(("id" = String, Path, description = "UUID")), responses((status = 201, description = "Accepted response, mutation responses include immutable receipt_id", body = crate::dto::AnalysisResponse),(status = 400, description = "Invalid input", body = crate::error::ErrorBody),(status = 401, description = "Invalid signature/domain/time", body = crate::error::ErrorBody),(status = 403, description = "Actor, state, eligibility or quota forbidden", body = crate::error::ErrorBody),(status = 404, description = "Not found", body = crate::error::ErrorBody),(status = 409, description = "Revision, state or nonce conflict", body = crate::error::ErrorBody),(status = 429, description = "Rate limited", body = crate::error::ErrorBody)))]
 async fn attach_analysis(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
     Json(req): Json<AnalysisRequest>,
 ) -> VotingResult<(StatusCode, Json<serde_json::Value>)> {
+    let (mut conn, sig_id, prior, payload) =
+        begin_action(&state, &req.signed, "analyze", Some(id)).await?;
+    if let Some(prior) = prior {
+        return Ok((StatusCode::CREATED, Json(prior)));
+    }
+
     deny_blacklisted(&state.cfg, &req.signed.address)?;
     require_committee(&state.cfg, &req.signed.address)?;
-    let proposal = db::get_proposal(&state.pool, id)
+    let proposal = db::get_proposal(&mut conn, id)
         .await?
         .ok_or_else(|| VotingError::NotFound("proposal".into()))?;
     if proposal.status != "draft" {
@@ -583,13 +749,6 @@ async fn attach_analysis(
         ));
     }
     let (sanitized, _canonical, expected_hash) = prepare_analysis(&req.sections)?;
-    let payload = parse_and_validate(
-        &req.signed.payload,
-        "analyze",
-        &req.signed.address,
-        &state.cfg.terra_chain_id,
-        &state.cfg.evm_chain_id,
-    )?;
     deny_cross_scheme(&req.signed.chain, &payload.chain)?;
     if payload.proposal_id.as_deref() != Some(&id.to_string()) {
         return Err(VotingError::Unauthorized(
@@ -601,11 +760,10 @@ async fn attach_analysis(
             "signed body hash mismatch".into(),
         ));
     }
-    verify_signed(&req.signed, &req.signed.payload)?;
-    let sig_id =
-        insert_purpose_signature(&state.pool, &payload.chain, &req.signed, "analyze").await?;
+    require_revision(&payload, &proposal)?;
+
     let analysis_id = db::insert_analysis(
-        &state.pool,
+        &mut conn,
         id,
         &payload.chain,
         &req.signed.address,
@@ -616,45 +774,64 @@ async fn attach_analysis(
     .await?;
     Ok((
         StatusCode::CREATED,
-        Json(serde_json::json!({ "id": analysis_id, "source": "committee" })),
+        Json(
+            finish_action(
+                conn,
+                sig_id,
+                Some(id),
+                serde_json::json!({ "id": analysis_id, "source": "committee", "receipt_content": {"id":analysis_id,"sections": sanitized, "body_html": render_analysis_html(&sanitized)} }),
+            )
+            .await?,
+        ),
     ))
 }
 
+#[utoipa::path(get, path = "/v1/proposals/{id}/analysis", params(("id" = String, Path, description = "UUID")), responses((status = 200, description = "Accepted response, mutation responses include immutable receipt_id", body = Vec<crate::dto::Analysis>),(status = 400, description = "Invalid input", body = crate::error::ErrorBody),(status = 401, description = "Invalid signature/domain/time", body = crate::error::ErrorBody),(status = 403, description = "Actor, state, eligibility or quota forbidden", body = crate::error::ErrorBody),(status = 404, description = "Not found", body = crate::error::ErrorBody),(status = 409, description = "Revision, state or nonce conflict", body = crate::error::ErrorBody),(status = 429, description = "Rate limited", body = crate::error::ErrorBody)))]
 async fn list_analysis(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> VotingResult<Json<Vec<serde_json::Value>>> {
-    db::get_proposal(&state.pool, id)
+    let mut conn = state.pool.acquire().await?;
+
+    db::get_proposal(&mut conn, id)
         .await?
         .ok_or_else(|| VotingError::NotFound("proposal".into()))?;
-    let rows = db::list_analysis(&state.pool, id).await?;
+    let rows = db::list_analysis(&mut conn, id).await?;
     Ok(Json(
         rows.into_iter()
             .map(|a| {
                 serde_json::json!({
-                    "id": a.id,
-                    "chain": a.chain,
-                    "wallet_address": a.wallet_address,
-                    "body_html": a.body_html,
-                    "source": a.source,
-                    "created_at": a.created_at,
-                    "sections": a.sections.0,
-                    "machine_generated": a.source == "ai",
-                })
+                        "id": a.id,
+                        "chain": a.chain,
+                        "wallet_address": a.wallet_address,
+                        "body_html": a.body_html,
+                        "source": a.source,
+                "revision": a.revision,
+                        "created_at": a.created_at,
+                        "sections": a.sections.0,
+                        "machine_generated": a.source == "ai",
+                    })
             })
             .collect(),
     ))
 }
 
+#[utoipa::path(post, path = "/v1/proposals/{id}/open", request_body = OpenRequest, params(("id" = String, Path, description = "UUID")), responses((status = 200, description = "Accepted response, mutation responses include immutable receipt_id", body = crate::dto::OpenResponse),(status = 400, description = "Invalid input", body = crate::error::ErrorBody),(status = 401, description = "Invalid signature/domain/time", body = crate::error::ErrorBody),(status = 403, description = "Actor, state, eligibility or quota forbidden", body = crate::error::ErrorBody),(status = 404, description = "Not found", body = crate::error::ErrorBody),(status = 409, description = "Revision, state or nonce conflict", body = crate::error::ErrorBody),(status = 429, description = "Rate limited", body = crate::error::ErrorBody)))]
 async fn open_vote(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
     Json(req): Json<OpenRequest>,
 ) -> VotingResult<Json<serde_json::Value>> {
+    let (mut conn, sig_id, prior, payload) =
+        begin_action(&state, &req.signed, "open_vote", Some(id)).await?;
+    if let Some(prior) = prior {
+        return Ok(Json(prior));
+    }
+
     deny_blacklisted(&state.cfg, &req.signed.address)?;
     require_committee(&state.cfg, &req.signed.address)?;
     let _ignored_client_heights = (req.terra_height, req.bsc_block);
-    let proposal = db::get_proposal(&state.pool, id)
+    let proposal = db::get_proposal(&mut conn, id)
         .await?
         .ok_or_else(|| VotingError::NotFound("proposal".into()))?;
     if proposal.status != "draft" {
@@ -670,13 +847,6 @@ async fn open_vote(
             VotingError::BadRequest("legacy proposal has no template sections".into())
         })?;
     let current_hash = prepare_sections(&sections)?.body_hash;
-    let payload = parse_and_validate(
-        &req.signed.payload,
-        "open_vote",
-        &req.signed.address,
-        &state.cfg.terra_chain_id,
-        &state.cfg.evm_chain_id,
-    )?;
     deny_cross_scheme(&req.signed.chain, &payload.chain)?;
     if payload.proposal_id.as_deref() != Some(&id.to_string()) {
         return Err(VotingError::Unauthorized(
@@ -688,36 +858,47 @@ async fn open_vote(
             "open_vote must sign the current section hash".into(),
         ));
     }
-    verify_signed(&req.signed, &req.signed.payload)?;
-    let (terra_h, bsc_b) = db::tip_heights(&state.pool).await?;
-    insert_purpose_signature(&state.pool, &payload.chain, &req.signed, "open_vote").await?;
-    db::open_proposal(&state.pool, id, terra_h, bsc_b).await?;
-    Ok(Json(serde_json::json!({
-        "ok": true,
-        "status": "open",
-        "terra_height": terra_h,
-        "bsc_block": bsc_b,
-    })))
+    if payload.title.as_deref() != Some(proposal.title.as_str()) {
+        return Err(VotingError::Unauthorized(
+            "signed open title mismatch".into(),
+        ));
+    }
+    require_revision(&payload, &proposal)?;
+    let (terra_h, bsc_b) = db::open_proposal(&mut conn, id, sig_id).await?;
+    Ok(Json(
+        finish_action(
+            conn,
+            sig_id,
+            Some(id),
+            serde_json::json!({
+                "ok": true,
+                "status": "open",
+                "terra_height": terra_h,
+                "bsc_block": bsc_b,
+            }),
+        )
+        .await?,
+    ))
 }
 
+#[utoipa::path(post, path = "/v1/proposals/{id}/votes", request_body = CastVoteRequest, params(("id" = String, Path, description = "UUID")), responses((status = 200, description = "Accepted response, mutation responses include immutable receipt_id", body = crate::dto::VoteResponse),(status = 400, description = "Invalid input", body = crate::error::ErrorBody),(status = 401, description = "Invalid signature/domain/time", body = crate::error::ErrorBody),(status = 403, description = "Actor, state, eligibility or quota forbidden", body = crate::error::ErrorBody),(status = 404, description = "Not found", body = crate::error::ErrorBody),(status = 409, description = "Revision, state or nonce conflict", body = crate::error::ErrorBody),(status = 429, description = "Rate limited", body = crate::error::ErrorBody)))]
 async fn cast_vote(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
     Json(req): Json<CastVoteRequest>,
 ) -> VotingResult<Json<serde_json::Value>> {
+    let (mut conn, sig_id, prior, payload) =
+        begin_action(&state, &req.signed, "vote", Some(id)).await?;
+    if let Some(prior) = prior {
+        return Ok(Json(prior));
+    }
+
     if !matches!(req.choice.as_str(), "for" | "against" | "abstain") {
         return Err(VotingError::BadRequest(
             "choice must be for, against, or abstain".into(),
         ));
     }
     deny_blacklisted(&state.cfg, &req.signed.address)?;
-    let payload = parse_and_validate(
-        &req.signed.payload,
-        "vote",
-        &req.signed.address,
-        &state.cfg.terra_chain_id,
-        &state.cfg.evm_chain_id,
-    )?;
     deny_cross_scheme(&req.signed.chain, &payload.chain)?;
     if payload.proposal_id.as_deref() != Some(&id.to_string()) {
         return Err(VotingError::Unauthorized(
@@ -727,9 +908,8 @@ async fn cast_vote(
     if payload.choice.as_deref() != Some(req.choice.as_str()) {
         return Err(VotingError::Unauthorized("signed choice mismatch".into()));
     }
-    verify_signed(&req.signed, &req.signed.payload)?;
 
-    let proposal = db::get_proposal(&state.pool, id)
+    let proposal = db::get_proposal(&mut conn, id)
         .await?
         .ok_or_else(|| VotingError::NotFound("proposal".into()))?;
     if proposal.status != "open" {
@@ -737,18 +917,23 @@ async fn cast_vote(
             "votes are closed until the poll is opened".into(),
         ));
     }
-    let _reg = db::ledger_registration(&state.pool, &payload.chain, &req.signed.address)
+    if proposal.snapshot_validity != "valid" {
+        return Err(VotingError::Conflict(
+            "snapshot invalidated by chain incident".into(),
+        ));
+    }
+    let _reg = db::ledger_registration(&mut conn, &payload.chain, &req.signed.address)
         .await?
         .ok_or_else(|| VotingError::Forbidden("register before voting".into()))?;
-    let weight = db::snapshot_weight(&state.pool, id, &payload.chain, &req.signed.address).await?;
+    let weight = db::snapshot_weight(&mut conn, id, &payload.chain, &req.signed.address).await?;
     if weight <= 0.into() {
         return Err(VotingError::Forbidden(
             "no snapshot weight at proposal freeze".into(),
         ));
     }
-    let sig_id = insert_purpose_signature(&state.pool, &payload.chain, &req.signed, "vote").await?;
+
     db::insert_vote(
-        &state.pool,
+        &mut conn,
         id,
         &payload.chain,
         &req.signed.address,
@@ -757,20 +942,23 @@ async fn cast_vote(
         sig_id,
     )
     .await?;
-    Ok(Json(serde_json::json!({
+    Ok(Json(finish_action(conn, sig_id, Some(id), serde_json::json!({
         "ok": true,
         "weight": weight.to_string(),
         "snapshot": { "terra_height": proposal.terra_height, "bsc_block": proposal.bsc_block },
-    })))
+    })).await?))
 }
 
+#[utoipa::path(get, path = "/v1/proposals/{id}/votes/{addr}", params(("id" = String, Path, description = "UUID"),("addr" = String, Path, description = "Terra or EVM address"),("chain" = Option<String>, Query, description = "terra or bsc")), responses((status = 200, description = "Accepted response, mutation responses include immutable receipt_id", body = crate::dto::Vote),(status = 400, description = "Invalid input", body = crate::error::ErrorBody),(status = 401, description = "Invalid signature/domain/time", body = crate::error::ErrorBody),(status = 403, description = "Actor, state, eligibility or quota forbidden", body = crate::error::ErrorBody),(status = 404, description = "Not found", body = crate::error::ErrorBody),(status = 409, description = "Revision, state or nonce conflict", body = crate::error::ErrorBody),(status = 429, description = "Rate limited", body = crate::error::ErrorBody)))]
 async fn get_vote(
     State(state): State<AppState>,
     Path((id, addr)): Path<(Uuid, String)>,
     Query(q): Query<ChainQuery>,
 ) -> VotingResult<Json<serde_json::Value>> {
+    let mut conn = state.pool.acquire().await?;
+
     let chain = resolve_chain(&addr, q.chain.as_deref())?.to_string();
-    match db::get_vote(&state.pool, id, &chain, &addr).await? {
+    match db::get_vote(&mut conn, id, &chain, &addr).await? {
         Some((choice, weight)) => Ok(Json(
             serde_json::json!({ "choice": choice, "weight": weight }),
         )),
@@ -778,29 +966,32 @@ async fn get_vote(
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 struct ChainQuery {
     chain: Option<String>,
     height: Option<i64>,
 }
 
+#[utoipa::path(get, path = "/v1/balances/{addr}", params(("addr" = String, Path, description = "Terra or EVM address"),("chain" = Option<String>, Query, description = "terra or bsc"),("height" = Option<i64>, Query, description = "Requested ledger height")), responses((status = 200, description = "Accepted response, mutation responses include immutable receipt_id", body = crate::dto::BalanceResponse),(status = 400, description = "Invalid input", body = crate::error::ErrorBody),(status = 401, description = "Invalid signature/domain/time", body = crate::error::ErrorBody),(status = 403, description = "Actor, state, eligibility or quota forbidden", body = crate::error::ErrorBody),(status = 404, description = "Not found", body = crate::error::ErrorBody),(status = 409, description = "Revision, state or nonce conflict", body = crate::error::ErrorBody),(status = 429, description = "Rate limited", body = crate::error::ErrorBody)))]
 async fn get_balance(
     State(state): State<AppState>,
     Path(addr): Path<String>,
     Query(q): Query<ChainQuery>,
 ) -> VotingResult<Json<serde_json::Value>> {
+    let mut conn = state.pool.acquire().await?;
+
     let chain = resolve_chain(&addr, q.chain.as_deref())?;
-    let reg = db::ledger_registration(&state.pool, chain, &addr).await?;
+    let reg = db::ledger_registration(&mut conn, chain, &addr).await?;
     let pending = if reg.is_some() {
         false
     } else {
-        db::pending_intent(&state.pool, chain, &addr).await?
+        db::pending_intent(&mut conn, chain, &addr).await?
     };
-    let (terra_h, bsc_b) = db::tip_heights(&state.pool).await?;
+    let (terra_h, bsc_b) = db::tip_heights(&mut conn).await?;
     let tip = if chain == "terra" { terra_h } else { bsc_b };
     let as_of_height =
         resolve_balance_height(q.height, tip, reg.as_ref().map(|r| r.registered_at_height));
-    let amount = db::balance_at(&state.pool, chain, &addr, as_of_height).await?;
+    let amount = db::balance_at(&mut conn, chain, &addr, as_of_height).await?;
     // OV-B6: always emit registered/pending/as_of_height/initial_balance (issue #14).
     Ok(Json(serde_json::json!({
         "chain": chain,
@@ -812,4 +1003,51 @@ async fn get_balance(
         "pending": pending,
         "initial_balance": reg.as_ref().map(|r| r.initial_balance.clone()),
     })))
+}
+
+#[utoipa::path(get, path = "/v1/receipts/{id}", params(("id" = String, Path, description = "UUID")), responses((status = 200, description = "Accepted response, mutation responses include immutable receipt_id", body = crate::dto::ReceiptExport),(status = 400, description = "Invalid input", body = crate::error::ErrorBody),(status = 401, description = "Invalid signature/domain/time", body = crate::error::ErrorBody),(status = 403, description = "Actor, state, eligibility or quota forbidden", body = crate::error::ErrorBody),(status = 404, description = "Not found", body = crate::error::ErrorBody),(status = 409, description = "Revision, state or nonce conflict", body = crate::error::ErrorBody),(status = 429, description = "Rate limited", body = crate::error::ErrorBody)))]
+async fn get_receipt(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> VotingResult<Json<serde_json::Value>> {
+    let mut conn = state.pool.acquire().await?;
+    Ok(Json(
+        db::receipt(&mut conn, id)
+            .await?
+            .ok_or_else(|| VotingError::NotFound("receipt".into()))?,
+    ))
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct Readiness {
+    pub ready: bool,
+    pub service: &'static str,
+    pub reason: &'static str,
+}
+#[utoipa::path(get,path="/ready",responses((status=200,description="Both canonical ledger chains ready",body=Readiness),(status=503,description="Ledger/database unavailable",body=Readiness)))]
+async fn readiness(State(state): State<AppState>) -> (StatusCode, Json<Readiness>) {
+    let ready = matches!(
+        tokio::time::timeout(
+            std::time::Duration::from_secs(3),
+            db::ledger_ready(&state.pool)
+        )
+        .await,
+        Ok(Ok(true))
+    );
+    (
+        if ready {
+            StatusCode::OK
+        } else {
+            StatusCode::SERVICE_UNAVAILABLE
+        },
+        Json(Readiness {
+            ready,
+            service: "operator-voting",
+            reason: if ready {
+                "ready"
+            } else {
+                "dual_chain_ledger_unavailable"
+            },
+        }),
+    )
 }

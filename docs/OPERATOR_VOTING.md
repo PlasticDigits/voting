@@ -182,3 +182,84 @@ sqlx migrations live in the ledger crate. `operator-voting` applies them only wh
 ## Env
 
 See [../.env.example](../.env.example) and [../deploy/coolify.env.example](../deploy/coolify.env.example). Production compose **must not** reuse the ledger writer `DATABASE_URL`.
+
+## Transactional signed actions (issues #40 and #42)
+
+Protocol **v2** is required for new writes. Signed JSON includes `version: 2`, a unique
+`nonce` (1–128 bytes), the existing app/chain/network/purpose/address/time fields,
+and action fields. `amend`, `analyze`, and `open_vote` additionally sign the complete
+current numeric `revision`; opening also signs the exact current `title` and
+canonical section `body_hash`. See [transactional agent instructions](../skills/AGENTS_TRANSACTIONAL_VOTING.md)
+and [governance doctrine](GOVERNANCE_RESEARCH.md). Configured chain IDs are exact;
+local network IDs receive no exception on a mainnet API.
+
+- **OV-T1 — atomic acceptance:** signature, mutation, revision history, and receipt
+  share one database transaction. A rejected action leaves no signature or state.
+  Per-address nonce advisory locks serialize retries. The same accepted signed
+  bytes return the same persisted response, including after expiration or API
+  restart; altered bytes with a consumed nonce conflict. Current blacklist/role
+  checks still apply to retries. Nonces never merge Terra and BSC identities.
+- **OV-T2 — complete revisions:** drafts start at revision 1. Every amendment,
+  including title-only changes, increments the revision. A proposal row lock
+  checks the signed expected revision before changing content or opening. One
+  concurrent stale amendment succeeds. Historical title/canonical sections are
+  retained in `proposal_revisions`; `analyze` records the reviewed revision.
+- **OV-T3 — race-safe quotas/state:** the same proposal lock serializes comments,
+  analysis, amendments, opening and votes. Comments remain limited to 20 per
+  address/chain/proposal; committee analyses are limited to 5. Analyses require
+  draft state and an independent address. Database guards also reject analysis
+  after opening, stale analysis revisions and forged frozen vote weights.
+  `FOR NO KEY UPDATE` deliberately permits foreign-key key-share locks: using
+  `FOR UPDATE` here deadlocks parallel action inserts.
+- **OV-T4 — safe times:** timestamps require a positive checked TTL, expiry after
+  now, bounded issuance skew (at most 60 seconds future), and configured maximum
+  TTL plus the existing 30-second allowance. The injectable clock validator
+  rejects reversed/equal/extreme integers in debug and release.
+- **OV-T5 — freeze evidence:** opening acquires Terra then BSC ledger locks and
+  requires both positive, complete, canonical, nondegraded checkpoints, observed
+  within 120 seconds (future skew at most 60), and head lag at most 2 Terra / 17
+  BSC blocks. Client heights are ignored. The mediated freeze stores hash/epoch
+  identities and materializes registered electorate weights exactly once. A
+  reorg marks snapshot validity invalid without rewriting frozen weights.
+  Legacy opened snapshots become `legacy_unverified`; their history/tallies
+  remain readable, but new votes require a valid snapshot. `/health` is liveness;
+  `/ready` returns 503 unless the dual-chain ledger and database are ready.
+- **OV-T6 — verifiable receipts:** mutation responses include `receipt_id`.
+  `GET /v1/receipts/{receipt_id}` exports exact signed payload bytes, original
+  signature/public key, scheme/domain, nonce, purpose/actor, proposal/revision
+  linkage, historical content and opening snapshot/hash/epoch metadata.
+  `payload::verify_exported_receipt` verifies the disclosed wallet signatures
+  and signed content offline; it rejects altered signed bytes or title/history.
+  Terra uses ADR-36 only; raw simulated-message signatures are no production
+  fallback. EIP-191 rejects noncanonical high-S signatures.
+
+Receipts prove what a wallet signed. Frozen heights and power are **operator
+ledger evidence**, not wallet-signed chain attestations or a secret ballot.
+Hash-only historical signatures have no recoverable original signed bytes:
+there is no synthetic backfill claim of cryptographic verification. Immutable
+receipt/history/vote/snapshot tables reject UPDATE/DELETE and the API role has no
+TRUNCATE or snapshot INSERT privilege. Only the writer can reconcile old ledger
+state; do not silently promote legacy snapshots to valid.
+
+The forward migrations are `20261014000100_transactional_actions.sql` and
+`20261014000101_restrict_existing_api_role.sql`, after the ledger checkpoint
+migration. The latter revokes existing blanket/default grants atomically when
+an API role exists. Fresh roles have no usable default password; provision
+credentials using the authorized OpenBao workflow. Existing secure credentials
+are preserved and must be rotated if an installation retained the historical
+default. Production startup validates effective privileges, including inherited
+and PUBLIC rights. The API receives SELECT/INSERT on named control-plane tables,
+column-only draft INSERT/UPDATE, and EXECUTE on qualified balance/freeze routines;
+no blanket future-table or schema CREATE/database TEMP privileges.
+
+Destructive integration helpers require `LEDGER_TEST_DATABASE_URL`, a loopback
+host and `voting_test_*` database name, plus `LEDGER_TEST_ALLOW_DESTRUCTIVE=1`.
+They refuse unsafe configuration before connecting and check database identity
+before migrations/TRUNCATE/role DDL. `DATABASE_URL` is never a fallback.
+`LEDGER_TEST_REQUIRED=1` makes absent test configuration fatal. CI may use the
+exact `postgres` service hostname only with `CI=true` and
+`LEDGER_TEST_ALLOW_CI_SERVICE=1`. Use an ephemeral database; see [OPS.md](OPS.md).
+
+The runtime test database catalog comment must equal `cl8y-voting-ephemeral-test`.
+Provision this marker only on a new disposable database; an absent/wrong marker
+fails before migration or destructive SQL. Never mark an application database.

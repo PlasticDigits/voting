@@ -48,3 +48,7 @@ Live QA after Legal accept: Terra **and** BSC — register → draft → second 
 - Hash freeform `body_html` for new drafts; hash the canonical section JSON.
 - Freeze twice or take heights from the client.
 - Ship an unstructured comment thread on freeform HTML (template is required).
+
+For signed mutations, complete revisions, nonce retries, immutable receipts and
+race-safe quotas, also follow [transactional voting](AGENTS_TRANSACTIONAL_VOTING.md)
+and [OV-T1–OV-T6](../docs/OPERATOR_VOTING.md#transactional-signed-actions-issues-40-and-42).
