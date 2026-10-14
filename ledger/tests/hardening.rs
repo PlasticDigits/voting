@@ -2674,3 +2674,241 @@ async fn repeated_terra_pagination_key_stops_after_two_pages_without_progress() 
     );
     server.abort();
 }
+
+#[tokio::test]
+async fn process_startup_recovery_and_registration_use_configured_native_terra_rpc() {
+    let Some((pool, _lock)) = setup().await else {
+        return;
+    };
+    let native_queries = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let lcd_queries = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let count = lcd_queries.clone();
+    let lcd_app = Router::new().fallback(get(move |uri: OriginalUri| {
+        let count = count.clone();
+        async move {
+            if uri.0.path().contains("/smart/") {
+                count.fetch_add(1, Ordering::Relaxed);
+                // The deployed LCD returns a valid balance without an observed-height header.
+                Json(serde_json::json!({"data":{"balance":"999999999"}}))
+            } else if uri.0.path().contains("/blocks/") {
+                Json(serde_json::json!({
+                    "block_id":{"hash":base64::Engine::encode(
+                        &base64::engine::general_purpose::STANDARD, vec![0xAA;32]
+                    )},
+                    "sdk_block":{"header":{
+                        "chain_id":"columbus-5","height":"110",
+                        "time":chrono::Utc::now().to_rfc3339()
+                    },"data":{"txs":null}}
+                }))
+            } else {
+                Json(serde_json::json!({"pagination":null,"total":"0","tx_responses":[]}))
+            }
+        }
+    }));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let lcd_url = format!("http://{}", listener.local_addr().unwrap());
+    let lcd_task = tokio::spawn(async move { axum::serve(listener, lcd_app).await.unwrap() });
+    let count = native_queries.clone();
+    let native_app = Router::new().fallback(get(move |uri: OriginalUri| {
+        let count = count.clone();
+        async move {
+            let result = match uri.0.path() {
+                "/status" => serde_json::json!({
+                    "node_info":{"network":"columbus-5"},
+                    "sync_info":{"catching_up":false}
+                }),
+                "/block" => serde_json::json!({
+                    "block_id":{"hash":"A".repeat(64)},
+                    "block":{"header":{
+                        "chain_id":"columbus-5","height":"110",
+                        "time":chrono::Utc::now().to_rfc3339()
+                    },"data":{"txs":[]}}
+                }),
+                "/abci_query" => {
+                    count.fetch_add(1, Ordering::Relaxed);
+                    let url = reqwest::Url::parse(&format!("http://fixture{}", uri.0)).unwrap();
+                    let params = url
+                        .query_pairs()
+                        .collect::<std::collections::HashMap<_, _>>();
+                    assert_eq!(params["height"], "110");
+                    assert_eq!(
+                        params["path"],
+                        "\"/cosmwasm.wasm.v1.Query/SmartContractState\""
+                    );
+                    assert!(params["data"].starts_with("0x0a"));
+                    assert_eq!(params["prove"], "false");
+                    let bytes = br#"{"balance":"90"}"#;
+                    let mut proto = vec![10, bytes.len() as u8];
+                    proto.extend_from_slice(bytes);
+                    serde_json::json!({"response":{
+                        "code":0,"height":"110",
+                        "value":base64::Engine::encode(
+                            &base64::engine::general_purpose::STANDARD, proto
+                        )
+                    }})
+                }
+                _ => panic!("unexpected native RPC path"),
+            };
+            Json(serde_json::json!({"jsonrpc":"2.0","id":-1,"result":result}))
+        }
+    }));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let native_url = format!("http://{}", listener.local_addr().unwrap());
+    let native_task = tokio::spawn(async move { axum::serve(listener, native_app).await.unwrap() });
+    let (bsc_url, _, bsc_task) = rpc_server().await;
+    seed_registration(&pool, Chain::Terra, ALICE, 100, &BigInt::from(100), None)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO cl8y_balances(wallet_address,height,balance) VALUES($1,100,100)")
+        .bind(ALICE)
+        .execute(&pool)
+        .await
+        .unwrap();
+    db::degrade(&pool, Chain::Terra, "baseline_recovery_requested")
+        .await
+        .unwrap();
+    // Actual database errors expose a safe SQLSTATE and never server-provided detail.
+    let error = LedgerError::from(
+        sqlx::query("DO $$ BEGIN RAISE EXCEPTION 'SENTINEL private credential' USING ERRCODE='23505'; END $$")
+            .execute(&pool)
+            .await
+            .unwrap_err(),
+    );
+    assert_eq!(error.to_string(), "database error");
+    assert_eq!(format!("{error:?}"), "database error (sqlstate=23505)");
+
+    struct ChildGuard(std::process::Child);
+    impl Drop for ChildGuard {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+    let reserve = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = reserve.local_addr().unwrap();
+    drop(reserve);
+    let http = reqwest::Client::new();
+    let ready_url = format!("http://{address}/ready");
+    let mut epoch = 0;
+    for restart in 0..2 {
+        let mut child = ChildGuard(
+            std::process::Command::new(env!("CARGO_BIN_EXE_voting-ledger"))
+                .env_clear()
+                .env(
+                    "DATABASE_URL",
+                    std::env::var("LEDGER_TEST_DATABASE_URL").unwrap(),
+                )
+                .env("RUN_MODE", "prod")
+                .env("TERRA_LCD_URL", &lcd_url)
+                .env("TERRA_RPC_URLS", &native_url)
+                .env("BSC_RPC_URLS", &bsc_url)
+                .env("LEDGER_RECONCILE_LIVE_BASELINE", "true")
+                .env("API_BIND", address.to_string())
+                .env("POLL_INTERVAL_MS", "100")
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn()
+                .unwrap(),
+        );
+        tokio::time::timeout(Duration::from_secs(8), async {
+            loop {
+                assert!(
+                    child.0.try_wait().unwrap().is_none(),
+                    "ledger startup exited"
+                );
+                if http
+                    .get(&ready_url)
+                    .send()
+                    .await
+                    .is_ok_and(|r| r.status().is_success())
+                {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+        })
+        .await
+        .unwrap();
+        let checkpoint: (i64, i64, String, bool, bool) = sqlx::query_as(
+            "SELECT height,epoch,block_hash,complete,canonical FROM ledger_checkpoints WHERE chain='terra'",
+        ).fetch_one(&pool).await.unwrap();
+        assert_eq!(
+            (checkpoint.0, checkpoint.2, checkpoint.3, checkpoint.4),
+            (110, "A".repeat(64), true, true)
+        );
+        if restart == 0 {
+            epoch = checkpoint.1;
+            assert_eq!(native_queries.load(Ordering::Relaxed), 1);
+            assert_eq!(
+                db::balance_at(&pool, Chain::Terra, ALICE, 110)
+                    .await
+                    .unwrap(),
+                BigInt::from(90)
+            );
+            let original: String = sqlx::query_scalar(
+                "SELECT balance::text FROM cl8y_balances WHERE wallet_address=$1 AND height=100",
+            )
+            .bind(ALICE)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            assert_eq!(original, "100");
+            let signature = uuid::Uuid::new_v4();
+            sqlx::query("INSERT INTO voting.signatures(id,chain,wallet_address,signature,payload_hash,purpose) VALUES($1,'terra','terra1entrypoint','synthetic','synthetic','register')")
+                .bind(signature).execute(&pool).await.unwrap();
+            let intent: uuid::Uuid = sqlx::query_scalar("INSERT INTO voting.registration_intents(chain,wallet_address,signature_id) VALUES('terra','terra1entrypoint',$1) RETURNING id")
+                .bind(signature).fetch_one(&pool).await.unwrap();
+            tokio::time::timeout(Duration::from_secs(8), async {
+                loop {
+                    let processed: bool = sqlx::query_scalar("SELECT processed_at IS NOT NULL FROM voting.registration_intents WHERE id=$1")
+                        .bind(intent).fetch_one(&pool).await.unwrap();
+                    if processed { break; }
+                    tokio::time::sleep(Duration::from_millis(50)).await;
+                }
+            }).await.unwrap();
+            assert_eq!(
+                db::balance_at(&pool, Chain::Terra, "terra1entrypoint", 110)
+                    .await
+                    .unwrap(),
+                BigInt::from(90)
+            );
+            let verified: bool = sqlx::query_scalar("SELECT baseline_verified AND baseline_height=110 AND baseline_block_hash=$1 FROM voting_registrations WHERE wallet_address='terra1entrypoint'")
+                .bind("A".repeat(64)).fetch_one(&pool).await.unwrap();
+            assert!(verified);
+        } else {
+            assert_eq!(
+                checkpoint.1, epoch,
+                "restart must preserve the recovered epoch"
+            );
+        }
+        assert_eq!(native_queries.load(Ordering::Relaxed), 2);
+        assert_eq!(lcd_queries.load(Ordering::Relaxed), 0);
+        assert!(http
+            .get(&ready_url)
+            .send()
+            .await
+            .unwrap()
+            .status()
+            .is_success());
+        assert!(std::process::Command::new("kill")
+            .arg("-TERM")
+            .arg(child.0.id().to_string())
+            .status()
+            .unwrap()
+            .success());
+        tokio::time::timeout(Duration::from_secs(6), async {
+            loop {
+                if let Some(status) = child.0.try_wait().unwrap() {
+                    assert!(status.success());
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+        })
+        .await
+        .unwrap();
+    }
+    lcd_task.abort();
+    native_task.abort();
+    bsc_task.abort();
+}
