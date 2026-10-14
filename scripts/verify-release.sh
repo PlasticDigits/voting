@@ -15,6 +15,7 @@ cleanup() {
 trap cleanup EXIT
 test_container=$(docker run -d --network host --tmpfs /var/lib/postgresql/data:rw,size=768m \
   -e POSTGRES_USER=voting -e POSTGRES_PASSWORD=voting -e POSTGRES_DB="$test_database" \
+  -e 'POSTGRES_INITDB_ARGS=--auth-host=scram-sha-256 --auth-local=trust' \
   postgres:16-alpine postgres -c "port=$test_port" -c listen_addresses=127.0.0.1)
 for attempt in $(seq 1 30); do
   if docker exec "$test_container" pg_isready -U voting -d "$test_database" -p "$test_port" >/dev/null; then break; fi

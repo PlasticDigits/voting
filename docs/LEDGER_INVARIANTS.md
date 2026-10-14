@@ -86,6 +86,15 @@ Regression scenarios live in [`ledger/tests/hardening.rs`](../ledger/tests/harde
 
 ## Env
 
+Historical schema `voting` may contain ledger storage created under the old
+`$user` path. Migration `20261014000105` archives full originals and metadata,
+imports registrations and balance/event history after collision checks, preserves
+frozen power, and requires explicit current canonical recovery. The legacy tables
+and tracker stay untouched. Identical repeated promotion is a no-op; conflicting
+rows or changed legacy fingerprints fail atomically. Tests:
+[`legacy_namespace.rs`](../ledger/tests/legacy_namespace.rs). Live provenance:
+[inventory](verification/2026-10-14-live-storage-inventory.json).
+
 | Variable | Role |
 |----------|------|
 | `DATABASE_URL` | Writer role |
@@ -99,3 +108,4 @@ Regression scenarios live in [`ledger/tests/hardening.rs`](../ledger/tests/harde
 | `POLL_INTERVAL_MS` | Intent + ingest loop sleep (default `4000`) |
 | `API_BIND` | Health listener (default `0.0.0.0:3001`) |
 | `LEDGER_RECONCILE_LIVE_BASELINE` | Explicit one-time deploy recovery, default `false`; healthy epochs skip on restart |
+| `LEDGER_INSPECT_STORAGE_ONLY` | Bounded read-only inventory, no migration/workers; `/live`200 and `/ready`503; default `false` |

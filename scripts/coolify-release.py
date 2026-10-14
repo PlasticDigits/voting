@@ -99,6 +99,8 @@ def main():
                                   "dockerfile_location": "/deploy/docker/frontend.Dockerfile"})
         elif args.resource == "ledger":
             configuration["health_check_path"] = "/live"
+            configuration["health_check_start_period"] = 180
+            configuration["health_check_retries"] = 60
         call("PATCH", "/applications/" + uuid, configuration)
         configured = call("GET", "/applications/" + uuid)
         if args.resource == "frontend" and (
