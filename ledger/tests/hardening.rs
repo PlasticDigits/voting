@@ -5240,3 +5240,259 @@ async fn failed_terra_execution_and_base64_wasm_attributes_ingest_atomically_thr
     assert_eq!(checkpoint, (101, state.hash(101), true, true));
     server.abort();
 }
+
+#[derive(Clone)]
+struct DelayedHashRpc {
+    chain_calls: Arc<std::sync::atomic::AtomicUsize>,
+    active: Arc<std::sync::atomic::AtomicUsize>,
+    maximum_active: Arc<std::sync::atomic::AtomicUsize>,
+    fail_height: Arc<std::sync::atomic::AtomicI64>,
+    invalid_hash: bool,
+    include_log: bool,
+    forked: bool,
+}
+impl DelayedHashRpc {
+    fn new(include_log: bool) -> Self {
+        Self {
+            chain_calls: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            active: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            maximum_active: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            fail_height: Arc::new(std::sync::atomic::AtomicI64::new(0)),
+            invalid_hash: false,
+            include_log,
+            forked: false,
+        }
+    }
+}
+async fn delayed_hash_server(state: DelayedHashRpc) -> (String, tokio::task::JoinHandle<()>) {
+    let app = Router::new()
+        .fallback(axum::routing::post(delayed_hash_rpc))
+        .with_state(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    (url, server)
+}
+async fn delayed_hash_rpc(
+    State(state): State<DelayedHashRpc>,
+    Json(body): Json<serde_json::Value>,
+) -> Json<serde_json::Value> {
+    let active = state.active.fetch_add(1, Ordering::SeqCst) + 1;
+    state.maximum_active.fetch_max(active, Ordering::SeqCst);
+    // Differing header delays force completion order to differ from height order.
+    let delay = if body["method"] == "eth_getBlockByNumber" {
+        let height = i64::from_str_radix(
+            body["params"][0].as_str().unwrap().trim_start_matches("0x"),
+            16,
+        )
+        .unwrap();
+        20 + (height % 4) as u64 * 3
+    } else {
+        20
+    };
+    tokio::time::sleep(Duration::from_millis(delay)).await;
+    let result = match body["method"].as_str().unwrap() {
+        "eth_chainId" => {
+            state.chain_calls.fetch_add(1, Ordering::SeqCst);
+            serde_json::json!("0x38")
+        }
+        "eth_blockNumber" => serde_json::json!("0x93"), //147, finalized132
+        "eth_getBlockByNumber" => {
+            let height = i64::from_str_radix(
+                body["params"][0].as_str().unwrap().trim_start_matches("0x"),
+                16,
+            )
+            .unwrap();
+            let fail = state.fail_height.load(Ordering::Relaxed) == height;
+            serde_json::json!({"number":if fail && !state.invalid_hash {serde_json::json!(format!("0x{:x}",height-1))}else{body["params"][0].clone()},"hash":if fail && state.invalid_hash {"SENTINEL_BAD_HASH".into()}else{block_hash(height+if state.forked{100000}else{0})},"timestamp":format!("0x{:x}",chrono::Utc::now().timestamp())})
+        }
+        "eth_getLogs" => {
+            if state.include_log {
+                serde_json::json!([{
+                    "address":DEFAULT_CL8Y_BEP20,"topics":[voting_ledger::parser::TRANSFER_TOPIC,format!("0x{:0>64}",EVM.trim_start_matches("0x")),format!("0x{:0>64}","2222222222222222222222222222222222222222")],
+                    "data":format!("0x{:064x}",1),"blockNumber":"0x65","blockHash":block_hash(101+if state.forked{100000}else{0}),"transactionHash":block_hash(10101),"logIndex":"0x0","removed":false
+                }])
+            } else {
+                serde_json::json!([])
+            }
+        }
+        _ => panic!("unexpected capability request"),
+    };
+    state.active.fetch_sub(1, Ordering::SeqCst);
+    Json(serde_json::json!({"jsonrpc":"2.0","id":1,"result":result}))
+}
+#[tokio::test]
+async fn delayed_bsc_range_hashes_use_bounded_pinned_concurrency_and_constant_network_checks() {
+    let state = DelayedHashRpc::new(false);
+    let (url, server) = delayed_hash_server(state.clone()).await;
+    let started = std::time::Instant::now();
+    let observation = voting_ledger::bsc::BscClient::new(vec![url])
+        .canonical_range(DEFAULT_CL8Y_BEP20, 101, 132, &[])
+        .await
+        .unwrap();
+    let elapsed = started.elapsed();
+    let chain_calls = state.chain_calls.load(Ordering::SeqCst);
+    let concurrency = state.maximum_active.load(Ordering::SeqCst);
+    println!(
+        "hash_range elapsed_ms={} network_checks={chain_calls} maximum_active={concurrency}",
+        elapsed.as_millis()
+    );
+    server.abort();
+    assert_eq!(
+        observation.hashes,
+        (101..=132)
+            .map(|height| (height, block_hash(height)))
+            .collect::<Vec<_>>()
+    );
+    assert!(
+        elapsed < Duration::from_millis(900),
+        "processing must fit two 0.45s BSC blocks at modest RPC latency"
+    );
+    assert!(
+        chain_calls <= 4,
+        "validate network around the pinned observation, not once per historical header"
+    );
+    assert!((2..=voting_ledger::bsc::BSC_HASH_CONCURRENCY).contains(&concurrency));
+}
+
+#[tokio::test]
+async fn interior_hash_batch_failure_rolls_back_entire_ingest_and_pins_failover_observation() {
+    for invalid_hash in [false, true] {
+        let Some((pool, _lock)) = setup().await else {
+            return;
+        };
+        let mut bad = DelayedHashRpc::new(true);
+        bad.invalid_hash = invalid_hash;
+        bad.forked = true;
+        bad.fail_height.store(106, Ordering::Relaxed);
+        let good = DelayedHashRpc::new(true);
+        let (bad_url, bad_server) = delayed_hash_server(bad.clone()).await;
+        let (good_url, good_server) = delayed_hash_server(good.clone()).await;
+        let seed = TerraForkFixture::new(100);
+        seed_terra_fork_electorate(&pool, &seed, false).await;
+        let before: (i64, String, i64, chrono::DateTime<chrono::Utc>) = sqlx::query_as(
+            "SELECT height,block_hash,epoch,observed_at FROM ledger_checkpoints WHERE chain='bsc'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let failed = voting_ledger::bsc::BscClient::new(vec![bad_url.clone()]);
+        let cfg = config(&bad_url);
+        let error = ingest::ingest_bsc_range(&pool, &failed, &cfg, 101, 132)
+            .await
+            .unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            if invalid_hash {
+                "provider: invalid_block_hash"
+            } else {
+                "provider: wrong_block_number"
+            }
+        );
+        assert!(!error.to_string().contains("SENTINEL"));
+        let after: (i64, String, i64, chrono::DateTime<chrono::Utc>) = sqlx::query_as(
+            "SELECT height,block_hash,epoch,observed_at FROM ledger_checkpoints WHERE chain='bsc'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(after, before);
+        assert_eq!(db::indexed_bsc_block(&pool).await.unwrap(), 100);
+        assert_eq!(
+            db::balance_at(&pool, Chain::Bsc, EVM, 132).await.unwrap(),
+            BigInt::from(1000)
+        );
+        let rows: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM cl8y_bep20_transfers")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(rows, 0);
+        let hashes: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM ledger_canonical_blocks WHERE chain='bsc'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(hashes, 1);
+        let candidates =
+            voting_ledger::bsc::BscClient::new(vec![bad_url.clone(), good_url.clone()]);
+        let observation = candidates
+            .canonical_range(DEFAULT_CL8Y_BEP20, 101, 132, &[])
+            .await
+            .unwrap();
+        assert_eq!(observation.end_hash, block_hash(132));
+        assert_eq!(
+            observation.hashes,
+            (101..=132).map(|h| (h, block_hash(h))).collect::<Vec<_>>()
+        );
+        assert_eq!(
+            observation.source.block_hash(101).await.unwrap(),
+            block_hash(101),
+            "source remains the healthy provider, never the first provider's fork"
+        );
+        for _ in 0..2 {
+            assert_eq!(
+                ingest::ingest_bsc_range(&pool, &candidates, &cfg, 101, 132)
+                    .await
+                    .unwrap(),
+                1
+            );
+        }
+        assert_eq!(
+            db::balance_at(&pool, Chain::Bsc, EVM, 132).await.unwrap(),
+            BigInt::from(999)
+        );
+        let rows: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM cl8y_bep20_transfers")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(rows, 1);
+        let checkpoint: (i64, String, bool, bool) = sqlx::query_as(
+            "SELECT height,block_hash,complete,canonical FROM ledger_checkpoints WHERE chain='bsc'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(checkpoint, (132, block_hash(132), true, true));
+        let hashes:Vec<(i64,String)>=sqlx::query_as("SELECT height,block_hash FROM ledger_canonical_blocks WHERE chain='bsc' AND height>100 ORDER BY height").fetch_all(&pool).await.unwrap();
+        assert_eq!(
+            hashes,
+            (101..=132).map(|h| (h, block_hash(h))).collect::<Vec<_>>()
+        );
+        assert!(
+            bad.maximum_active.load(Ordering::SeqCst) <= voting_ledger::bsc::BSC_HASH_CONCURRENCY
+        );
+        assert!(
+            good.maximum_active.load(Ordering::SeqCst) <= voting_ledger::bsc::BSC_HASH_CONCURRENCY
+        );
+        bad_server.abort();
+        good_server.abort();
+    }
+}
+
+#[tokio::test]
+async fn bsc_rpc_error_codes_preserve_safe_classes_without_provider_messages() {
+    for (code, class) in [
+        (-32005, "rpc_limit"),
+        (-32601, "rpc_method_unavailable"),
+        (-32602, "rpc_parameters_or_range"),
+        (-32603, "rpc_internal_error"),
+        (-99999, "rpc_error"),
+    ] {
+        let app=Router::new().fallback(axum::routing::post(move || async move {
+            Json(serde_json::json!({"jsonrpc":"2.0","id":1,"error":{"code":code,"message":"SENTINEL_PRIVATE_PROVIDER_RESPONSE"}}))
+        }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let client = voting_ledger::bsc::BscClient::new(vec![url]);
+        assert_eq!(
+            client.block_number().await.unwrap_err().to_string(),
+            format!("provider: {class}")
+        );
+        assert_eq!(
+            client.block_hash(101).await.unwrap_err().to_string(),
+            format!("provider: {class}")
+        );
+        server.abort();
+    }
+}

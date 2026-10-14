@@ -8,6 +8,8 @@ use num_bigint::BigInt;
 use serde_json::{json, Value};
 /// Explicit policy: index heads at least 15 blocks deep; freshness <=120s.
 pub const BSC_FINALITY_DEPTH: i64 = 15;
+/// Per-observation header fanout; the entire observation stays on one provider.
+pub const BSC_HASH_CONCURRENCY: usize = 8;
 #[derive(Clone)]
 pub struct BscClient {
     http: reqwest::Client,
@@ -37,9 +39,19 @@ impl BscClient {
         let envelope: Value = crate::transport::decode(response).await?;
         if envelope.get("jsonrpc").and_then(Value::as_str) != Some("2.0")
             || envelope.get("id") != Some(&json!(1))
-            || envelope.get("error").is_some()
         {
-            return Err(LedgerError::Provider("rpc_envelope_or_error"));
+            return Err(LedgerError::Provider("rpc_invalid_envelope"));
+        }
+        if let Some(error) = envelope.get("error") {
+            // Fixed labels only: provider messages can contain URLs or credentials.
+            let class = match error.get("code").and_then(Value::as_i64) {
+                Some(-32005) => "rpc_limit",
+                Some(-32601) => "rpc_method_unavailable",
+                Some(-32602) => "rpc_parameters_or_range",
+                Some(-32603) => "rpc_internal_error",
+                _ => "rpc_error",
+            };
+            return Err(LedgerError::Provider(class));
         }
         envelope
             .get("result")
@@ -52,8 +64,12 @@ impl BscClient {
         for url in &self.urls {
             match self.at(url, "eth_chainId", json!([])).await {
                 Ok(v) if v.as_str() == Some("0x38") => {}
-                _ => {
+                Ok(_) => {
                     last = LedgerError::Provider("wrong_bsc_network");
+                    continue;
+                }
+                Err(error) => {
+                    last = error;
                     continue;
                 }
             }
@@ -136,6 +152,59 @@ impl BscClient {
             return Err(LedgerError::Provider("wrong_block_number"));
         }
         hash(v.get("hash"), "invalid_block_hash")
+    }
+    async fn block_hashes_at(
+        &self,
+        url: &str,
+        heights: &[i64],
+    ) -> LedgerResult<Vec<(i64, String)>> {
+        let mut out = Vec::with_capacity(heights.len());
+        for batch in heights.chunks(BSC_HASH_CONCURRENCY) {
+            let mut requests = tokio::task::JoinSet::new();
+            for &height in batch {
+                let client = self.clone();
+                let url = url.to_owned();
+                requests.spawn(async move {
+                    let block = client
+                        .at(
+                            &url,
+                            "eth_getBlockByNumber",
+                            json!([format!("0x{height:x}"), false]),
+                        )
+                        .await?;
+                    if quantity(
+                        block
+                            .get("number")
+                            .ok_or(LedgerError::Provider("missing_block_number"))?,
+                        "invalid_block_number",
+                    )? != height
+                    {
+                        return Err(LedgerError::Provider("wrong_block_number"));
+                    }
+                    Ok((height, hash(block.get("hash"), "invalid_block_hash")?))
+                });
+            }
+            let mut first_error = None;
+            while let Some(observation) = requests.join_next().await {
+                match observation {
+                    Ok(Ok(observation)) => out.push(observation),
+                    Ok(Err(error)) => {
+                        first_error.get_or_insert(error);
+                    }
+                    Err(_) => {
+                        first_error.get_or_insert(LedgerError::Provider("hash_worker_exit"));
+                    }
+                }
+            }
+            // Drain this bounded batch before failover so abandoned HTTP requests
+            // do not overlap the next observation on the same provider.
+            if let Some(error) = first_error {
+                return Err(error);
+            }
+        }
+        // HTTP completion order must not alter canonical checkpoint order.
+        out.sort_unstable_by_key(|(height, _)| *height);
+        Ok(out)
     }
     pub async fn balance_of(&self, token: &str, wallet: &str) -> LedgerResult<BigInt> {
         self.balance_at(token, wallet, "latest").await
@@ -312,10 +381,10 @@ impl BscClient {
                 }
                 let end_hash = source.block_hash(to).await?;
                 let logs = source.transfer_logs(token, from, to).await?;
-                let mut hashes = Vec::new();
-                for height in from.max(to.saturating_sub(128))..=to {
-                    hashes.push((height, source.block_hash(height).await?));
-                }
+                // block_number validated chain identity before this pinned observation;
+                // the existing post-range block_hash validates it again before return.
+                let heights = (from.max(to.saturating_sub(128))..=to).collect::<Vec<_>>();
+                let hashes = source.block_hashes_at(url, &heights).await?;
                 if source.block_hash(to).await? != end_hash {
                     return Err(LedgerError::Provider("bsc_changed_during_ingest"));
                 }
