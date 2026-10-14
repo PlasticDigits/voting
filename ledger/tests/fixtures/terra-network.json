@@ -1,0 +1,8 @@
+{
+  "observed_date": "2026-10-14",
+  "network": "columbus-5",
+  "application_version": "4.0.1-patch.3",
+  "cosmos_sdk_version": "v0.53.6",
+  "source": "https://terra-classic-lcd.publicnode.com/cosmos/base/tendermint/v1beta1/node_info",
+  "scope": "Public network/version metadata only. Execution fixtures in hardening.rs are synthetic supported-schema regressions, not recorded production transactions."
+}

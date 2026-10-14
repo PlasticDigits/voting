@@ -1,5 +1,5 @@
 use crate::amount::{parse_raw_amount, Amount};
-use crate::error::LedgerResult;
+use crate::error::{LedgerError, LedgerResult};
 
 /// One wasm event attribute. Keys are as emitted (not lowercased).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -76,18 +76,30 @@ pub fn parse_cw20_wasm_events(
         if !is_balance_action(action) {
             continue;
         }
-        let from = wasm_attr_last(&event.attributes, "from")
+        let mut from = wasm_attr_last(&event.attributes, "from")
             .or_else(|| wasm_attr_last(&event.attributes, "sender"))
             .unwrap_or("")
             .to_ascii_lowercase();
-        let to = wasm_attr_last(&event.attributes, "to")
+        let mut to = wasm_attr_last(&event.attributes, "to")
             .or_else(|| wasm_attr_last(&event.attributes, "recipient"))
             .unwrap_or("")
             .to_ascii_lowercase();
-        let Some(amount_raw) = wasm_attr_last(&event.attributes, "amount") else {
-            continue;
-        };
-        let amount = parse_raw_amount(amount_raw)?;
+        if action == "mint" {
+            from.clear();
+        }
+        if action == "burn" {
+            to.clear();
+        }
+        let amount_raw = wasm_attr_last(&event.attributes, "amount")
+            .ok_or(LedgerError::Provider("missing_cw20_amount"))?;
+        if (matches!(action, "transfer" | "send") && (from.is_empty() || to.is_empty()))
+            || (action == "mint" && to.is_empty())
+            || (action == "burn" && from.is_empty())
+        {
+            return Err(LedgerError::Provider("missing_cw20_leg"));
+        }
+        let amount = parse_raw_amount(amount_raw)
+            .map_err(|_| LedgerError::Provider("invalid_cw20_source_amount"))?;
         let touches = registered_l.iter().any(|w| w == &from || w == &to);
         if !touches {
             continue;

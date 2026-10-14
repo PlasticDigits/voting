@@ -31,7 +31,10 @@ pub struct Bep20Transfer {
 
 fn topic_address(topic: &str) -> LedgerResult<String> {
     let hex = topic.trim().trim_start_matches("0x");
-    if hex.len() < 40 {
+    if hex.len() != 64
+        || !hex.bytes().all(|b| b.is_ascii_hexdigit())
+        || !hex[..24].bytes().all(|b| b == b'0')
+    {
         return Err(LedgerError::Amount(format!("short topic: {topic}")));
     }
     let addr = &hex[hex.len() - 40..];
@@ -57,8 +60,10 @@ pub fn parse_bep20_transfer_log(
     if topic0 != TRANSFER_TOPIC {
         return Ok(None);
     }
-    if log.topics.len() < 3 {
-        return Ok(None);
+    if log.topics.len() != 3 || log.data.len() != 66 {
+        return Err(LedgerError::Amount(
+            "invalid Transfer topic/data width".into(),
+        ));
     }
     let from = topic_address(&log.topics[1])?;
     let to = topic_address(&log.topics[2])?;
@@ -92,17 +97,16 @@ mod tests {
     const BOB: &str = "0x2222222222222222222222222222222222222222";
 
     fn topic_addr(addr: &str) -> String {
-        format!("0x{:0>64}", addr.trim_start_matches("0x").to_ascii_lowercase())
+        format!(
+            "0x{:0>64}",
+            addr.trim_start_matches("0x").to_ascii_lowercase()
+        )
     }
 
     fn transfer_log(token: &str, from: &str, to: &str) -> Bep20Log {
         Bep20Log {
             address: token.into(),
-            topics: vec![
-                TRANSFER_TOPIC.into(),
-                topic_addr(from),
-                topic_addr(to),
-            ],
+            topics: vec![TRANSFER_TOPIC.into(), topic_addr(from), topic_addr(to)],
             data: format!("0x{:0>64x}", 10u64.pow(18)),
             block_number: 100,
             transaction_hash: "0xabc".into(),
@@ -113,7 +117,9 @@ mod tests {
     #[test]
     fn registered_leg_kept() {
         let log = transfer_log(TOKEN, ALICE, BOB);
-        let parsed = parse_bep20_transfer_log(&log, TOKEN, &[ALICE]).unwrap().unwrap();
+        let parsed = parse_bep20_transfer_log(&log, TOKEN, &[ALICE])
+            .unwrap()
+            .unwrap();
         assert_eq!(parsed.from, ALICE);
         assert_eq!(parsed.to, BOB);
         assert_eq!(parsed.amount, human_to_raw(1));
@@ -139,7 +145,9 @@ mod tests {
     #[test]
     fn mint_from_zero() {
         let log = transfer_log(TOKEN, ZERO_EVM_ADDRESS, ALICE);
-        let parsed = parse_bep20_transfer_log(&log, TOKEN, &[ALICE]).unwrap().unwrap();
+        let parsed = parse_bep20_transfer_log(&log, TOKEN, &[ALICE])
+            .unwrap()
+            .unwrap();
         assert_eq!(parsed.from, ZERO_EVM_ADDRESS);
     }
 }

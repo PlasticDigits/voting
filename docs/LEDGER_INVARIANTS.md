@@ -6,9 +6,11 @@ This crate is `voting-ledger` (`ledger/`). It is **not** the DEX indexer. Do not
 
 ## L1 — No archive node
 
-Registration stores the **live** CW20 `Balance` / BEP-20 `balanceOf` at the current LCD height / `eth_blockNumber`. There is no `x-cosmos-block-height` header and no historical `eth_getLogs` backfill.
+Registration observes a live end-of-block balance on one provider. Configure `TERRA_RPC_URLS` for native Comet RPC observations: validate `/status` network/sync state and fresh `/block` time, capture current height/hash, query CW20 through `/abci_query` at that current recent height, require the body's actual response height and recheck the preknown canonical hash. This uses ordinary retained current state and needs no archive node. Gateways that strip smart-query height headers cannot supply a proven LCD-only observation. LCD-only registration remains supported when the live response supplies the actual height and matches the prequery height/hash; a moving observation retries. BSC likewise binds `eth_call` to the observed current head and verifies its hash before/after. No empty/ambiguous observation invents a baseline.
 
-Terra and BSC ingest are **chunked** (`INGEST_CHUNK` = 2000 heights/blocks per poll). A `last_indexed_*` of `0` jumps to tip. A **stale non-zero** cursor whose remaining gap exceeds `INGEST_STALE_GAP` (10_000) also jumps to tip — the poller must not walk millions of historical heights before the next registration-intent pass ([#14](https://gitlab.com/PlasticDigits/voting/-/issues/14)). Skipped heights are not backfilled.
+SDK JSON block hashes encode 32-byte values as base64; Comet encodes the same bytes as hex. Normalize both to uppercase 64-hex identities. Both legacy `block` and current `sdk_block` headers are supported; conflicting headers fail closed.
+
+Ingest is bounded to 32 blocks per independent chain poll. Only first boot **without an electorate** may start at tip. A nonzero cursor always advances from `last + 1`, regardless of gap length. Unavailable forward history leaves a durable degraded checkpoint; it never skips blocks while retaining old power. Explicit recovery creates a new live baseline epoch (L16).
 
 ## L2 — Registered-set only
 
@@ -24,7 +26,7 @@ Only `BSC_CL8Y_TOKEN_ADDRESS` (default `0x8F452a1fdd388A45e1080992eFF051b4dd9048
 
 ## L5 — 18-decimal integers
 
-Amounts are unsigned integer strings / `NUMERIC(78,0)`. No floats.
+Amounts and resulting balances are unsigned integers in the uint256 range, stored as strings / `NUMERIC(78,0)`. No floats; underflow or overflow rolls back and degrades accounting.
 
 ## L6 — Inclusive height / block
 
@@ -34,7 +36,7 @@ The SQL function is unchanged. **Default** GET `/v1/balances` (no `height` query
 
 ## L7 — Reorg unwind
 
-Terra: compare stored `last_indexed_block_hash` to the LCD hash; on mismatch delete transfers/checkpoints `height > fork-1` and reset the cursor. BSC: operator rewind via `rewind_bsc` (delete `bsc_block > N`). Do not share tables with DEX Venus.
+Both chains retain a 128-block canonical horizon (committed head plus 128 predecessors). Each poll verifies the committed head; mismatch searches backwards for a common ancestor, then atomically unwinds unfinalized accounting after it. Hash-fetch failure prevents fresh readiness. A beyond-horizon fork invalidates frozen current-epoch/legacy polls for review without altering their immutable values. A fork beyond retained history or through a registration baseline durably requires explicit reconciliation. BSC indexing is 15 blocks behind the observed head. Frozen proposals referencing orphaned heights are marked invalid for review; their vote records and frozen power are not rewritten. Do not share tables with DEX Venus.
 
 ## L8 — Identity
 
@@ -50,11 +52,33 @@ Balance functions are `SECURITY DEFINER` in schema **`public`**. Always call / `
 
 ## L11 — Registration handoff
 
-`operator-voting` inserts `voting.registration_intents`. A **separate** ledger task (not the ingest loop) queries live balances and writes `voting_registrations` (idempotent: no double initial credit). LCD/`balanceOf` failure retries; it does **not** write `initial_balance = 0` as a fake success. A pending intent is not a registration: GET `/v1/registration/:addr` returns `pending` until the ledger row exists ([#9](https://gitlab.com/PlasticDigits/voting/-/issues/9), [#14](https://gitlab.com/PlasticDigits/voting/-/issues/14)). `ON CONFLICT (chain, wallet_address) DO NOTHING` — UI retry re-polls the same row; it does not insert a second intent. The writer role must `SELECT`/`UPDATE` `voting.registration_intents` (table owner after migrate).
+`operator-voting` inserts `voting.registration_intents`. A **separate** ledger task (not either ingest loop) queries live balances and writes `voting_registrations` (idempotent: no double initial credit). LCD/`balanceOf` failure retries; it does **not** write `initial_balance = 0` as a fake success. A pending intent is not a registration: GET `/v1/registration/:addr` returns `pending` until the ledger row exists ([#9](https://gitlab.com/PlasticDigits/voting/-/issues/9), [#14](https://gitlab.com/PlasticDigits/voting/-/issues/14)). `ON CONFLICT (chain, wallet_address) DO NOTHING` — UI retry re-polls the same row; it does not insert a second intent. The writer role must `SELECT`/`UPDATE` `voting.registration_intents` (table owner after migrate).
 
 ## L12 — Intent query failures are visible
 
 `pending_intents` / `mark_intent_processed` must **not** treat permission, missing-table, or other SQL errors as an empty queue. Fail the intent poll, log, and set `/health.intents_ok` to `false`. LCD live-balance retries do not flip `intents_ok` (those leave `processed_at` NULL and try again). Code: [`../ledger/src/db.rs`](../ledger/src/db.rs), [`../ledger/src/main.rs`](../ledger/src/main.rs).
+
+## L13 — Execution completeness ([#36](https://git.cl8y.com/code/voting/issues/36))
+
+Terra consumes `tx_responses`, checks execution height/hash/status and supported pagination totals, detects repeated keys and identities, and excludes failed executions from deltas. Ingest also hashes every base64 transaction in bound `block.data.txs` with SHA256 and matches the entire execution set/order, including failed executions; a disabled/partial tx-search index cannot certify an empty block. One pinned provider supplies the whole block and every page before failover retries it. A missing execution schema is never an empty block. Base64 legacy attributes decode together. All pages validate before a transaction may publish progress. Retained execution fields and pagination keys share an aggregate 64 MiB block budget, with at most 1000 pages and 100000 transactions; exceeding it cannot advance a cursor. WASM ordinals exclude tx/fee/message metadata and precede emitter/registration filtering, so logs/raw representations retain one identity. Additional SDK metadata is ignored for semantic stream comparison; conflicting accounting attributes fail. BSC verifies `eth_chainId=0x38`, exact pinned emitters, complete log/block/transaction identities, nonremoved logs, three 32-byte topics and a 32-byte uint256. Provider caps split ranges within bounded work. HTTP responses are capped at 4 MiB, requests at eight seconds; logs and errors contain classes rather than provider URLs or response bodies.
+
+## L14 — Exactly once accounting ([#37](https://git.cl8y.com/code/voting/issues/37))
+
+Only a newly inserted source event changes balances. Repeated identities must match their original payload; conflicting payloads fail. Terra event indices come from original WASM ordinals, independent of non-WASM metadata, emitter or registration filtering. Registrations persist the observed baseline block hash/epoch. Readiness and opening refuse unverified eligible baselines at/below the selected cursor; future baselines above it carry zero frozen weight and cannot halt the electorate. A new unfinalized BSC baseline remains unverified until the confirmed ingest cursor reaches its block and verifies the same canonical hash; a changed baseline durably degrades rather than retaining orphaned initial power. Registration and ingest use the same transaction advisory locks `(8136,1)` Terra / `(8136,2)` BSC. A baseline includes every transfer at its block; only **strictly later** transfers affect it. Registration observations happen outside the lock, then insertion refuses an observation overtaken by ingest. Event rows, running checkpoints, height/hash and readiness metadata commit together. Underflow and out-of-order new events roll back instead of silently repairing a balance. Workers record permanent `accounting_corruption` / `accounting_invalid_amount` classes requiring explicit recovery, separately from transient provider failure.
+
+## L15 — Snapshot admission ([#38](https://git.cl8y.com/code/voting/issues/38))
+
+`public.ledger_checkpoints` records height, hash, epoch, observed time, completeness, canonicality, network head and degraded reason. Opening acquires both accounting locks in Terra/BSC order. Both positive checkpoints must be complete, canonical, nondegraded, at most 120 seconds old, and within two blocks of their policy tip (Terra head; BSC head minus 15). A refreshed timestamp during catch-up cannot certify a distant cursor. The observed Terra latest header time/BSC head timestamp must also be at most 120 seconds old and no more than five seconds ahead of wall clock; a stale provider returning a consistent old head cannot renew readiness. Missing or malformed state fails closed. Legacy active electorates are marked `legacy_electorate_requires_reconciliation` on migration; old cursors alone cannot prove accounting correctness.
+
+## L16 — Explicit live baseline epoch
+
+Run `voting-ledger --reconcile-live-baseline` with the production writer/provider environment injected by `bao-exec`, while ordinary ledger workers are stopped. For a controlled Coolify release, set `LEDGER_RECONCILE_LIVE_BASELINE=true` explicitly: startup recovers only existing electorates whose checkpoint is absent or degraded, rechecks under the accounting lock, skips healthy committed epochs after restart, then starts workers. Remove the flag after verifying both epochs/readiness. Stop the pre-fix ledger **and API** before migration, because their writes/admission do not obey the new locks. The command holds one chain lock, obtains all active holder balances at one pinned current block/hash on one provider with eight concurrent recent-state reads per batch (Terra native RPC requires the ABCI body response height (or LCD requires an echoed `x-cosmos-block-height`); BSC uses an explicit current block tag), verifies BSC confirmation depth, inserts a new balance checkpoint and moves `baseline_height`, then increments the epoch and commits checkpoint metadata atomically. A missing returned height binding, divergent provider hash or fork aborts the transaction; it makes no partial chain changes. A successful Terra pass and failed BSC pass still cannot admit a dual-chain snapshot until both are ready. Past checkpoints and registration identity/initial balance stay intact, so historical frozen power remains readable. Replaying transfers before/at the new baseline cannot double count recovery balances. This is an explicit new eligibility epoch, **not** a claim that unavailable history was indexed. Restart resumes at the committed new baseline. Legacy conflicting Terra source identities are preserved verbatim in `cl8y_cw20_legacy_identity_conflicts` before the unique index is added. The active electorate remains degraded until reconciliation; archived rows are audit evidence and are never re-applied as newly discovered transfers.
+
+## L17 — Worker and health behavior ([#39](https://git.cl8y.com/code/voting/issues/39))
+
+Terra, BSC and intents have separate supervised tasks. A chain outage does not short circuit its sibling. Chain polls have a 60-second deadline and capped exponential backoff; fatal task exit shuts down for supervisor restart. SIGTERM/SIGINT stop HTTP, cancel bounded work and roll back uncommitted database transactions. `/live` is process liveness; `/ready` and `/health` return 503 for unavailable DB, absent/stale/degraded/lagging core chains or failed intent SQL. Health exposes safe chain age/lag and queue count/oldest age. Intents select 16 fair indexed items, claim retry leases, run four at a time with ten-second item deadlines, and back off failures; a failed early intent moves behind later arrivals. The entire intent pass, including SQL claims/bookkeeping, has a 60-second deadline; progress state publication has a three-second deadline. `indexer_state.intents_ok` must be true with `updated_at` age <=120 seconds. Individual poisoned or above-cutoff intents do not globally veto healthy progress; a hung pass, stale progress or SQL failure does. Queue claims survive restart, then retry when the bounded lease expires.
+
+Regression scenarios live in [`ledger/tests/hardening.rs`](../ledger/tests/hardening.rs). Agent maintenance guidance: [`AGENTS_LEDGER_HARDENING.md`](../skills/AGENTS_LEDGER_HARDENING.md). Operator opening and incident review: [OPERATOR_VOTING.md](OPERATOR_VOTING.md). Deploy/reconciliation: [OPS.md](OPS.md).
 
 ## Env
 
@@ -64,7 +88,10 @@ Balance functions are `SECURITY DEFINER` in schema **`public`**. Always call / `
 | `CL8Y_TOKEN_ADDRESS` | Terra CW20 |
 | `BSC_CL8Y_TOKEN_ADDRESS` | BSC BEP-20 |
 | `TERRA_LCD_URL` / `LCD_URLS` | Live LCD (comma-separated) |
+| `TERRA_RPC_URLS` / `TERRA_RPC_URL` | Native response-height bound balances/recovery; required when the LCD strips observation headers |
+| `TERRA_CHAIN_ID` | Expected network, default `columbus-5`; prod pins it, dev can explicitly choose `localterra` |
 | `BSC_RPC_URLS` | Live BSC (comma-separated; never log) |
 | `RUN_MODE` | `prod` fail-closed |
 | `POLL_INTERVAL_MS` | Intent + ingest loop sleep (default `4000`) |
 | `API_BIND` | Health listener (default `0.0.0.0:3001`) |
+| `LEDGER_RECONCILE_LIVE_BASELINE` | Explicit one-time deploy recovery, default `false`; healthy epochs skip on restart |

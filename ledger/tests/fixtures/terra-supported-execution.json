@@ -1,0 +1,319 @@
+{
+  "metadata": {
+    "recorded_at": "2026-10-14",
+    "network": "columbus-5",
+    "version": "4.0.1-patch.3",
+    "cosmos_sdk_version": "v0.53.6",
+    "source": "https://terra-classic-lcd.publicnode.com",
+    "projection": "One recorded supported execution preserving original logs/events; decoded transaction body omitted; fixture total narrowed to one execution. HTTP mock block metadata is synthetic."
+  },
+  "response": {
+    "txs": [
+      {}
+    ],
+    "tx_responses": [
+      {
+        "txhash": "EDF293CE2FCF0DF2DB0D438CA5C0E1D220A669827DB7D2A6A4D1ADA3BDB374D8",
+        "height": "30828906",
+        "code": 0,
+        "logs": [
+          {
+            "events": [
+              {
+                "attributes": [
+                  {
+                    "key": "fee",
+                    "value": ""
+                  },
+                  {
+                    "key": "fee_payer",
+                    "value": "terra16h9637yykuy8t7t85em9qcxez8m67tmn889t07"
+                  }
+                ],
+                "type": "tx"
+              },
+              {
+                "attributes": [
+                  {
+                    "key": "acc_seq",
+                    "value": "terra16h9637yykuy8t7t85em9qcxez8m67tmn889t07/3665472"
+                  }
+                ],
+                "type": "tx"
+              },
+              {
+                "attributes": [
+                  {
+                    "key": "signature",
+                    "value": "0sfqqOzKP6jtuvxwt+LuU8nKA4cKtPJo3gyRr4T7AQsLgj5gl1v4wyOfZq4KM5VMg3mW7W3oE5Ldff/Mm8w4QQ=="
+                  }
+                ],
+                "type": "tx"
+              },
+              {
+                "attributes": [
+                  {
+                    "key": "action",
+                    "value": "/terra.oracle.v1beta1.MsgAggregateExchangeRateVote"
+                  },
+                  {
+                    "key": "sender",
+                    "value": "terra16h9637yykuy8t7t85em9qcxez8m67tmn889t07"
+                  },
+                  {
+                    "key": "msg_index",
+                    "value": "0"
+                  }
+                ],
+                "type": "message"
+              },
+              {
+                "attributes": [
+                  {
+                    "key": "voter",
+                    "value": "terravaloper1mn66epmhaz6aha0za0n3fw6nzzqucr45stjcn4"
+                  },
+                  {
+                    "key": "exchange_rates",
+                    "value": "0.00007153648077452uaud,0.000071087224817676ucad,0.00004154716581978uchf,0.00033413642354442ucny,0.000333522432448567udkk,0.000044616580636759ueur,0.00003768356705472ugbp,0.00039174597541673uhkd,0.892495951404529412uidr,0.004756121127777682uinr,0.007892924060024782ujpy,0.066961739814417045ukrw,0.0umnt,0.000203962082091807umyr,0.000475996388277834unok,0.003133209966686208uphp,0.00003690414440153usdr,0.000498359314367985usek,0.000063889150423441usgd,0.00167672178321405uthb,0.0utwd,0.000049917298562055uusd"
+                  },
+                  {
+                    "key": "msg_index",
+                    "value": "0"
+                  }
+                ],
+                "type": "aggregate_vote"
+              },
+              {
+                "attributes": [
+                  {
+                    "key": "module",
+                    "value": "oracle"
+                  },
+                  {
+                    "key": "sender",
+                    "value": "terra16h9637yykuy8t7t85em9qcxez8m67tmn889t07"
+                  },
+                  {
+                    "key": "msg_index",
+                    "value": "0"
+                  }
+                ],
+                "type": "message"
+              }
+            ],
+            "log": "",
+            "msg_index": 0
+          },
+          {
+            "events": [
+              {
+                "attributes": [
+                  {
+                    "key": "action",
+                    "value": "/terra.oracle.v1beta1.MsgAggregateExchangeRatePrevote"
+                  },
+                  {
+                    "key": "sender",
+                    "value": "terra16h9637yykuy8t7t85em9qcxez8m67tmn889t07"
+                  },
+                  {
+                    "key": "msg_index",
+                    "value": "1"
+                  }
+                ],
+                "type": "message"
+              },
+              {
+                "attributes": [
+                  {
+                    "key": "voter",
+                    "value": "terravaloper1mn66epmhaz6aha0za0n3fw6nzzqucr45stjcn4"
+                  },
+                  {
+                    "key": "msg_index",
+                    "value": "1"
+                  }
+                ],
+                "type": "aggregate_prevote"
+              },
+              {
+                "attributes": [
+                  {
+                    "key": "module",
+                    "value": "oracle"
+                  },
+                  {
+                    "key": "sender",
+                    "value": "terra16h9637yykuy8t7t85em9qcxez8m67tmn889t07"
+                  },
+                  {
+                    "key": "msg_index",
+                    "value": "1"
+                  }
+                ],
+                "type": "message"
+              }
+            ],
+            "log": "",
+            "msg_index": 1
+          }
+        ],
+        "events": [
+          {
+            "attributes": [
+              {
+                "index": true,
+                "key": "fee",
+                "value": ""
+              },
+              {
+                "index": true,
+                "key": "fee_payer",
+                "value": "terra16h9637yykuy8t7t85em9qcxez8m67tmn889t07"
+              }
+            ],
+            "type": "tx"
+          },
+          {
+            "attributes": [
+              {
+                "index": true,
+                "key": "acc_seq",
+                "value": "terra16h9637yykuy8t7t85em9qcxez8m67tmn889t07/3665472"
+              }
+            ],
+            "type": "tx"
+          },
+          {
+            "attributes": [
+              {
+                "index": true,
+                "key": "signature",
+                "value": "0sfqqOzKP6jtuvxwt+LuU8nKA4cKtPJo3gyRr4T7AQsLgj5gl1v4wyOfZq4KM5VMg3mW7W3oE5Ldff/Mm8w4QQ=="
+              }
+            ],
+            "type": "tx"
+          },
+          {
+            "attributes": [
+              {
+                "index": true,
+                "key": "action",
+                "value": "/terra.oracle.v1beta1.MsgAggregateExchangeRateVote"
+              },
+              {
+                "index": true,
+                "key": "sender",
+                "value": "terra16h9637yykuy8t7t85em9qcxez8m67tmn889t07"
+              },
+              {
+                "index": true,
+                "key": "msg_index",
+                "value": "0"
+              }
+            ],
+            "type": "message"
+          },
+          {
+            "attributes": [
+              {
+                "index": true,
+                "key": "voter",
+                "value": "terravaloper1mn66epmhaz6aha0za0n3fw6nzzqucr45stjcn4"
+              },
+              {
+                "index": true,
+                "key": "exchange_rates",
+                "value": "0.00007153648077452uaud,0.000071087224817676ucad,0.00004154716581978uchf,0.00033413642354442ucny,0.000333522432448567udkk,0.000044616580636759ueur,0.00003768356705472ugbp,0.00039174597541673uhkd,0.892495951404529412uidr,0.004756121127777682uinr,0.007892924060024782ujpy,0.066961739814417045ukrw,0.0umnt,0.000203962082091807umyr,0.000475996388277834unok,0.003133209966686208uphp,0.00003690414440153usdr,0.000498359314367985usek,0.000063889150423441usgd,0.00167672178321405uthb,0.0utwd,0.000049917298562055uusd"
+              },
+              {
+                "index": true,
+                "key": "msg_index",
+                "value": "0"
+              }
+            ],
+            "type": "aggregate_vote"
+          },
+          {
+            "attributes": [
+              {
+                "index": true,
+                "key": "module",
+                "value": "oracle"
+              },
+              {
+                "index": true,
+                "key": "sender",
+                "value": "terra16h9637yykuy8t7t85em9qcxez8m67tmn889t07"
+              },
+              {
+                "index": true,
+                "key": "msg_index",
+                "value": "0"
+              }
+            ],
+            "type": "message"
+          },
+          {
+            "attributes": [
+              {
+                "index": true,
+                "key": "action",
+                "value": "/terra.oracle.v1beta1.MsgAggregateExchangeRatePrevote"
+              },
+              {
+                "index": true,
+                "key": "sender",
+                "value": "terra16h9637yykuy8t7t85em9qcxez8m67tmn889t07"
+              },
+              {
+                "index": true,
+                "key": "msg_index",
+                "value": "1"
+              }
+            ],
+            "type": "message"
+          },
+          {
+            "attributes": [
+              {
+                "index": true,
+                "key": "voter",
+                "value": "terravaloper1mn66epmhaz6aha0za0n3fw6nzzqucr45stjcn4"
+              },
+              {
+                "index": true,
+                "key": "msg_index",
+                "value": "1"
+              }
+            ],
+            "type": "aggregate_prevote"
+          },
+          {
+            "attributes": [
+              {
+                "index": true,
+                "key": "module",
+                "value": "oracle"
+              },
+              {
+                "index": true,
+                "key": "sender",
+                "value": "terra16h9637yykuy8t7t85em9qcxez8m67tmn889t07"
+              },
+              {
+                "index": true,
+                "key": "msg_index",
+                "value": "1"
+              }
+            ],
+            "type": "message"
+          }
+        ]
+      }
+    ],
+    "pagination": null,
+    "total": "1"
+  }
+}

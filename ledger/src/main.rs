@@ -1,56 +1,34 @@
-use std::net::SocketAddr;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
-
-use axum::{extract::State, routing::get, Json, Router};
-use serde::Serialize;
-use tokio::net::TcpListener;
+use axum::{extract::State, http::StatusCode, routing::get, Json, Router};
+use std::{net::SocketAddr, time::Duration};
+use tokio::{net::TcpListener, task::JoinSet};
 use tracing_subscriber::EnvFilter;
-use voting_ledger::bsc::{BscBalanceSource, BscClient, CompositeBalanceSource, LcdBalancePair};
-use voting_ledger::config::LedgerConfig;
-use voting_ledger::db;
-use voting_ledger::db::Chain;
-use voting_ledger::health::indexer_behind_registration;
-use voting_ledger::ingest::{self, INGEST_CHUNK, INGEST_STALE_GAP};
-use voting_ledger::lcd::LcdClient;
-use voting_ledger::register::process_pending_intents;
-use voting_ledger::LedgerError;
-
-/// Last `process_pending_intents` SQL result. Independent of ingest catch-up (#14 / L12).
-static INTENTS_OK: AtomicBool = AtomicBool::new(true);
-
+use voting_ledger::{
+    bsc::{BscBalanceSource, BscClient, CompositeBalanceSource, LcdBalancePair},
+    config::LedgerConfig,
+    db::{self, Chain},
+    lcd::LcdClient,
+    register::supervised_intent_pass,
+    LedgerError,
+};
 #[derive(Clone)]
 struct AppState {
     pool: sqlx::PgPool,
 }
-
-#[derive(Serialize)]
-struct Health {
-    ok: bool,
-    terra_height: i64,
-    bsc_block: i64,
-    /// Indexer cursors are at or past every active registration snapshot.
-    caught_up: bool,
-    terra_behind_registration: bool,
-    bsc_behind_registration: bool,
-    /// False when `voting.registration_intents` SELECT/UPDATE failed (L12). Not LCD retry.
-    intents_ok: bool,
-}
-
 #[tokio::main]
 async fn main() -> Result<(), LedgerError> {
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env().add_directive("info".parse().unwrap()))
         .init();
-
     let cfg = LedgerConfig::from_env()?;
     let pool = db::connect(&cfg.database_url).await?;
     db::migrate(&pool).await?;
-
     let lcd = if cfg.terra_lcd_urls.is_empty() {
         None
     } else {
-        Some(LcdClient::new(cfg.terra_lcd_urls.clone()))
+        Some(LcdClient::new_for_chain(
+            cfg.terra_lcd_urls.clone(),
+            &cfg.terra_chain_id,
+        ))
     };
     let bsc = BscClient::new(cfg.bsc_rpc_urls.clone());
     let source = CompositeBalanceSource {
@@ -67,142 +45,165 @@ async fn main() -> Result<(), LedgerError> {
             None
         },
     };
-
-    let ingest_cfg = cfg.clone();
-    let ingest_pool = pool.clone();
-    let ingest_lcd = lcd.clone();
-    let ingest_bsc = bsc.clone();
-    let intent_source = source;
-    let intent_pool = pool.clone();
-    let intent_interval = cfg.poll_interval_ms;
-    tokio::spawn(async move {
-        loop {
-            match process_pending_intents(&intent_pool, &intent_source).await {
-                Ok(_) => INTENTS_OK.store(true, Ordering::Relaxed),
-                Err(e) => {
-                    INTENTS_OK.store(false, Ordering::Relaxed);
-                    tracing::error!(error = %e, "registration intent poll failed");
+    if std::env::args().any(|a| a == "--reconcile-live-baseline") {
+        let lcd = lcd
+            .as_ref()
+            .ok_or(LedgerError::Provider("no_terra_provider"))?;
+        for chain in [Chain::Terra, Chain::Bsc] {
+            voting_ledger::reconcile::reconcile_live_baseline(
+                &pool, &source, lcd, &bsc, &cfg, chain,
+            )
+            .await?;
+        }
+        return Ok(());
+    }
+    let requested = match std::env::var("LEDGER_RECONCILE_LIVE_BASELINE").as_deref() {
+        Ok("true" | "1") => true,
+        Err(_) | Ok("false" | "0") => false,
+        _ => {
+            return Err(LedgerError::InvalidConfig(
+                "LEDGER_RECONCILE_LIVE_BASELINE must be true or false".into(),
+            ))
+        }
+    };
+    if requested {
+        let lcd = lcd
+            .as_ref()
+            .ok_or(LedgerError::Provider("no_terra_provider"))?;
+        voting_ledger::reconcile::reconcile_if_required(&pool, &source, lcd, &bsc, &cfg).await?;
+    }
+    let mut workers = JoinSet::new();
+    for chain in [Chain::Terra, Chain::Bsc] {
+        let cfg = cfg.clone();
+        let pool = pool.clone();
+        let lcd = lcd.clone();
+        let bsc = bsc.clone();
+        workers.spawn(async move {
+            let mut failures = 0_u64;
+            loop {
+                let result = tokio::time::timeout(
+                    Duration::from_secs(60),
+                    voting_ledger::worker::poll_chain(&pool, &lcd, &bsc, &cfg, chain),
+                )
+                .await;
+                match result {
+                    Ok(Ok(())) => failures = 0,
+                    failure => {
+                        failures = failures.saturating_add(1);
+                        let reason = match failure {
+                            Err(_) => "worker_deadline",
+                            Ok(Err(LedgerError::Conflict(_))) => "accounting_corruption",
+                            Ok(Err(LedgerError::Amount(_))) => "accounting_invalid_amount",
+                            _ => "provider_or_accounting_failure",
+                        };
+                        db::degrade(&pool, chain, reason).await?;
+                        tracing::warn!(chain = chain.as_str(), reason, "chain worker degraded");
+                    }
                 }
+                // Bounded exponential retry with deterministic per-chain jitter.
+                let delay = cfg
+                    .poll_interval_ms
+                    .saturating_mul(1_u64 << failures.min(4))
+                    .min(60_000)
+                    + if chain == Chain::Bsc { 137 } else { 53 };
+                tokio::time::sleep(Duration::from_millis(delay)).await;
             }
-            tokio::time::sleep(Duration::from_millis(intent_interval)).await;
-        }
-    });
-    tokio::spawn(async move {
+            #[allow(unreachable_code)]
+            Ok::<(), LedgerError>(())
+        });
+    }
+    let intent_pool = pool.clone();
+    let interval = cfg.poll_interval_ms;
+    workers.spawn(async move {
         loop {
-            if let Err(e) = ingest_once(&ingest_pool, &ingest_lcd, &ingest_bsc, &ingest_cfg).await {
-                tracing::error!(error = %e, "ledger ingest poll failed");
+            if !supervised_intent_pass(&intent_pool, &source, Duration::from_secs(60)).await? {
+                tracing::warn!("registration queue deadline or database failure");
             }
-            tokio::time::sleep(Duration::from_millis(ingest_cfg.poll_interval_ms)).await;
+            tokio::time::sleep(Duration::from_millis(interval)).await;
         }
+        #[allow(unreachable_code)]
+        Ok::<(), LedgerError>(())
     });
-
     let app = Router::new()
-        .route("/health", get(health))
-        .with_state(AppState { pool });
+        .route(
+            "/live",
+            get(|| async { Json(serde_json::json!({"ok":true})) }),
+        )
+        .route("/health", get(readiness))
+        .route("/ready", get(readiness))
+        .with_state(AppState { pool: pool.clone() });
     let addr: SocketAddr = cfg
         .api_bind
         .parse()
-        .map_err(|e| LedgerError::InvalidConfig(format!("API_BIND: {e}")))?;
-    tracing::info!(%addr, "voting-ledger listening");
+        .map_err(|_| LedgerError::InvalidConfig("invalid API_BIND".into()))?;
     let listener = TcpListener::bind(addr).await?;
-    axum::serve(listener, app).await?;
-    Ok(())
-}
-
-async fn health(State(state): State<AppState>) -> Json<Health> {
-    let terra_height = db::indexed_terra_height(&state.pool).await.unwrap_or(0);
-    let bsc_block = db::indexed_bsc_block(&state.pool).await.unwrap_or(0);
-    let terra_max = db::max_registered_height(&state.pool, Chain::Terra)
-        .await
-        .unwrap_or(0);
-    let bsc_max = db::max_registered_height(&state.pool, Chain::Bsc)
-        .await
-        .unwrap_or(0);
-    let terra_behind_registration = indexer_behind_registration(terra_height, terra_max);
-    let bsc_behind_registration = indexer_behind_registration(bsc_block, bsc_max);
-    let caught_up = !terra_behind_registration && !bsc_behind_registration;
-    Json(Health {
-        ok: true,
-        terra_height,
-        bsc_block,
-        caught_up,
-        terra_behind_registration,
-        bsc_behind_registration,
-        intents_ok: INTENTS_OK.load(Ordering::Relaxed),
-    })
-}
-
-async fn ingest_once(
-    pool: &sqlx::PgPool,
-    lcd: &Option<LcdClient>,
-    bsc: &BscClient,
-    cfg: &LedgerConfig,
-) -> Result<(), LedgerError> {
-    if let Some(lcd) = lcd {
-        let last = db::indexed_terra_height(pool).await?;
-        let max_reg = db::max_registered_height(pool, Chain::Terra).await?;
-        if indexer_behind_registration(last, max_reg) {
-            tracing::warn!(
-                last,
-                max_reg,
-                "terra last_indexed_height is behind a live registration snapshot; GET /v1/balances clamps to registered_at_height until ingest catches up"
-            );
-        }
-        ingest::maybe_rewind_terra(pool, lcd, last).await?;
-        let last = db::indexed_terra_height(pool).await?;
-        let tip = lcd.latest_height().await?;
-        if let Some(window) = ingest::ingest_window(last, tip, INGEST_CHUNK, INGEST_STALE_GAP) {
-            if window.jumped_to_tip && last > 0 {
-                tracing::warn!(
-                    last,
-                    tip,
-                    "terra last_indexed_height is a stale non-zero cursor; jumping to tip (L1, no archive)"
-                );
-            }
-            for h in window.start..=window.end {
-                ingest::ingest_terra_height(pool, lcd, cfg, h).await?;
-                if let Ok(hash) = lcd.block_hash(h).await {
-                    db::set_state(pool, "last_indexed_block_hash", &hash).await?;
-                }
-            }
-        }
-        let after = db::indexed_terra_height(pool).await?;
-        if after == 0 && max_reg > 0 {
-            tracing::error!(
-                max_reg,
-                "terra last_indexed_height is still 0 after ingest; balances and /health.caught_up will look stalled"
-            );
-        }
-    }
-
-    if bsc.enabled() {
-        let last = db::indexed_bsc_block(pool).await?;
-        let max_reg = db::max_registered_height(pool, Chain::Bsc).await?;
-        if indexer_behind_registration(last, max_reg) {
-            tracing::warn!(
-                last,
-                max_reg,
-                "bsc last_indexed_bsc_block is behind a live registration snapshot; GET /v1/balances clamps to registered_at_height until ingest catches up"
-            );
-        }
-        let tip = bsc.block_number().await?;
-        if let Some(window) = ingest::ingest_window(last, tip, INGEST_CHUNK, INGEST_STALE_GAP) {
-            if window.jumped_to_tip && last > 0 {
-                tracing::warn!(
-                    last,
-                    tip,
-                    "bsc last_indexed_bsc_block is a stale non-zero cursor; jumping to tip (L1, no archive)"
-                );
-            }
-            ingest::ingest_bsc_range(pool, bsc, cfg, window.start, window.end).await?;
-        }
-        let after = db::indexed_bsc_block(pool).await?;
-        if after == 0 && max_reg > 0 {
-            tracing::error!(
-                max_reg,
-                "bsc last_indexed_bsc_block is still 0 after ingest; balances and /health.caught_up will look stalled"
-            );
-        }
+    tracing::info!(%addr,"voting-ledger listening");
+    let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
+    let server = tokio::spawn(async move {
+        axum::serve(listener, app)
+            .with_graceful_shutdown(async {
+                let _ = shutdown_rx.await;
+            })
+            .await
+    });
+    let fatal = tokio::select! {
+        _=shutdown_signal()=>false,
+        _=supervise_workers(&mut workers)=>true,
+    };
+    let _ = shutdown_tx.send(());
+    workers.abort_all();
+    while workers.join_next().await.is_some() {}
+    let _ = tokio::time::timeout(Duration::from_secs(5), server).await;
+    let _ = tokio::time::timeout(Duration::from_secs(3), pool.close()).await;
+    if fatal {
+        return Err(LedgerError::Provider("supervised_worker_exit"));
     }
     Ok(())
+}
+async fn shutdown_signal() {
+    #[cfg(unix)]
+    {
+        let mut terminate =
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+                .expect("signal handler");
+        tokio::select! {_=tokio::signal::ctrl_c()=>{},_=terminate.recv()=>{}}
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = tokio::signal::ctrl_c().await;
+    }
+}
+async fn readiness(
+    State(state): State<AppState>,
+) -> (StatusCode, Json<voting_ledger::health::Readiness>) {
+    voting_ledger::health::readiness(&state.pool).await
+}
+
+async fn supervise_workers(workers: &mut JoinSet<Result<(), LedgerError>>) {
+    let exit = workers.join_next().await;
+    tracing::error!(
+        panicked = exit.as_ref().is_some_and(|r| r.is_err()),
+        "ledger worker exited; shutting down for supervisor restart"
+    );
+}
+#[cfg(test)]
+mod supervisor_tests {
+    use super::*;
+    #[tokio::test]
+    async fn panic_or_exit_notifies_fatal_supervisor() {
+        let mut workers = JoinSet::new();
+        workers.spawn(async {
+            panic!("injected worker panic");
+            #[allow(unreachable_code)]
+            Ok::<(), LedgerError>(())
+        });
+        tokio::time::timeout(Duration::from_secs(1), supervise_workers(&mut workers))
+            .await
+            .unwrap();
+        let mut workers = JoinSet::new();
+        workers.spawn(async { Err(LedgerError::Provider("injected fatal exit")) });
+        tokio::time::timeout(Duration::from_secs(1), supervise_workers(&mut workers))
+            .await
+            .unwrap();
+    }
 }
