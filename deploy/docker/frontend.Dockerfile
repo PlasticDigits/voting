@@ -57,7 +57,7 @@ RUN test -n "$VITE_OPERATOR_VOTING_URL" \
   && case "$VITE_OPERATOR_VOTING_URL" in https://*) ;; *) echo "VITE_OPERATOR_VOTING_URL must be https://" >&2; exit 1 ;; esac \
   && npm run build
 
-FROM nginx:1.27-alpine AS runtime
+FROM nginx:1.31.8-alpine@sha256:060849a174666c53439dc7cecbf8f67e225c7cbfb1a44ca97915d9a172a81e6d AS runtime
 
 ARG VITE_OPERATOR_VOTING_URL
 ARG VITE_LEGAL_API_BASE_URL=https://api.terms.cl8y.com
